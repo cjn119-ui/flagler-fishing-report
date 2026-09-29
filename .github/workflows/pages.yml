@@ -7,6 +7,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  issues: write
   pages: write
   id-token: write
 concurrency:
@@ -23,6 +24,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Unit tests
+        run: node scripts/test-logic.mjs
       - uses: actions/configure-pages@v5
         id: pages
       - name: Generate report and live data
@@ -34,3 +37,13 @@ jobs:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+      - name: Open an issue if the refresh failed
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create refresh-failure --color B60205 --description "Scheduled refresh failed" 2>/dev/null || true
+          if [ -z "$(gh issue list --label refresh-failure --state open --json number --jq '.[0].number')" ]; then
+            gh issue create --label refresh-failure --title "Scheduled refresh failed" \
+              --body "The scheduled refresh failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. The site keeps serving the last good data. Close this issue after fixing; a new one opens on the next failure."
+          fi

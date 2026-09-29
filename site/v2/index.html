@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#081B29">
+<meta name="description" content="Go / Marginal / Skip fishing outlook for Palm Coast and Flagler Beach, with tide chart and best windows.">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="../icons/fishing.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>Flagler Fishing v2</title>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>Flagler Fishing</h1>
+    <p class="sub">Palm Coast · Flagler Beach <span class="tag">v2</span></p>
+  </div>
+  <button id="refresh" type="button" aria-label="Refresh now">↻</button>
+</header>
+
+<main>
+  <section id="verdict" class="card verdict" data-level="none" aria-live="polite">
+    <p class="k">Right now → next 12 hours</p>
+    <div class="vrow"><span class="badge" id="v-badge">…</span><p id="v-why" class="why">Loading live data…</p></div>
+    <ul id="v-alerts" class="chips"></ul>
+    <details class="rules"><summary>Why this verdict</summary><table id="v-rules"></table><p class="fine">Rule-based, not a catch prediction. Airport and offshore readings can differ from the beach. Worst rule sets the verdict.</p></details>
+  </section>
+
+  <section class="card">
+    <div class="h"><h2>Next 24 hours</h2><span id="tide-age" class="age"></span></div>
+    <div id="chart" class="chart" role="img" aria-label="Tide height for the next 24 hours with best fishing windows"></div>
+    <ol id="windows" class="windows"></ol>
+    <details class="rules"><summary>How windows are picked</summary><p class="fine">Each 30-minute daylight slot is scored: tide movement 35%, sunrise/sunset light 25%, wind 20%, rain chance 20%. Windows are the best non-overlapping 2-hour stretches. This ranks the forecast, it is not a bite forecast.</p></details>
+  </section>
+
+  <section class="card">
+    <div class="h"><h2>Now</h2></div>
+    <div id="tiles" class="tiles"></div>
+  </section>
+
+  <section class="card">
+    <div class="h"><h2>Next days</h2><span class="age">wind &amp; rain only</span></div>
+    <div id="days" class="days"></div>
+  </section>
+
+  <section class="card small">
+    <p>Live from NWS (airport KFIN, forecast, alerts), NOAA tides (Smith Creek 8720833, predictions only) and NDBC buoy 41117 (refreshed about every 30 min).</p>
+    <p><a href="../">Full text report (v1)</a></p>
+    <p id="status" class="fine"></p>
+  </section>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>

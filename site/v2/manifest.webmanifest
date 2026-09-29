@@ -1,0 +1,15 @@
+{
+  "id": "./",
+  "name": "Flagler Fishing v2",
+  "short_name": "Flagler v2",
+  "description": "Go / Marginal / Skip fishing outlook for Palm Coast and Flagler Beach.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#081B29",
+  "theme_color": "#081B29",
+  "icons": [
+    {"src": "../icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "../icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}
+  ]
+}
