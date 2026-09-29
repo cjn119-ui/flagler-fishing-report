@@ -1,4 +1,4 @@
-// 7-day fishing outlook from the NWS daily forecast. Shared by v3 and v4.
+// 7-day fishing outlook from the NWS daily forecast. Shared by v3 and flagler-fishing.
 import { verdict, parseWindMph, localDay } from "../v2/logic.js";
 
 export const GRID_FORECAST = "https://api.weather.gov/gridpoints/JAX/87,28/forecast";

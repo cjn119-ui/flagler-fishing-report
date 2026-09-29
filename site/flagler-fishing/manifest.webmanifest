@@ -1,7 +1,7 @@
 {
-  "id": "./v4/",
-  "name": "Flagler Fishing v4",
-  "short_name": "Flagler v4",
+  "id": "./flagler-fishing/",
+  "name": "Flagler Fishing",
+  "short_name": "Flagler Fishing",
   "description": "Live fishing conditions, best times and a 7-day outlook for Palm Coast and Flagler Beach.",
   "start_url": "./",
   "scope": "./",
