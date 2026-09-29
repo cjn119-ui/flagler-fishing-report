@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#061e2d">
+  <meta name="description" content="Refreshable Palm Coast and Flagler Beach fishing report.">
+  <script>
+    if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+    function resetScrollToTop() {
+      const root = document.documentElement;
+      const previousBehavior = root.style.scrollBehavior;
+      // Override the site's smooth-scroll CSS for this corrective jump.
+      root.style.scrollBehavior = 'auto';
+      try {
+        window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+      } catch {
+        window.scrollTo(0, 0);
+      }
+      root.style.scrollBehavior = previousBehavior;
+    }
+    window.addEventListener('pageshow', () => {
+      // iOS Safari (and Chrome on iOS) may apply scroll restoration after the
+      // first paint. Keep restoration manual and reset after that paint too.
+      if (location.hash === '#latest-report') {
+        // Older app versions left this CTA fragment in saved tabs/PWAs.
+        history.replaceState(history.state, '', location.pathname + location.search);
+      } else if (location.hash) {
+        return; // Preserve unrelated explicit deep links.
+      }
+      requestAnimationFrame(() => requestAnimationFrame(resetScrollToTop));
+    });
+    document.addEventListener('click', event => {
+      const jump = event.target.closest('a[href="#latest-report"]');
+      if (!jump) return;
+      event.preventDefault();
+      const report = document.getElementById('latest-report');
+      if (report) {
+        try {
+          report.focus({ preventScroll: true });
+        } catch {
+          report.focus();
+        }
+        report.scrollIntoView({ behavior: 'smooth' });
+      }
+      // A CTA-generated fragment should not become the browser's remembered
+      // launch position the next time this report is opened.
+      history.replaceState(history.state, '', location.pathname + location.search);
+    });
+  </script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/fishing.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="theme.css">
+  <title>Flagler Fishing Report</title>
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to report</a>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Flagler Fishing Report home"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 44 44" focusable="false"><path d="M5 19c7-10 17-10 24-3 3 3 5 3 10 1M5 26c8-8 16-7 23-2 4 3 7 3 11 1M6 33c8-5 15-4 21-1 4 2 8 2 12-1"/></svg></span><span class="brand-copy">FLAGLER <b>FISHING REPORT</b></span></a>
+    <span class="location-pill" aria-label="Area: Palm Coast and Flagler Beach"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z"/><circle cx="12" cy="10" r="2"/></svg><span>Palm Coast / Flagler Beach</span></span>
+    <button id="refresh" class="refresh" type="button" aria-label="Refresh report and live conditions"><span aria-hidden="true">↻</span><span class="refresh-label">Refresh</span></button>
+  </header>
+  <main id="main-content">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow"><span class="live-dot" aria-hidden="true"></span> PALM COAST · FLAGLER BEACH</p>
+      <h1 id="page-title">Fishing outlook</h1>
+      <p class="hero-note">A local read on nearby weather, offshore water, and the latest generated fishing report.</p>
+      <a class="hero-link" href="#latest-report">Jump to today’s fishing report <span aria-hidden="true">↓</span></a>
+    </section>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section class="conditions" aria-labelledby="conditions-title">
+      <div class="section-heading">
+        <div><p class="eyebrow teal">LIVE & PREDICTED DATA</p><h2 id="conditions-title">Current conditions</h2></div>
+        <span id="conditions-freshness" class="freshness pending" aria-live="polite"><i></i><span>Checking conditions…</span></span>
+      </div>
+      <div class="tiles">
+        <article class="condition-card" id="weather-card" aria-labelledby="weather-title">
+          <div class="tile-heading"><div><h3 id="weather-title">Nearby weather</h3><p class="tile-source">National Weather Service · KFIN airport</p></div><span class="tile-state pending">Checking</span></div>
+          <p class="station-note">KFIN airport observation and nearby forecast; not beach wind or surf forecast.</p>
+          <div class="tile-values" id="weather-values"><span class="tile-empty">Loading latest observation…</span></div>
+          <p class="tile-time" id="weather-time">Observation time —</p>
+          <p class="tile-time forecast-time" id="weather-forecast-time">Forecast update —</p>
+        </article>
+        <article class="condition-card" id="marine-card" aria-labelledby="marine-title">
+          <div class="tile-heading"><div><h3 id="marine-title">Offshore buoy</h3><p class="tile-source">NOAA National Data Buoy Center · 41117</p></div><span class="tile-state pending">Checking</span></div>
+          <p class="station-note">St. Augustine offshore; not shore conditions.</p>
+          <div class="tile-values" id="marine-values"><span class="tile-empty">Loading latest observation…</span></div>
+          <p class="tile-time" id="marine-time">Observation time —</p>
+        </article>
+        <article class="condition-card tide-card" id="tides-card" aria-labelledby="tides-title">
+          <div class="tile-heading"><div><h3 id="tides-title">Predicted tides</h3><p class="tile-source">NOAA Tides &amp; Currents · Smith Creek 8720833</p></div><span class="tile-state pending">Checking</span></div>
+          <p class="station-note">Discrete predictions only; no live water-level gauge at this station.</p>
+          <div class="tile-values tide-values" id="tides-values"><span class="tile-empty">Loading tide predictions…</span></div>
+          <p class="tile-time" id="tides-time">Prediction date —</p>
+        </article>
+      </div>
+      <aside id="trip-suggestion" class="trip-suggestion" aria-live="polite" aria-atomic="true">
+        <div class="trip-suggestion-mark" aria-hidden="true">↗</div>
+        <div><p class="trip-suggestion-label">Quick trip read · heuristic</p><p class="trip-suggestion-copy">Checking nearby observations…</p></div>
+      </aside>
+      <section id="fishing-grade" class="fishing-grade incomplete" aria-live="polite" aria-atomic="true" aria-labelledby="fishing-grade-title">
+        <div class="fishing-grade-top"><div><p class="fishing-grade-kicker">Fishing conditions · heuristic snapshot</p><h3 id="fishing-grade-title">Grade pending</h3></div><span class="fishing-grade-badge" aria-label="Grade pending">—</span></div>
+        <p class="fishing-grade-summary">Waiting for current source data.</p>
+        <ul class="fishing-grade-rationale"><li>Scoring checks nearby sustained wind, offshore buoy seas, and forecast rain chance; observation limits follow their source tiles, and forecast updates must be within 24 hours.</li></ul>
+        <p class="fishing-grade-caveat">These are simple heuristic cutoffs, not official fishing thresholds, a catch prediction, or a beach/marine safety rating. Airport and offshore readings may not represent conditions at your fishing spot; check local forecasts and advisories.</p>
+      </section>
+      <p class="conditions-footnote">Weather and buoy values are observations; tides are predictions. Each tile shows its own source status and timestamp. Refreshes every 5 minutes or on Refresh.</p>
+    </section>
+    <section id="latest-report" class="report-card latest-report" aria-labelledby="report-title" tabindex="-1">
+      <div class="card-heading">
+        <div class="report-heading-copy"><p class="eyebrow teal">LATEST GENERATED OUTLOOK</p><h2 id="report-title">Today’s fishing report</h2></div>
+        <div class="report-status"><span id="freshness" class="freshness pending" aria-live="polite"><i></i><span>Checking report…</span></span><span id="report-date" class="date-chip">—</span></div>
+      </div>
+      <p id="updated" class="report-updated">Report generated —</p>
+      <div id="report-content" class="report-content" aria-live="off" aria-busy="true">
+        <div class="skeleton"></div><div class="skeleton short"></div>
+        <p class="loading-copy">Loading the latest saved report…</p>
+      </div>
+    </section>
+  </main>
+  <footer><span>PALM COAST, FLORIDA</span><span id="connection">Connecting…</span></footer>
+  <script src="app.js" defer></script>
+</body>
+</html>
