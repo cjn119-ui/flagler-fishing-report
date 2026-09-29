@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import worker from "../src/worker.mjs";
 
 const SITE_URL = (process.env.SITE_URL || "").replace(/\/$/, "");
-const REFRESH_MS = 3 * 60 * 60 * 1000; // regenerate a report once it is 3h old
+const FORCE = process.env.FORCE_REFRESH === "true";
+const REFRESH_MS = FORCE ? 0 : 3 * 60 * 60 * 1000; // regenerate a report once it is 3h old (always when forced)
 const OUT = fileURLToPath(new URL("../site/api/", import.meta.url));
 const TZ = "America/New_York";
 

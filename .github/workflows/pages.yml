@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+    inputs:
+      force:
+        description: Regenerate reports even if they are recent
+        type: boolean
+        default: false
 permissions:
   contents: read
   issues: write
@@ -31,6 +36,7 @@ jobs:
       - name: Generate report and live data
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
+          FORCE_REFRESH: ${{ inputs.force }}
         run: node scripts/generate.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
