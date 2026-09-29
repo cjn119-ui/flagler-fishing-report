@@ -1808,3 +1808,24 @@ body {
 @media (max-width: 420px) { .pill-long { display: none; } .pill-short { display: inline; } .location-pill { max-width: none; font-size: 11px; } }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto !important; } * { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 .metric-wide { grid-column: 1 / -1; }
+
+/* v3: 7-day outlook + tide list */
+.week-card { margin: 14px 0; padding: 16px 14px 14px; border: 1px solid var(--line); border-radius: 22px; background: var(--card); }
+.week-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 12px; }
+.week-kicker { margin: 0 0 3px; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--teal); }
+.week-head h3 { margin: 0; font-size: 20px; }
+.week-status { font-size: 11px; color: var(--muted); text-align: right; max-width: 42%; }
+.wk-bars { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.wk-col { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; --c: #8AA0AE; }
+.wk-col[data-level="0"] { --c: var(--green); } .wk-col[data-level="1"] { --c: var(--amber); } .wk-col[data-level="2"] { --c: #ff7a7a; }
+.wk-score { font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.wk-track { width: 100%; height: 110px; display: flex; align-items: flex-end; background: rgba(255,255,255,.05); border-radius: 10px; overflow: hidden; }
+.wk-bar { width: 100%; background: linear-gradient(180deg, var(--c), color-mix(in srgb, var(--c) 55%, #0b2233)); border-radius: 8px 8px 0 0; }
+.wk-day { font-size: 12px; margin-top: 3px; }
+.wk-meta { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.week-note { margin: 12px 0 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.tide-list ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 6px; }
+.tide-list li { display: grid; grid-template-columns: 52px 1fr auto; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 12px; background: rgba(255,255,255,.05); font-size: 14px; }
+.tide-list li.high b { color: var(--cyan); } .tide-list li.low b { color: var(--amber); }
+.tide-list li span { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tide-list small { display: block; margin-top: 8px; color: var(--muted); font-size: 12px; }

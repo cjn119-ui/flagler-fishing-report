@@ -1,4 +1,4 @@
-const SHELL_CACHE = 'fishing-pwa-v3-shell-1';
+const SHELL_CACHE = 'fishing-pwa-v3-shell-2';
 const REPORT_CACHE = 'fishing-pwa-v3-report-1';
 const REPORT_PATH = new URL('../api/report.json', self.location).pathname;
 const SHELL = ['./', 'index.html', 'styles.css', 'theme.css', 'app.js', 'manifest.webmanifest', '../icons/fishing.svg', '../icons/icon-192.png', '../icons/icon-512.png'];

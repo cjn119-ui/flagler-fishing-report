@@ -309,76 +309,19 @@ function renderNextTideEvent(event) {
   return card;
 }
 function renderTideChart(events) {
-  const chart = document.createElement('div'); chart.className = 'tide-chart';
-  const title = document.createElement('p'); title.className = 'chart-caption';
-  title.textContent = 'Predicted high and low events'; chart.append(title);
-  const legend = document.createElement('div'); legend.className = 'tide-legend';
-  for (const [label, kind] of [['High', 'high'], ['Low', 'low']]) {
-    const item = document.createElement('span'); item.className = 'tide-legend-item';
-    const swatch = document.createElement('i'); swatch.className = `tide-key ${kind}`; swatch.setAttribute('aria-hidden', 'true');
-    item.append(swatch, document.createTextNode(label)); legend.append(item);
+  const wrap = document.createElement('div'); wrap.className = 'tide-list';
+  const title = document.createElement('p'); title.className = 'chart-caption'; title.textContent = 'Predicted highs and lows'; wrap.append(title);
+  const list = document.createElement('ul');
+  for (const event of events) {
+    const li = document.createElement('li'); li.className = event.type.toLowerCase();
+    const type = document.createElement('b'); type.textContent = event.type;
+    const time = document.createElement('time'); time.dateTime = event.time; time.textContent = new Intl.DateTimeFormat(undefined, {weekday:'short', hour:'numeric', minute:'2-digit'}).format(new Date(event.time));
+    const height = document.createElement('span'); height.textContent = `${Number(event.height_ft).toFixed(1)} ft`;
+    li.append(type, time, height); list.append(li);
   }
-  chart.append(legend);
-
-  const width = 320, height = 218, left = 48, right = 298, top = 42, bottom = 151;
-  const values = events.map(event => Number(event.height_ft));
-  const min = Math.min(...values), max = Math.max(...values);
-  const padding = Math.max((max - min) * 0.22, 0.15);
-  const low = min - padding, high = max + padding;
-  const timestamps = events.map(event => Date.parse(event.time));
-  const minTime = Math.min(...timestamps), maxTime = Math.max(...timestamps);
-  const timeScaleAvailable = timestamps.every(Number.isFinite) && timestamps.length > 1 && maxTime > minTime;
-  const points = events.map((event, index) => ({
-    x: left + (events.length === 1 ? (right - left) / 2 : timeScaleAvailable
-      ? ((timestamps[index] - minTime) / (maxTime - minTime)) * (right - left)
-      : index * (right - left) / (events.length - 1)),
-    y: bottom - ((Number(event.height_ft) - low) / (high - low)) * (bottom - top), event
-  }));
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', `0 0 ${width} ${height}`); svg.setAttribute('role', 'img');
-  const spacingDescription = timeScaleAvailable ? 'Horizontal spacing is proportional to elapsed time.' : 'Time spacing is unavailable; events are shown in source order.';
-  svg.setAttribute('aria-label', `Discrete NOAA tide predictions: ${events.map(event => `${event.type} ${Number(event.height_ft).toFixed(1)} feet at ${localTime(event.time)}`).join(', ')}. ${spacingDescription} Points are events, not a continuous tide curve.`);
-
-  const plot = document.createElementNS(svg.namespaceURI, 'rect');
-  plot.setAttribute('x', String(left)); plot.setAttribute('y', String(top)); plot.setAttribute('width', String(right - left)); plot.setAttribute('height', String(bottom - top));
-  plot.setAttribute('rx', '7'); plot.setAttribute('class', 'tide-plot-background'); svg.append(plot);
-
-  for (const fraction of [0, 0.5, 1]) {
-    const y = bottom - fraction * (bottom - top);
-    const grid = document.createElementNS(svg.namespaceURI, 'line');
-    grid.setAttribute('x1', left); grid.setAttribute('x2', right); grid.setAttribute('y1', y); grid.setAttribute('y2', y);
-    grid.setAttribute('class', 'tide-gridline'); svg.append(grid);
-    const label = document.createElementNS(svg.namespaceURI, 'text');
-    label.setAttribute('x', left - 8); label.setAttribute('y', y + 4); label.setAttribute('text-anchor', 'end'); label.setAttribute('class', 'tide-axis-label');
-    label.textContent = `${(low + (high - low) * fraction).toFixed(1)}′`; svg.append(label);
-  }
-  const baseline = document.createElementNS(svg.namespaceURI, 'line');
-  baseline.setAttribute('x1', left); baseline.setAttribute('x2', right); baseline.setAttribute('y1', bottom); baseline.setAttribute('y2', bottom); baseline.setAttribute('class', 'tide-axis'); svg.append(baseline);
-  const axisTitle = document.createElementNS(svg.namespaceURI, 'text');
-  axisTitle.setAttribute('x', '12'); axisTitle.setAttribute('y', String((top + bottom) / 2)); axisTitle.setAttribute('text-anchor', 'middle'); axisTitle.setAttribute('transform', `rotate(-90 12 ${(top + bottom) / 2})`); axisTitle.setAttribute('class', 'tide-axis-title'); axisTitle.textContent = 'ft MLLW'; svg.append(axisTitle);
-
-  points.forEach(point => {
-    const stem = document.createElementNS(svg.namespaceURI, 'line');
-    stem.setAttribute('x1', point.x); stem.setAttribute('x2', point.x); stem.setAttribute('y1', bottom); stem.setAttribute('y2', point.y); stem.setAttribute('class', 'tide-stem'); svg.append(stem);
-    const type = document.createElementNS(svg.namespaceURI, 'text');
-    type.setAttribute('x', point.x); type.setAttribute('y', String(Math.max(top - 18, point.y - 22))); type.setAttribute('text-anchor', 'middle'); type.setAttribute('class', `tide-event-label ${point.event.type === 'High' ? 'high' : 'low'}`); type.textContent = point.event.type.toUpperCase(); svg.append(type);
-    if (point.event.type === 'High') {
-      const marker = document.createElementNS(svg.namespaceURI, 'circle'); marker.setAttribute('cx', point.x); marker.setAttribute('cy', point.y); marker.setAttribute('r', '6'); marker.setAttribute('class', 'tide-dot high'); svg.append(marker);
-    } else {
-      const marker = document.createElementNS(svg.namespaceURI, 'polygon'); marker.setAttribute('points', `${point.x},${point.y - 7} ${point.x + 7},${point.y} ${point.x},${point.y + 7} ${point.x - 7},${point.y}`); marker.setAttribute('class', 'tide-dot low'); svg.append(marker);
-    }
-    const time = document.createElementNS(svg.namespaceURI, 'text');
-    time.setAttribute('x', point.x); time.setAttribute('y', '174'); time.setAttribute('text-anchor', 'middle'); time.setAttribute('class', 'tide-time-label');
-    const date = new Date(point.event.time);
-    const day = Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat(undefined, {weekday:'short'}).format(date) : '—';
-    const dayLine = document.createElementNS(svg.namespaceURI, 'tspan'); dayLine.setAttribute('x', point.x); dayLine.textContent = day;
-    const hourLine = document.createElementNS(svg.namespaceURI, 'tspan'); hourLine.setAttribute('x', point.x); hourLine.setAttribute('dy', '15'); hourLine.textContent = localTime(point.event.time);
-    time.append(dayLine, hourLine); svg.append(time);
-    const value = document.createElementNS(svg.namespaceURI, 'text'); value.setAttribute('x', point.x); value.setAttribute('y', '208'); value.setAttribute('text-anchor', 'middle'); value.setAttribute('class', 'tide-height-label'); value.textContent = `${Number(point.event.height_ft).toFixed(1)} ft`; svg.append(value);
-  });
-  chart.append(svg);
-  const note = document.createElement('small'); note.textContent = `Discrete prediction events only; no interpolated tide curve.${timeScaleAvailable ? '' : ' Time spacing unavailable; shown in source order.'}`; chart.append(note);
-  return chart;
+  wrap.append(list);
+  const note = document.createElement('small'); note.textContent = 'NOAA predictions for Smith Creek; heights above MLLW.'; wrap.append(note);
+  return wrap;
 }
 
 async function refreshLive(name) {
@@ -423,13 +366,13 @@ function renderTripSuggestion(results) {
   }
   if (flags.length) {
     root.classList.add('caution');
-    copy.textContent = `Worth a closer check: ${flags.join('; ')}. This is a heuristic, not a beach or marine safety forecast; check local beach conditions and advisories.`;
+    copy.textContent = `Worth a closer check: ${flags.join('; ')}. This is a quick read, not a beach or marine safety forecast; check local beach conditions and advisories.`;
   } else if (hasWind && hasSea && hasRain) {
     root.classList.add('good');
-    copy.textContent = 'No major flags in the available nearby-airport, offshore-buoy, and forecast readings. Heuristic only—not a beach safety forecast; check local conditions and advisories.';
+    copy.textContent = 'No major flags in the available nearby-airport, offshore-buoy, and forecast readings. Quick read only—not a beach safety forecast; check local conditions and advisories.';
   } else {
     root.classList.add('uncertain');
-    copy.textContent = 'Some readings look manageable, but key inputs are missing. Heuristic only; check the local beach forecast and advisories.';
+    copy.textContent = 'Some readings look manageable, but key inputs are missing. Quick read only; check the local beach forecast and advisories.';
   }
 }
 function renderFishingGrade(results) {

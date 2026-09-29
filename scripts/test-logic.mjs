@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { weeklyOutlook, dayScore, bandScore, nowScore } from "../site/shared/week.js";
 import { verdict, parseWindMph, classifyAlert, sun, sunEvents, parseTideSeries, seriesFromHilo, tideRate, pickWindows, dailyOutlook } from "../site/v2/logic.js";
 
 assert.equal(parseWindMph("5 to 10 mph"), 10);
@@ -51,4 +52,22 @@ assert.equal(ser[0].h, 0.1); assert.equal(ser.at(-1).h, 0.2);
 assert.ok(Math.abs(ser.find((p) => +p.time === +hl[1].time).h - 1.1) < 1e-9);
 assert.ok(ser.every((p) => p.h >= 0.1 - 1e-9 && p.h <= 1.1 + 1e-9));            // never overshoots the extremes
 assert.ok(ser.every((p, i) => i === 0 || p.time > ser[i - 1].time));
+// Weekly outlook from NWS-style 12 h periods (first period is "Tonight": no daytime period for today).
+const mk = (start, isDaytime, wind, pop, temp) => ({ startTime: start, isDaytime, windSpeed: wind, probabilityOfPrecipitation: { value: pop }, temperature: temp, shortForecast: "x" });
+const wk = weeklyOutlook([
+  mk("2026-09-29T18:00:00-04:00", false, "10 mph", 10, 68),
+  mk("2026-09-30T06:00:00-04:00", true, "5 to 10 mph", 20, 88), mk("2026-09-30T18:00:00-04:00", false, "5 mph", 20, 70),
+  mk("2026-10-01T06:00:00-04:00", true, "15 to 20 mph", 10, 85), mk("2026-10-01T18:00:00-04:00", false, "10 mph", 10, 70),
+  mk("2026-10-02T06:00:00-04:00", true, "8 mph", 70, 80), mk("2026-10-02T18:00:00-04:00", false, "8 mph", 70, 70),
+]);
+assert.equal(wk.length, 4);
+assert.equal(wk[0].day, "2026-09-29"); assert.equal(wk[0].hi, null); assert.equal(wk[0].lo, 68);
+assert.equal(wk[1].verdict.label, "Go"); assert.equal(wk[2].verdict.label, "Skip"); assert.equal(wk[3].verdict.label, "Skip");
+assert.equal(dayScore(5, 0), 100); assert.equal(dayScore(25, 100), 0);
+assert.ok(dayScore(8, 10) > dayScore(18, 10) && dayScore(8, 10) > dayScore(8, 60));
+assert.equal(bandScore(0, 55), 70); assert.equal(bandScore(1, 90), 69); assert.equal(bandScore(2, 80), 39); assert.equal(bandScore(null, 55), 55);
+for (const d of wk) assert.ok(d.score >= [70, 40, 0][d.verdict.level] && d.score <= [100, 69, 39][d.verdict.level]);
+assert.equal(nowScore({ windMph: 5, rainPct: 0, seasM: 0.5 }, 0), 100);
+assert.ok(nowScore({ windMph: 9, rainPct: 17, seasM: 0.8 }, 0) >= 70);
+assert.ok(nowScore({ windMph: 9, rainPct: 17, seasM: 1.5 }, 1) <= 69);
 console.log("all logic tests passed");

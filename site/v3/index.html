@@ -78,6 +78,21 @@
         <div><p class="eyebrow teal">LIVE & PREDICTED DATA</p><h2 id="conditions-title">Current conditions</h2></div>
         <span id="conditions-freshness" class="freshness pending" aria-live="polite"><i></i><span>Checking conditions…</span></span>
       </div>
+      <aside id="trip-suggestion" class="trip-suggestion" aria-live="polite" aria-atomic="true">
+        <div class="trip-suggestion-mark" aria-hidden="true">↗</div>
+        <div><p class="trip-suggestion-label">Quick trip read · current</p><p class="trip-suggestion-copy">Checking nearby observations…</p></div>
+      </aside>
+      <section id="fishing-grade" class="fishing-grade incomplete" aria-live="polite" aria-atomic="true" aria-labelledby="fishing-grade-title">
+        <div class="fishing-grade-top"><div><p class="fishing-grade-kicker">Fishing conditions · current</p><h3 id="fishing-grade-title">Grade pending</h3></div><span class="fishing-grade-badge" aria-label="Grade pending">—</span></div>
+        <p class="fishing-grade-summary">Waiting for current source data.</p>
+        <ul class="fishing-grade-rationale"><li>Scoring checks nearby sustained wind, offshore buoy seas, and forecast rain chance; observation limits follow their source tiles, and forecast updates must be within 24 hours.</li></ul>
+        <p class="fishing-grade-caveat">These are simple cutoffs, not official fishing thresholds, a catch prediction, or a beach/marine safety rating. Airport and offshore readings may not represent conditions at your fishing spot; check local forecasts and advisories.</p>
+      </section>
+      <section id="week-card" class="week-card" aria-labelledby="week-title">
+        <div class="week-head"><div><p class="week-kicker">Forecast · next 7 days</p><h3 id="week-title">Predicted fishing outlook</h3></div><span id="week-status" class="week-status">Loading…</span></div>
+        <div id="week-chart" class="week-chart" aria-live="polite"></div>
+        <p class="week-note">Score 0–100 from forecast wind and rain chance only (higher is calmer and drier). Bar color follows the wind/rain rules: green go, amber marginal, red skip. Tides, seas and alerts are not forecast this far out.</p>
+      </section>
       <div class="tiles">
         <article class="condition-card" id="weather-card" aria-labelledby="weather-title">
           <div class="tile-heading"><div><h3 id="weather-title">Nearby weather</h3><p class="tile-source">National Weather Service · KFIN airport</p></div><span class="tile-state pending">Checking</span></div>
@@ -99,16 +114,6 @@
           <p class="tile-time" id="tides-time">Prediction date —</p>
         </article>
       </div>
-      <aside id="trip-suggestion" class="trip-suggestion" aria-live="polite" aria-atomic="true">
-        <div class="trip-suggestion-mark" aria-hidden="true">↗</div>
-        <div><p class="trip-suggestion-label">Quick trip read · heuristic</p><p class="trip-suggestion-copy">Checking nearby observations…</p></div>
-      </aside>
-      <section id="fishing-grade" class="fishing-grade incomplete" aria-live="polite" aria-atomic="true" aria-labelledby="fishing-grade-title">
-        <div class="fishing-grade-top"><div><p class="fishing-grade-kicker">Fishing conditions · heuristic snapshot</p><h3 id="fishing-grade-title">Grade pending</h3></div><span class="fishing-grade-badge" aria-label="Grade pending">—</span></div>
-        <p class="fishing-grade-summary">Waiting for current source data.</p>
-        <ul class="fishing-grade-rationale"><li>Scoring checks nearby sustained wind, offshore buoy seas, and forecast rain chance; observation limits follow their source tiles, and forecast updates must be within 24 hours.</li></ul>
-        <p class="fishing-grade-caveat">These are simple heuristic cutoffs, not official fishing thresholds, a catch prediction, or a beach/marine safety rating. Airport and offshore readings may not represent conditions at your fishing spot; check local forecasts and advisories.</p>
-      </section>
       <p class="conditions-footnote">Weather and buoy values are observations; tides are predictions. Each tile shows its own source status and timestamp. Refreshes every 5 minutes or on Refresh.</p>
     </section>
     <section id="latest-report" class="report-card latest-report" aria-labelledby="report-title" tabindex="-1">
@@ -125,5 +130,6 @@
   </main>
   <footer><span>PALM COAST, FLORIDA</span><span id="connection">Connecting…</span></footer>
   <script src="app.js" defer></script>
+  <script type="module" src="week.js"></script>
 </body>
 </html>
