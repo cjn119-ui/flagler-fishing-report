@@ -1,13 +1,14 @@
 {
-  "id": "./flagler-fishing/",
-  "name": "Flagler Fishing",
-  "short_name": "Flagler Fishing",
-  "description": "Live fishing conditions, best times and a 7-day outlook for Palm Coast and Flagler Beach.",
+  "id": "./v1/",
+  "name": "Flagler Fishing Report (v1)",
+  "short_name": "Flagler Report",
+  "description": "Refreshable fishing report for Palm Coast and Flagler Beach, Florida.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0B1117",
-  "theme_color": "#0B1117",
+  "orientation": "portrait-primary",
+  "background_color": "#061e2d",
+  "theme_color": "#061e2d",
   "icons": [
     {"src": "../icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
     {"src": "../icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"}

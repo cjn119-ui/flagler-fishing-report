@@ -1,7 +1,7 @@
 const REFRESH_MS = 5 * 60 * 1000;
 const STALE_AFTER_MS = 36 * 60 * 60 * 1000;
 const els = Object.fromEntries(['refresh','freshness','conditions-freshness','updated','notice','report-date','report-content','connection'].map(id => [id, document.getElementById(id)]));
-const LIVE = {weather:{path:'api/live/weather.json', stale:2*60*60*1000}, marine:{path:'api/live/marine.json', stale:3*60*60*1000}, tides:{path:'api/live/tides.json', stale:0}};
+const LIVE = {weather:{path:'../api/live/weather.json', stale:2*60*60*1000}, marine:{path:'../api/live/marine.json', stale:3*60*60*1000}, tides:{path:'../api/live/tides.json', stale:0}};
 let refreshing = false;
 
 function setFreshness(kind, text, target = els.freshness) {
@@ -496,7 +496,7 @@ async function refreshReport() {
   els.connection.textContent = 'Checking for updates…'; els.notice.hidden = true;
   els['report-content'].setAttribute('aria-busy', 'true');
   try {
-    const response = await fetch(`api/report.json?check=${Date.now()}`, {cache:'no-store'});
+    const response = await fetch(`../api/report.json?check=${Date.now()}`, {cache:'no-store'});
     const payload = await response.json();
     if (!response.ok || !payload.ok) {
       const details = payload.message || 'The report could not be loaded.';
@@ -531,4 +531,4 @@ async function refreshReport() {
 els.refresh.addEventListener('click', refreshAll);
 refreshAll();
 setInterval(refreshAll, REFRESH_MS);
-if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('service-worker.js').catch(() => {}));
+if ('serviceWorker' in navigator) window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));

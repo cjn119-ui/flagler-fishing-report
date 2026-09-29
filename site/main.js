@@ -1,8 +1,8 @@
 import {
   TZ, RULES, OBS_MAX_AGE_MS, BUOY_MAX_AGE_MS, msToMph, cToF, mToFt, parseWindMph, classifyAlert, verdict,
   sunEvents, seriesFromHilo, pickWindows, windowReason, localDay, isoDay, addDays,
-} from "../v2/logic.js";
-import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "../shared/week.js";
+} from "./v2/logic.js";
+import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js";
 
 const $ = (id) => document.getElementById(id);
 const NWS = "https://api.weather.gov";
@@ -53,7 +53,7 @@ async function loadTides(now) {
   return { hilo, series: seriesFromHilo(hilo) };
 }
 async function loadBuoy() {
-  const d = await getJson(`../api/live/marine.json?check=${Date.now()}`);
+  const d = await getJson(`api/live/marine.json?check=${Date.now()}`);
   if (!d.ok) throw new Error("buoy snapshot not ok");
   return { at: new Date(d.observed_at), waveM: d.values.wave_height_m, periodS: d.values.dominant_period_s, waterC: d.values.water_temperature_c };
 }
@@ -170,4 +170,4 @@ $("refresh").addEventListener("click", refresh);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastRun > 2 * 60e3) refresh(); });
 setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
 refresh();
-if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+if ("serviceWorker" in navigator) addEventListener("load", () => navigator.serviceWorker.register("service-worker.js").catch(() => {}));

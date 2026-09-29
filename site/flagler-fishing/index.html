@@ -2,70 +2,13 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="dark light">
-<meta name="theme-color" content="#0B1117" media="(prefers-color-scheme: dark)">
-<meta name="theme-color" content="#F4F7FA" media="(prefers-color-scheme: light)">
-<meta name="description" content="Live fishing conditions, best times and a 7-day outlook for Palm Coast and Flagler Beach.">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Flagler">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="icon" href="../icons/fishing.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="../icons/icon-192.png">
-<link rel="stylesheet" href="style.css">
-<title>Flagler Fishing</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="0; url=../">
+<link rel="canonical" href="../">
+<meta name="robots" content="noindex">
+<title>Flagler Fishing moved</title>
+<script>location.replace("../" + location.search + location.hash);</script>
+<style>body{font:16px system-ui;background:#0B1117;color:#E9EFF4;padding:32px}a{color:#5CC8E8}</style>
 </head>
-<body>
-<header class="bar">
-  <div class="brand">
-    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3-2 5-1M2 15c2.5-3 5-3 7.5 0s5 3 7.5 0 3-2 5-1"/></svg></span>
-    <div><h1>Flagler Fishing</h1><p>Palm Coast · Flagler Beach</p></div>
-  </div>
-  <div class="tools">
-    <span id="updated" class="chip">Live</span>
-    <button id="refresh" type="button" aria-label="Refresh now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5"/></svg></button>
-  </div>
-</header>
-
-<main>
-  <section id="hero" class="card hero" data-level="none" aria-live="polite" aria-labelledby="hero-label">
-    <div class="hero-main">
-      <div class="ring" aria-hidden="true">
-        <svg viewBox="0 0 120 120"><circle class="ring-track" cx="60" cy="60" r="52"/><circle id="ring-fill" class="ring-fill" cx="60" cy="60" r="52"/></svg>
-        <div class="ring-text"><span id="score">–</span><small>/ 100</small></div>
-      </div>
-      <div class="hero-copy">
-        <p id="hero-label" class="eyebrow">Current · next 12 hours</p>
-        <p id="v-badge" class="status">Loading</p>
-        <p id="v-why" class="why">Fetching live conditions…</p>
-      </div>
-    </div>
-    <ul id="v-alerts" class="alerts"></ul>
-    <details class="how"><summary>How this is decided</summary>
-      <table id="v-rules"></table>
-      <p class="fine">The worst rule sets the status. The score blends wind, rain chance and offshore seas, and always stays inside its status band (Go 70+, Marginal 40–69, Skip under 40). It is a conditions read, not a catch prediction. Airport and offshore readings can differ from the beach.</p>
-    </details>
-  </section>
-
-  <section class="stats" id="stats" aria-label="Current readings"></section>
-
-  <section class="card">
-    <header class="card-h"><h2>Best times</h2><span class="sub">next 24 h</span></header>
-    <ol id="windows" class="times"></ol>
-    <details class="how"><summary>How times are picked</summary><p class="fine">Each 30-minute daylight slot is scored on tide movement (35%), sunrise/sunset light (25%), wind (20%) and rain chance (20%). Times are the best non-overlapping 2-hour stretches. Tide movement is interpolated between NOAA's predicted highs and lows.</p></details>
-  </section>
-
-  <section class="card">
-    <header class="card-h"><h2>Next 7 days</h2><span id="week-status" class="sub">NWS forecast</span></header>
-    <div id="week-chart" class="week" aria-live="polite"></div>
-    <p class="fine">Score 0–100 from forecast wind and rain chance only. Tides, seas and alerts are not forecast this far ahead.</p>
-  </section>
-
-  <footer>
-    <p>NWS (airport KFIN, forecast, alerts) · NOAA tides (Smith Creek 8720833, predictions) · NDBC buoy 41117.</p>
-    <p><a href="../v3/">Full report</a> · <span id="status"></span></p>
-  </footer>
-</main>
-<script type="module" src="app.js"></script>
-</body>
+<body><p>Flagler Fishing is now at <a href="../">the main page</a>.</p></body>
 </html>
