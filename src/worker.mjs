@@ -648,7 +648,7 @@ function renderReport({ targetDate, preview, weather, observation, coastal, buoy
   } else {
     lines.push("• Hazards: no current NWS alert in the returned feed overlaps this report date; this does not establish that surf or water conditions are safe.");
   }
-  lines.push(`• Fishing score/rating: not generated from the official feeds. The OpenClaw FAIR/GOOD/POOR ratings are agent judgments and have no equivalent NWS, NDBC, or NOAA field.`);
+  lines.push(`• Fishing score/rating: not generated from the official feeds. The official NWS, NDBC, and NOAA feeds have no fishing-rating field, so none is given here; see the conditions grade on this page for a simple weather-only heuristic.`);
   lines.push("• Sunrise/sunset: sunrise near " + displayLocalTime(sun.sunrise) + "; sunset near " + displayLocalTime(sun.sunset) + " (calculated for Flagler Beach coordinates).", "");
 
   const sunrise = sun.sunrise;
@@ -689,7 +689,7 @@ function renderReport({ targetDate, preview, weather, observation, coastal, buoy
   if (sourceAvailability.buoyObservedAt) freshness.push(`NDBC observation ${sourceAvailability.buoyObservedAt}`);
   if (sourceAvailability.tideFetchedAt) freshness.push(`NOAA tide predictions fetched ${sourceAvailability.tideFetchedAt}`);
   if (sourceAvailability.captainFetchedAt) freshness.push(`Captain Experiences page fetched ${sourceAvailability.captainFetchedAt}`);
-  if (sourceAvailability.generatedAt) freshness.push(`Cloudflare report generated ${sourceAvailability.generatedAt} UTC`);
+  if (sourceAvailability.generatedAt) freshness.push(`Report generated ${sourceAvailability.generatedAt} UTC`);
   if (freshness.length) lines.push(`• Data freshness: ${freshness.join("; ")}.`);
   return lines.join("\n");
 }
