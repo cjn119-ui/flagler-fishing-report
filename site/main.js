@@ -1,9 +1,9 @@
 import {
   TZ, RULES, OBS_MAX_AGE_MS, BUOY_MAX_AGE_MS, msToMph, cToF, mToFt, parseWindMph, classifyAlert, verdict,
   sunEvents, seriesFromHilo, pickWindows, windowReason, localDay, isoDay, addDays,
-} from "./v2/logic.js?v=catch-20260930";
-import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js?v=catch-20260930";
-import { biteOutlook, seasonalTargets } from "./shared/catch.js?v=catch-20260930";
+} from "./v2/logic.js?v=catch-20260930b";
+import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js?v=catch-20260930b";
+import { biteOutlook, seasonalTargets } from "./shared/catch.js?v=catch-20260930b";
 
 const $ = (id) => document.getElementById(id);
 const NWS = "https://api.weather.gov";

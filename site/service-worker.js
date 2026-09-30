@@ -1,5 +1,5 @@
-const CACHE = 'flagler-fishing-shell-5';
-const SHELL = ['./', 'index.html', 'style.css', 'main.js?v=catch-20260930', 'v2/logic.js?v=catch-20260930', 'shared/week.js?v=catch-20260930', 'shared/catch.js?v=catch-20260930', 'manifest.webmanifest', 'icons/fishing.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
+const CACHE = 'flagler-fishing-shell-6';
+const SHELL = ['./', 'index.html', 'style.css', 'main.js?v=catch-20260930b', 'v2/logic.js?v=catch-20260930b', 'shared/week.js?v=catch-20260930b', 'shared/catch.js?v=catch-20260930b', 'manifest.webmanifest', 'icons/fishing.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && (/^flagler-fishing-shell-/.test(k) || /^fishing-pwa-(shell|report)-/.test(k))).map(k => caches.delete(k)))).then(() => self.clients.claim())));
 // API data is handled by the app with explicit freshness and saved-data labels.

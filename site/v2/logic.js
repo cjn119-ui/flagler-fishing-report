@@ -212,8 +212,8 @@ export function pickWindows({ now, series = [], hourly, events }, { max = 3, hou
 /** Short reason from the strongest components of a window. */
 export function windowReason(w) {
   const bits = [];
-  if (Number.isFinite(w.parts.tide) && w.parts.tide >= 0.7) bits.push("moving tide");
-  else if (Number.isFinite(w.parts.tide) && w.parts.tide < 0.3) bits.push("slack tide");
+  if (Number.isFinite(w.parts.tide) && w.parts.tide >= 0.7) bits.push("rapid water-level change");
+  else if (Number.isFinite(w.parts.tide) && w.parts.tide < 0.3) bits.push("near high/low water");
   if (w.nearEvent) bits.push(w.nearEvent === "sunrise" ? "sunrise light" : "sunset light");
   if (w.windMph != null) bits.push(w.windMph <= 10 ? `light wind (${Math.round(w.windMph)} mph)` : `wind ${Math.round(w.windMph)} mph`);
   if (w.rainPct >= 30) bits.push(`${Math.round(w.rainPct)}% rain`);
