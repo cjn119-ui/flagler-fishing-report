@@ -11,14 +11,16 @@ export const RULES = {
 export const OBS_MAX_AGE_MS = 2 * 3600e3;
 export const BUOY_MAX_AGE_MS = 3 * 3600e3;
 
-export const msToMph = (ms) => ms * 2.23694;
+export const msToMph = (ms) => ms * (3600 / 1609.344);
 export const cToF = (c) => c * 9 / 5 + 32;
-export const mToFt = (m) => m * 3.28084;
+export const mToFt = (m) => m / 0.3048;
 
 /** "5 to 10 mph" -> 10, "12 mph" -> 12, anything else -> null. */
 export function parseWindMph(text) {
-  const nums = String(text ?? "").match(/\d+(\.\d+)?/g);
-  return nums ? Math.max(...nums.map(Number)) : null;
+  const value = String(text ?? "").trim();
+  if (/^calm$/i.test(value)) return 0;
+  const match = value.match(/^(\d+(?:\.\d+)?)(?:\s*(?:to|-)\s*(\d+(?:\.\d+)?))?\s*mph$/i);
+  return match ? Math.max(Number(match[1]), Number(match[2] ?? match[1])) : null;
 }
 
 function level(value, rule) {
@@ -82,9 +84,12 @@ function solarEvent(iso, sunrise) {
   if (cosH > 1 || cosH < -1) return null;
   const H = (sunrise ? 360 - Math.acos(cosH) * 180 / Math.PI : Math.acos(cosH) * 180 / Math.PI) / 15;
   const utc = ((((H + RA - 0.06571 * t - 6.622) - lngH) % 24) + 24) % 24;
-  return new Date(Date.UTC(y, m - 1, d) + utc * 3600e3);
+  const instant = new Date(Date.UTC(y, m - 1, d) + utc * 3600e3);
+  // Summer sunset in Florida is on the NEXT UTC date, but the same local date.
+  const local = localDay(instant);
+  return addDays(instant, local < iso ? 1 : local > iso ? -1 : 0);
 }
-/** Sunrise/sunset as Dates for a UTC calendar date ("YYYY-MM-DD"); Flagler's are always on the same UTC date. */
+/** Sunrise/sunset as Dates for a New York calendar date ("YYYY-MM-DD"). */
 export const sun = (iso) => ({ sunrise: solarEvent(iso, true), sunset: solarEvent(iso, false) });
 
 export const isoDay = (d) => d.toISOString().slice(0, 10);
@@ -155,7 +160,7 @@ export function scoreSlot(time, { series, hourly, events, maxRate }) {
   const day = events.some((e, i) => e.kind === "sunrise" && events[i + 1]?.kind === "sunset" && time >= e.t - 45 * 60e3 && time <= events[i + 1].t.getTime() + 45 * 60e3);
   if (!day || !f || !Number.isFinite(f.windMph) || !Number.isFinite(f.rainPct) || rate == null) return null;
   const parts = {
-    tide: rate == null || !maxRate ? 0.5 : clamp01(rate / maxRate),
+    tide: !maxRate ? 0 : clamp01(rate / maxRate),
     light: near <= 60 ? 1 : near <= 120 ? 0.75 : 0.5,
     wind: windScore(f?.windMph ?? null),
     rain: f?.rainPct == null ? 0.7 : clamp01(1 - f.rainPct / 100),
@@ -166,21 +171,33 @@ export function scoreSlot(time, { series, hourly, events, maxRate }) {
 
 /** Best non-overlapping 2-hour windows in the next 24 h. Returns up to `max`, best first. */
 export function pickWindows({ now, series, hourly, events }, { max = 3, hours = 24, lengthMin = 120 } = {}) {
+  if (!Number.isFinite(hours) || hours <= 0 || !Number.isInteger(lengthMin / 30) || lengthMin <= 0) return [];
   const maxRate = series.reduce((m, p) => Math.max(m, tideRate(series, p.time) ?? 0), 0);
   const step = 30 * 60e3, slotsPerWindow = lengthMin / 30;
   const start = Math.ceil(now.getTime() / step) * step;
-  const slots = [];
-  for (let t = start; t < now.getTime() + hours * 3600e3; t += step) slots.push(scoreSlot(new Date(t), { series, hourly, events, maxRate }));
+  const horizon = +now + hours * 3600e3;
   const wins = [];
-  for (let i = 0; i + slotsPerWindow <= slots.length; i++) {
-    const w = slots.slice(i, i + slotsPerWindow);
-    if (w.some((s) => s === null)) continue;
-    // The entire interval must fit the light window, not just its sampled starts.
-    const end = new Date(w[0].time.getTime() + lengthMin * 60e3);
-    if (!scoreSlot(new Date(+end - 1), { series, hourly, events, maxRate })) continue;
-    const avg = w.reduce((s, x) => s + x.score, 0) / w.length;
-    const parts = Object.fromEntries(Object.keys(WEIGHTS).map((k) => [k, w.reduce((s, x) => s + x.parts[k], 0) / w.length]));
-    wins.push({ start: w[0].time, end: new Date(w[0].time.getTime() + lengthMin * 60e3), score: avg, parts, windMph: Math.max(...w.map((x) => x.windMph)), rainPct: Math.max(...w.map((x) => x.rainPct ?? 0)), nearEvent: w.find((x) => x.nearEvent)?.nearEvent ?? null });
+  for (let t = start; t + lengthMin * 60e3 <= horizon; t += step) {
+    const end = t + lengthMin * 60e3;
+    const light = events.some((e, i) => e.kind === "sunrise" && events[i + 1]?.kind === "sunset" && t >= +e.t - 45 * 60e3 && end <= +events[i + 1].t + 45 * 60e3);
+    if (!light) continue;
+    // Check every intersecting forecast interval, including changes between samples.
+    const covered = hourly.filter(p => +p.start < end && +p.end > t).sort((a, b) => a.start - b.start);
+    let through = t;
+    let complete = true;
+    for (const p of covered) {
+      if (+p.start > through || !Number.isFinite(p.windMph) || p.windMph < 0 || !Number.isFinite(p.rainPct) || p.rainPct < 0 || p.rainPct > 100) { complete = false; break; }
+      through = Math.max(through, +p.end);
+    }
+    if (!complete || through < end) continue;
+    const windMph = Math.max(...covered.map(p => p.windMph));
+    const rainPct = Math.max(...covered.map(p => p.rainPct));
+    if (verdict({ windMph, rainPct }).level === 2) continue;
+    const w = Array.from({ length: slotsPerWindow }, (_, i) => scoreSlot(new Date(t + (i + .5) * step), { series, hourly, events, maxRate }));
+    if (w.some(s => s === null) || tideRate(series, new Date(t)) == null || tideRate(series, new Date(end)) == null) continue;
+    const avg = w.reduce((sum, x) => sum + x.score, 0) / w.length;
+    const parts = Object.fromEntries(Object.keys(WEIGHTS).map(k => [k, w.reduce((sum, x) => sum + x.parts[k], 0) / w.length]));
+    wins.push({ start: new Date(t), end: new Date(end), score: avg, parts, windMph, rainPct, nearEvent: w.find(x => x.nearEvent)?.nearEvent ?? null });
   }
   wins.sort((a, b) => b.score - a.score);
   const picked = [];
@@ -220,8 +237,8 @@ export function dailyOutlook(hourly, days = 5) {
     if (h < 6 || h >= 20) continue;
     const key = localDay(p.start);
     const d = byDay.get(key) ?? { day: key, wind: null, rain: null, hi: -Infinity, lo: Infinity, n: 0 };
-    d.wind = Math.max(d.wind ?? 0, p.windMph ?? 0);
-    d.rain = Math.max(d.rain ?? 0, p.rainPct ?? 0);
+    if (Number.isFinite(p.windMph)) d.wind = Math.max(d.wind ?? 0, p.windMph);
+    if (Number.isFinite(p.rainPct)) d.rain = Math.max(d.rain ?? 0, p.rainPct);
     if (p.tempF != null) { d.hi = Math.max(d.hi, p.tempF); d.lo = Math.min(d.lo, p.tempF); }
     d.n++;
     byDay.set(key, d);

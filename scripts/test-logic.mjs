@@ -39,7 +39,7 @@ assert.ok(wins[0].score >= wins[1].score);
 assert.ok(Math.abs(wins[0].start - wins[1].start) >= 120 * 60e3);
 // Heavy rain everywhere lowers the best score.
 const wet = pickWindows({ now, series, hourly: hourly.map((h) => ({ ...h, rainPct: 90 })), events: sunEvents(now) });
-assert.ok(wet[0].score < wins[0].score);
+assert.equal(wet.length, 0); // Skip-level forecast rain is never recommended
 // Nothing outside daylight is ever picked.
 for (const w of wins) { const hr = w.start.getUTCHours(); assert.ok(hr >= 10 && hr <= 24, `hour ${hr}`); }
 assert.ok(tideRate(series, new Date(t0 + 3 * 3600e3)) > 0);

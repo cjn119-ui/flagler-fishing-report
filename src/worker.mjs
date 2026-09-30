@@ -12,7 +12,7 @@ const APPROVED_HOSTS = new Set([
   "captainexperiences.com",
 ]);
 const NWS_OBSERVATION_URL = "https://api.weather.gov/stations/KFIN/observations/latest";
-const NWS_FORECAST_URL = "https://api.weather.gov/gridpoints/JAX/87,28/forecast";
+const NWS_FORECAST_URL = "https://api.weather.gov/gridpoints/JAX/89,29/forecast";
 const NWS_ALERTS_URL = "https://api.weather.gov/alerts/active?point=29.4738,-81.131";
 const NWS_CWF_LIST_URL = "https://api.weather.gov/products/types/CWF/locations/JAX";
 const NDBC_URL = "https://www.ndbc.noaa.gov/data/realtime2/41117.txt";
@@ -352,7 +352,7 @@ async function fetchTidePredictions(beginDate, endDate, station = "8720833") {
     station,
     product: "predictions",
     datum: "MLLW",
-    time_zone: "lst_ldt",
+    time_zone: "gmt",
     units: "english",
     interval: "hilo",
     format: "json",
@@ -369,7 +369,7 @@ function tideEvents(predictions) {
     const height = number(item.v);
     const match = item.t.match(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})$/);
     if (height === null || !match || !["H", "L"].includes(item.type)) return [];
-    const time = noaaLocalTimeToIso(match[1], match[2]);
+    const time = new Date(`${match[1]}T${match[2]}:00Z`).toISOString();
     return [{ time, height_ft: height, type: item.type === "H" ? "High" : "Low" }];
   });
 }
@@ -429,7 +429,10 @@ function solarEventUtc(targetDate, latitude, longitude, sunrise) {
   const minutes = (utcHour - wholeHours) * 60;
   const seconds = (minutes - Math.floor(minutes)) * 60;
   const base = Date.UTC(year, month - 1, day, wholeHours, Math.floor(minutes), Math.round(seconds));
-  return new Date(base).toISOString();
+  const instant = new Date(base);
+  const local = localDate(instant);
+  const shifted = base + (local < targetDate ? 86400e3 : local > targetDate ? -86400e3 : 0);
+  return new Date(shifted).toISOString();
 }
 
 function sunriseSunset(targetDate) {
@@ -655,11 +658,12 @@ function renderReport({ targetDate, preview, weather, observation, coastal, buoy
   const sunset = sun.sunset;
   const windowRanges = [
     { name: "Morning", start: sunrise, end: noaaLocalTimeToIso(targetDate, "11:00") },
-    { name: "Afternoon", start: noaaLocalTimeToIso(targetDate, "12:00"), end: noaaLocalTimeToIso(targetDate, "18:00") },
+    { name: "Afternoon", start: noaaLocalTimeToIso(targetDate, "12:00"), end: Date.parse(sunset) < Date.parse(noaaLocalTimeToIso(targetDate, "18:00")) ? sunset : noaaLocalTimeToIso(targetDate, "18:00") },
     { name: "Evening", start: noaaLocalTimeToIso(targetDate, "18:00"), end: sunset },
   ];
   lines.push("Best Fishing Windows");
   for (const window of windowRanges) {
+    if (Date.parse(window.end) <= Date.parse(window.start)) continue;
     lines.push(`• ${window.name} (${displayLocalTime(window.start)}–${displayLocalTime(window.end)}): predicted tide timing: ${tideSummaryForWindow(tides, window.start, window.end)}. This is a daylight/tide window, not a verified bite forecast; rating unavailable.`);
   }
   lines.push("• Safety takes priority over tide timing. Use active alerts and observed surf conditions before choosing a location.", "");
@@ -812,7 +816,7 @@ async function buildFishingReport(targetDate, preview, runId) {
     fetchWeatherObservation(),
     fetchCoastalForecast(targetDate),
     fetchBuoy(),
-    fetchTidePredictions(targetDate, targetDate, "8720833"),
+    fetchTidePredictions(addCalendarDays(targetDate, -1), addCalendarDays(targetDate, 1), "8720833"),
     fetchActiveAlerts(),
   ]);
   const weatherDetails = reportWeather(weather.periods, targetDate);
@@ -820,7 +824,7 @@ async function buildFishingReport(targetDate, preview, runId) {
     throw new UpstreamError(`NWS forecast has no periods for ${targetDate}; stored report was not replaced.`);
   }
   if (!coastal.length) throw new UpstreamError(`NWS AMZ454 forecast has no periods for ${targetDate}; stored report was not replaced.`);
-  const tideValues = tideEvents(tidePredictions).filter((event) => event.time.startsWith(targetDate));
+  const tideValues = tideEvents(tidePredictions).filter((event) => localDate(new Date(event.time)) === targetDate);
   if (!tideValues.length) throw new UpstreamError(`NOAA CO-OPS returned no high/low predictions for ${targetDate}; stored report was not replaced.`);
   if (![buoy.values.wave_height_m, buoy.values.wind_speed_ms, buoy.values.dominant_period_s].some((value) => value !== null)) {
     throw new UpstreamError("NDBC station 41117 returned no usable marine measurements; stored report was not replaced.");
@@ -835,6 +839,7 @@ async function buildFishingReport(targetDate, preview, runId) {
   const sun = sunriseSunset(targetDate);
   const report = {
     schema_version: 1,
+    forecast_grid: "JAX/89,29",
     report_date: targetDate,
     run_id: runId,
     generated_at: generatedAt,

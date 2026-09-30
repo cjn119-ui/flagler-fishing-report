@@ -33,6 +33,7 @@ jobs:
         run: |
           node scripts/test-logic.mjs
           node scripts/test-app.mjs
+          node scripts/test-calculations.mjs
       - uses: actions/configure-pages@v5
         id: pages
       - name: Generate report and live data

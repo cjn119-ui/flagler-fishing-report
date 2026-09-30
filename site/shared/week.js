@@ -1,34 +1,42 @@
 // 7-day fishing outlook from the NWS daily forecast. Shared by v3 and flagler-fishing.
 import { verdict, parseWindMph, localDay } from "../v2/logic.js";
 
-export const GRID_FORECAST = "https://api.weather.gov/gridpoints/JAX/87,28/forecast";
+export const GRID_FORECAST = "https://api.weather.gov/gridpoints/JAX/89,29/forecast";
 
 const clamp01 = (x) => Math.max(0, Math.min(1, x));
 
-/** 0-100 from wind and rain chance only: wind <=5 mph is full marks, >=25 mph is zero; rain chance subtracts linearly. */
+// Missing dimensions are excluded, then the remaining declared weights normalize.
+export function weightedScore(dimensions) {
+  const known = dimensions.filter(d => Number.isFinite(d.value));
+  const weight = known.reduce((sum, d) => sum + d.weight, 0);
+  return weight ? Math.round(100 * known.reduce((sum, d) => sum + clamp01(d.value) * d.weight, 0) / weight) : null;
+}
+const windQuality = value => Number.isFinite(value) && value >= 0 ? clamp01(1 - (value - 5) / 20) : null;
+const rainQuality = value => Number.isFinite(value) && value >= 0 && value <= 100 ? 1 - value / 100 : null;
+
+/** Daily score uses forecast wind 55%, rain 45%; absent values are never guessed. */
 export function dayScore(windMph, rainPct) {
-  const w = windMph == null ? 0.6 : clamp01(1 - (windMph - 5) / 20);
-  const r = rainPct == null ? 0.7 : clamp01(1 - rainPct / 100);
-  return Math.round(100 * (0.55 * w + 0.45 * r));
+  return weightedScore([{ value: windQuality(windMph), weight: .55 }, { value: rainQuality(rainPct), weight: .45 }]);
 }
 
-/** Score bands so a bar's height always agrees with its Go / Marginal / Skip color. */
+/** Status bands apply AFTER the raw weighted score. Alerts/gusts can cap it. */
 export const BANDS = [[70, 100], [40, 69], [0, 39]];
-export const bandScore = (level, raw) => (level == null ? raw : Math.max(BANDS[level][0], Math.min(BANDS[level][1], raw)));
+export const bandScore = (level, raw) => raw == null ? null : level == null ? raw : Math.max(BANDS[level][0], Math.min(BANDS[level][1], raw));
 
-/** Overall "now" score: wind 45%, rain 35%, offshore seas 20% (weights renormalize if seas is unknown). */
+/** Current score: wind 45%, rain 35%, seas 20%; weights normalize for missing data. */
 export function nowScore({ windMph = null, rainPct = null, seasM = null }, level) {
-  const w = windMph == null ? 0.6 : clamp01(1 - (windMph - 5) / 20);
-  const r = rainPct == null ? 0.7 : clamp01(1 - rainPct / 100);
-  const raw = seasM == null ? 100 * (0.55 * w + 0.45 * r) : 100 * (0.45 * w + 0.35 * r + 0.2 * clamp01(1 - (seasM - 0.5) / 1.5));
-  return bandScore(level, Math.round(raw));
+  return bandScore(level, weightedScore([
+    { value: windQuality(windMph), weight: .45 },
+    { value: rainQuality(rainPct), weight: .35 },
+    { value: Number.isFinite(seasM) && seasM >= 0 ? clamp01(1 - (seasM - .5) / 1.5) : null, weight: .20 },
+  ]));
 }
 
 /**
  * periods: NWS /forecast periods (12 h each, alternating day/night).
  * Groups by New York calendar day. The daytime period drives wind/rain; a lone "Tonight" is used for today.
  */
-export function weeklyOutlook(periods, days = 7) {
+export function weeklyOutlook(periods, days = 7, { today } = {}) {
   const byDay = new Map();
   for (const p of periods) {
     const key = localDay(new Date(p.startTime));
@@ -36,7 +44,7 @@ export function weeklyOutlook(periods, days = 7) {
     if (p.isDaytime) d.day_p ??= p; else d.night_p ??= p;
     byDay.set(key, d);
   }
-  return [...byDay.values()].slice(0, days).map((d) => {
+  return [...byDay.values()].filter(d => !today || d.day >= today).sort((a, b) => a.day.localeCompare(b.day)).slice(0, days).map((d) => {
     const main = d.day_p ?? d.night_p;
     const wind = parseWindMph(main.windSpeed);
     const rain = main.probabilityOfPrecipitation?.value ?? null;

@@ -1,9 +1,9 @@
-const SHELL_CACHE = 'fishing-pwa-v3-shell-2';
+const SHELL_CACHE = 'fishing-pwa-v3-shell-3';
 const REPORT_CACHE = 'fishing-pwa-v3-report-1';
 const REPORT_PATH = new URL('../api/report.json', self.location).pathname;
-const SHELL = ['./', 'index.html', 'styles.css', 'theme.css', 'app.js', 'manifest.webmanifest', '../icons/fishing.svg', '../icons/icon-192.png', '../icons/icon-512.png'];
+const SHELL = ['./', 'index.html', 'styles.css', 'theme.css', 'app.js', 'week.js', '../shared/week.js', '../v2/logic.js', 'manifest.webmanifest', '../icons/fishing.svg', '../icons/icon-192.png', '../icons/icon-512.png'];
 self.addEventListener('install', event => event.waitUntil(caches.open(SHELL_CACHE).then(cache => cache.addAll(SHELL)).then(() => self.skipWaiting())));
-self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => ![SHELL_CACHE, REPORT_CACHE].includes(key)).map(key => caches.delete(key)))).then(() => self.clients.claim())));
+self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => /^fishing-pwa-v3-(shell|report)-/.test(key) && ![SHELL_CACHE, REPORT_CACHE].includes(key)).map(key => caches.delete(key)))).then(() => self.clients.claim())));
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin || event.request.method !== 'GET') return;

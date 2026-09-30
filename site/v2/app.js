@@ -5,7 +5,7 @@ import {
 
 const $ = (id) => document.getElementById(id);
 const NWS = "https://api.weather.gov";
-const GRID = `${NWS}/gridpoints/JAX/87,28`;
+const GRID = `${NWS}/gridpoints/JAX/89,29`;
 const POINT = "29.4738,-81.131";
 const CO_OPS = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
 const REFRESH_MS = 5 * 60e3;

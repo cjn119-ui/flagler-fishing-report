@@ -44,7 +44,7 @@
     <ul id="v-alerts" class="alerts"></ul>
     <details class="how"><summary>How this is decided</summary>
       <table id="v-rules"></table>
-      <p class="fine">The worst rule sets the status. The score blends wind, rain chance and offshore seas, and always stays inside its status band (Go 70+, Marginal 40–69, Skip under 40). It is a conditions read, not a catch prediction. Airport and offshore readings can differ from the beach.</p>
+      <p class="fine">The worst rule sets the status. The score weights wind 45%, rain chance 35% and offshore seas 20%. Missing inputs are excluded and remaining weights normalized. The result is then capped or floored to match the worst rule, so it stays inside its status band (Go 70+, Marginal 40–69, Skip under 40). It is a conditions read, not a catch prediction. Thresholds use unrounded inputs; displayed readings are rounded. Airport and offshore readings can differ from the beach.</p>
     </details>
   </section>
 
@@ -53,13 +53,13 @@
   <section class="card">
     <header class="card-h"><h2>Suggested times</h2><span class="sub">next 24 h</span></header>
     <ol id="windows" class="times"></ol>
-    <details class="how"><summary>How times are picked</summary><p class="fine">Each 30-minute daylight slot is scored on tide movement (35%), sunrise/sunset light (25%), wind (20%) and rain chance (20%). Times are the best non-overlapping 2-hour stretches with complete forecast and tide coverage. They include up to 45 minutes of twilight. Wind shown is the maximum across each window. Tide movement is approximated between Smith Creek predictions, an inland reference that does not give ocean beach tide timing. Alerts can withhold suggestions.</p></details>
+    <details class="how"><summary>How times are picked</summary><p class="fine">Each 30-minute daylight/twilight slot is sampled at its midpoint and scored on tide movement (35%), sunrise/sunset light (25%), wind (20%) and rain chance (20%). Times are the best non-overlapping 2-hour stretches with complete forecast and tide coverage. They include up to 45 minutes of twilight. Wind shown is the maximum across each window. Tide movement is approximated between Smith Creek predictions, an inland reference that does not give ocean beach tide timing. Alerts and Skip-level forecast wind or rain withhold suggestions.</p></details>
   </section>
 
   <section class="card">
     <header class="card-h"><h2>Next 7 days</h2><span id="week-status" class="sub">NWS forecast</span></header>
     <div id="week-chart" class="week" aria-live="polite"></div>
-    <p class="fine">Score 0–100 from forecast wind and rain chance only. Tides, seas and alerts are not forecast this far ahead.</p>
+    <p class="fine">Daytime score 0–100 from forecast wind (55%) and rain chance (45%); overnight used only when daytime is unavailable. Tides, seas and alerts are not forecast this far ahead.</p>
   </section>
 
   <footer>

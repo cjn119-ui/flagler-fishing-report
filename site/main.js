@@ -6,7 +6,7 @@ import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/wee
 
 const $ = (id) => document.getElementById(id);
 const NWS = "https://api.weather.gov";
-const GRID = `${NWS}/gridpoints/JAX/87,28`;
+const GRID = `${NWS}/gridpoints/JAX/89,29`;
 const POINT = "29.4738,-81.131";
 const CO_OPS = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
 const REFRESH_MS = 5 * 60e3;
@@ -39,7 +39,7 @@ async function loadHourly() {
 }
 async function loadWeek() {
   const props = (await getJson(GRID_FORECAST)).properties;
-  return { days: weeklyOutlook(props.periods, 7), updated: new Date(props.updateTime) };
+  return { days: weeklyOutlook(props.periods, 7, { today: localDay(new Date()) }), updated: new Date(props.updateTime) };
 }
 async function loadAlerts() {
   const data = await getJson(`${NWS}/alerts/active?point=${POINT}`);

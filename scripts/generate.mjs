@@ -44,7 +44,7 @@ async function seedFromDeployed() {
     const state = await res.json();
     for (const key of ["current-report", "next-day-report"]) {
       const r = state[key];
-      if (r && Date.now() - Date.parse(r.generated_at) < REFRESH_MS) store.set(key, JSON.stringify(r));
+      if (r && r.forecast_grid === "JAX/89,29" && Date.now() - Date.parse(r.generated_at) < REFRESH_MS) store.set(key, JSON.stringify(r));
       else if (r) store.set(`stale:${key}`, JSON.stringify(r));
     }
   } catch (e) {
