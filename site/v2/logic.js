@@ -48,7 +48,7 @@ export function verdict({ windMph = null, gustMph = null, seasM = null, rainPct 
   const all = [...rules, ...alertRules];
   const known = all.filter((r) => r.level !== null);
   const core = rules.filter((r) => r.key === "wind" || r.key === "rain");
-  if (core.every((r) => r.level === null)) return { level: null, label: "Unknown", reasons: ["No fresh wind or rain data."], rules: all };
+  if (core.every((r) => r.level === null) && !known.some((r) => r.level > 0)) return { level: null, label: "Unknown", reasons: ["No fresh wind or rain data."], rules: all };
   const top = Math.max(...known.map((r) => r.level));
   const drivers = top === 0 ? [] : known.filter((r) => r.level === top);
   return {
@@ -153,7 +153,7 @@ export function scoreSlot(time, { series, hourly, events, maxRate }) {
   const f = forecastAt(hourly, time);
   const near = events.reduce((best, e) => Math.min(best, Math.abs(e.t - time) / 60e3), Infinity);
   const day = events.some((e, i) => e.kind === "sunrise" && events[i + 1]?.kind === "sunset" && time >= e.t - 45 * 60e3 && time <= events[i + 1].t.getTime() + 45 * 60e3);
-  if (!day) return null;
+  if (!day || !f || !Number.isFinite(f.windMph) || !Number.isFinite(f.rainPct) || rate == null) return null;
   const parts = {
     tide: rate == null || !maxRate ? 0.5 : clamp01(rate / maxRate),
     light: near <= 60 ? 1 : near <= 120 ? 0.75 : 0.5,
@@ -175,9 +175,12 @@ export function pickWindows({ now, series, hourly, events }, { max = 3, hours = 
   for (let i = 0; i + slotsPerWindow <= slots.length; i++) {
     const w = slots.slice(i, i + slotsPerWindow);
     if (w.some((s) => s === null)) continue;
+    // The entire interval must fit the light window, not just its sampled starts.
+    const end = new Date(w[0].time.getTime() + lengthMin * 60e3);
+    if (!scoreSlot(new Date(+end - 1), { series, hourly, events, maxRate })) continue;
     const avg = w.reduce((s, x) => s + x.score, 0) / w.length;
     const parts = Object.fromEntries(Object.keys(WEIGHTS).map((k) => [k, w.reduce((s, x) => s + x.parts[k], 0) / w.length]));
-    wins.push({ start: w[0].time, end: new Date(w[0].time.getTime() + lengthMin * 60e3), score: avg, parts, windMph: w[0].windMph, rainPct: Math.max(...w.map((x) => x.rainPct ?? 0)), nearEvent: w.find((x) => x.nearEvent)?.nearEvent ?? null });
+    wins.push({ start: w[0].time, end: new Date(w[0].time.getTime() + lengthMin * 60e3), score: avg, parts, windMph: Math.max(...w.map((x) => x.windMph)), rainPct: Math.max(...w.map((x) => x.rainPct ?? 0)), nearEvent: w.find((x) => x.nearEvent)?.nearEvent ?? null });
   }
   wins.sort((a, b) => b.score - a.score);
   const picked = [];

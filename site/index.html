@@ -22,7 +22,7 @@
     <div><h1>Flagler Fishing</h1><p>Palm Coast · Flagler Beach</p></div>
   </div>
   <div class="tools">
-    <span id="updated" class="chip">Live</span>
+    <span id="updated" class="chip">Checking…</span>
     <button id="refresh" type="button" aria-label="Refresh now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5"/></svg></button>
   </div>
 </header>
@@ -30,7 +30,7 @@
 <main>
   <section id="hero" class="card hero" data-level="none" aria-live="polite" aria-labelledby="hero-label">
     <div class="hero-main">
-      <div class="ring" aria-hidden="true">
+      <div class="ring" role="img" aria-label="Conditions score loading">
         <svg viewBox="0 0 120 120"><circle class="ring-track" cx="60" cy="60" r="52"/><circle id="ring-fill" class="ring-fill" cx="60" cy="60" r="52"/></svg>
         <div class="ring-text"><span id="score">–</span><small>/ 100</small></div>
       </div>
@@ -40,6 +40,7 @@
         <p id="v-why" class="why">Fetching live conditions…</p>
       </div>
     </div>
+    <p id="coverage" class="fine" role="status"></p>
     <ul id="v-alerts" class="alerts"></ul>
     <details class="how"><summary>How this is decided</summary>
       <table id="v-rules"></table>
@@ -50,9 +51,9 @@
   <section class="stats" id="stats" aria-label="Current readings"></section>
 
   <section class="card">
-    <header class="card-h"><h2>Best times</h2><span class="sub">next 24 h</span></header>
+    <header class="card-h"><h2>Suggested times</h2><span class="sub">next 24 h</span></header>
     <ol id="windows" class="times"></ol>
-    <details class="how"><summary>How times are picked</summary><p class="fine">Each 30-minute daylight slot is scored on tide movement (35%), sunrise/sunset light (25%), wind (20%) and rain chance (20%). Times are the best non-overlapping 2-hour stretches. Tide movement is interpolated between NOAA's predicted highs and lows.</p></details>
+    <details class="how"><summary>How times are picked</summary><p class="fine">Each 30-minute daylight slot is scored on tide movement (35%), sunrise/sunset light (25%), wind (20%) and rain chance (20%). Times are the best non-overlapping 2-hour stretches with complete forecast and tide coverage. They include up to 45 minutes of twilight. Wind shown is the maximum across each window. Tide movement is approximated between Smith Creek predictions, an inland reference that does not give ocean beach tide timing. Alerts can withhold suggestions.</p></details>
   </section>
 
   <section class="card">
@@ -62,10 +63,11 @@
   </section>
 
   <footer>
-    <p>NWS (airport KFIN, forecast, alerts) · NOAA tides (Smith Creek 8720833, predictions) · NDBC buoy 41117.</p>
-    <p><a href="v3/">Full report</a> · <span id="status"></span></p>
+    <p>NWS (airport KFIN, forecast, alerts) · NOAA tides (Smith Creek 8720833, inland reference) · NDBC buoy 41117.</p>
+    <p><a href="v3/">Full report</a> · <span id="status" role="status"></span></p>
   </footer>
 </main>
+<noscript><p>This report needs JavaScript to load current conditions.</p></noscript>
 <script type="module" src="main.js"></script>
 </body>
 </html>

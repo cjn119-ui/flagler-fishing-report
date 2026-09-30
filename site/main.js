@@ -10,6 +10,7 @@ const GRID = `${NWS}/gridpoints/JAX/87,28`;
 const POINT = "29.4738,-81.131";
 const CO_OPS = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
 const REFRESH_MS = 5 * 60e3;
+const SNAPSHOT_KEY = "flagler-fishing-sources-v1";
 const RING = 2 * Math.PI * 52;
 
 const fmt = (opts) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...opts });
@@ -64,15 +65,16 @@ function renderHero(v, alerts, ctx) {
   hero.dataset.level = v.level ?? "none";
   $("v-badge").textContent = v.label;
   const score = v.level == null ? null : nowScore(ctx, v.level);
+  document.querySelector(".ring").setAttribute("aria-label", score == null ? "Conditions score unavailable" : `Conditions score ${score} out of 100`);
   $("score").textContent = score == null ? "–" : String(score);
   $("ring-fill").style.strokeDashoffset = String(RING * (1 - (score ?? 0) / 100));
   const bits = [];
   if (ctx.windMph != null) bits.push(`wind up to ${Math.round(ctx.windMph)} mph`);
   if (ctx.rainPct != null) bits.push(`rain ${Math.round(ctx.rainPct)}%`);
   if (ctx.seasM != null) bits.push(`seas ${mToFt(ctx.seasM).toFixed(1)} ft`);
-  $("v-why").textContent = v.level == null ? v.reasons[0] : v.level === 0 ? `Conditions look good: ${bits.join(", ")}.` : `${v.reasons.join(" · ")}.`;
+  $("v-why").textContent = v.level == null ? v.reasons[0] : v.level === 0 ? `Available readings look favorable: ${bits.join(", ")}.` : `${v.reasons.join(" · ")}.`;
   const chips = $("v-alerts"); chips.replaceChildren();
-  for (const a of alerts ?? []) chips.append(el("li", { "data-l": classifyAlert(a.event) }, `${a.event} · until ${fClock(a.ends)}`));
+  for (const a of alerts ?? []) chips.append(el("li", { "data-l": classifyAlert(a.event) }, `${a.event}${Number.isFinite(+a.ends) ? ` · until ${fClock(a.ends)}` : ""}`));
   const t = $("v-rules"); t.replaceChildren();
   for (const r of v.rules) {
     const tr = el("tr"), c1 = el("td");
@@ -100,25 +102,25 @@ function stat(root, label, value, unit, detail, { off = false, wide = false, com
 function renderStats({ obs, buoy, rainPct, windMph, tides, now }) {
   const root = $("stats"); root.replaceChildren();
   const wind = obs?.windMph ?? windMph;
-  if (wind != null) stat(root, "Wind now", String(Math.round(wind)), "mph", obs?.windMph != null ? `${compass(obs.dir)}${obs.gustMph ? ` · gust ${Math.round(obs.gustMph)}` : ""} · ${age(obs.at)}` : "forecast");
+  if (wind != null) stat(root, "Wind now", String(Math.round(wind)), "mph", obs?.windMph != null ? `${wind === 0 ? "Calm" : compass(obs.dir)}${obs.gustMph ? ` · gust ${Math.round(obs.gustMph)}` : ""} · ${age(obs.at)}` : "forecast");
   else stat(root, "Wind now", "No data", "", "", { off: true });
   stat(root, "Rain chance", rainPct == null ? "No data" : String(Math.round(rainPct)), rainPct == null ? "" : "%", "highest, next 12 h", { off: rainPct == null });
-  if (buoy) {
+  if (buoy && Number.isFinite(buoy.waveM)) {
     stat(root, "Offshore seas", mToFt(buoy.waveM).toFixed(1), "ft", `${buoy.periodS ?? "?"} s period · ${age(buoy.at)}`);
-    stat(root, "Water", String(Math.round(cToF(buoy.waterC))), "°F", age(buoy.at));
   } else {
-    stat(root, "Offshore seas", "No recent reading", "", "buoy over 3 h old", { off: true });
-    stat(root, "Water", "No recent reading", "", "", { off: true });
+    stat(root, "Offshore seas", "No recent reading", "", "missing or over 3 h old", { off: true });
   }
-  if (obs) stat(root, "Air", String(Math.round(obs.tempF)), "°F", "KFIN airport");
+  stat(root, "Water", Number.isFinite(buoy?.waterC) ? String(Math.round(cToF(buoy.waterC))) : "No recent reading", Number.isFinite(buoy?.waterC) ? "°F" : "", buoy ? `Offshore · ${age(buoy.at)}` : "Offshore buoy unavailable", { off: !Number.isFinite(buoy?.waterC) });
+  stat(root, "Air", Number.isFinite(obs?.tempF) ? String(Math.round(obs.tempF)) : "No data", Number.isFinite(obs?.tempF) ? "°F" : "", "KFIN airport", { off: !Number.isFinite(obs?.tempF) });
   const next = tides?.hilo.find((e) => e.time > now);
-  if (next) stat(root, "Next tide", `${next.type === "H" ? "High" : "Low"} ${fClock(next.time)}`, "", `${next.h.toFixed(1)} ft · ${fDay.format(next.time)}`, { compact: true });
+  if (next) stat(root, "Next tide", `${next.type === "H" ? "High" : "Low"} ${fClock(next.time)}`, "", `${next.h.toFixed(1)} ft · Smith Creek (inland)`, { compact: true });
+  else stat(root, "Next tide", "No data", "", "Smith Creek (inland)", { off: true });
   if (root.children.length % 2) root.lastElementChild.classList.add("wide");
 }
 
 function renderTimes(windows, now) {
   const ol = $("windows"); ol.replaceChildren();
-  if (!windows.length) { ol.append(el("li", { class: "empty" }, "No daylight windows in the next 24 hours.")); return; }
+  if (!windows.length) { ol.append(el("li", { class: "empty" }, "No complete daylight/twilight windows with forecast and tide coverage in the next 24 hours.")); return; }
   const today = localDay(now);
   windows.forEach((w, i) => {
     const li = el("li"), body = el("div");
@@ -132,41 +134,91 @@ function renderTimes(windows, now) {
 
 // ---- Orchestration -----------------------------------------------------------
 let running = false, lastRun = 0;
+let snapshots = {};
+try { snapshots = JSON.parse(localStorage.getItem(SNAPSHOT_KEY) || "{}") || {}; } catch {}
+const revive = (key, value) => {
+  if (key === "at" || key === "start" || key === "end" || key === "time" || key === "ends" || key === "updated") return new Date(value);
+  return value;
+};
+const finiteMax = (values) => { const known = values.filter(Number.isFinite); return known.length ? Math.max(...known) : null; };
+const freshAt = (at, maxAge, now) => Number.isFinite(+at) && +at <= +now + 5 * 60e3 && now - at <= maxAge;
 async function refresh() {
-  if (running) return; running = true; $("refresh").classList.add("spin");
-  const now = new Date();
-  const names = ["airport obs", "forecast", "alerts", "tides", "buoy", "7-day"];
-  const res = await Promise.allSettled([loadObs(), loadHourly(), loadAlerts(), loadTides(now), loadBuoy(), loadWeek()]);
-  const [obsR, hourlyR, alertsR, tidesR, buoyR, weekR] = res;
-  const ok = (r) => r.status === "fulfilled" ? r.value : null;
-  let obs = ok(obsR), buoy = ok(buoyR);
-  const hourly = ok(hourlyR), alerts = ok(alertsR), tides = ok(tidesR), week = ok(weekR);
-  if (obs && now - obs.at > OBS_MAX_AGE_MS) obs = null;      // stale readings are dropped, never shown as current
-  if (buoy && now - buoy.at > BUOY_MAX_AGE_MS) buoy = null;
-
-  const next12 = (hourly ?? []).filter((p) => p.end > now && p.start < new Date(+now + 12 * 3600e3));
-  const fMaxWind = next12.length ? Math.max(...next12.map((p) => p.windMph ?? 0)) : null;
-  const rainPct = next12.length ? Math.max(...next12.map((p) => p.rainPct ?? 0)) : null;
-  const windMph = [obs?.windMph, fMaxWind].filter((x) => x != null).reduce((m, x) => Math.max(m, x), -1);
-  const ctx = { windMph: windMph < 0 ? null : windMph, gustMph: obs?.gustMph ?? null, seasM: buoy?.waveM ?? null, rainPct, alerts: alerts ?? [] };
-  renderHero(verdict(ctx), alerts, ctx);
-  renderStats({ obs, buoy, rainPct, windMph: ctx.windMph, tides, now });
-
-  if (tides && hourly) renderTimes(pickWindows({ now, series: tides.series, hourly, events: sunEvents(now) }), now);
-  else $("windows").replaceChildren(el("li", { class: "empty" }, "Times unavailable until tide and forecast data load."));
-
-  if (week) {
-    renderWeek($("week-chart"), week.days, { today: localDay(now) });
-    $("week-status").textContent = `NWS · updated ${fDay.format(week.updated)} ${fClock(week.updated)}`;
-  } else if (!$("week-chart").childElementCount) $("week-status").textContent = "Forecast unavailable";
-
-  const failed = res.map((r, i) => r.status === "rejected" ? names[i] : null).filter(Boolean);
-  $("updated").replaceChildren(el("span", { class: "lbl" }, "Updated "), document.createTextNode(fClock(now)));
-  $("status").textContent = failed.length ? `Unavailable: ${failed.join(", ")}` : "All sources OK";
-  running = false; lastRun = Date.now(); $("refresh").classList.remove("spin");
+  if (running) return;
+  running = true;
+  $("refresh").classList.add("spin");
+  $("refresh").disabled = true;
+  try {
+    const now = new Date();
+    const names = ["airport obs", "forecast", "alerts", "tides", "buoy", "7-day"];
+    const res = await Promise.allSettled([loadObs(), loadHourly(), loadAlerts(), loadTides(now), loadBuoy(), loadWeek()]);
+    const cached = [];
+    const values = res.map((r, i) => {
+      const name = names[i];
+      if (r.status === "fulfilled") {
+        snapshots[name] = { at: +now, value: r.value };
+        return r.value;
+      }
+      const saved = snapshots[name];
+      // Last known data remains readable, but expiry is enforced below.
+      if (saved && now - saved.at < 24 * 3600e3) {
+        cached.push(name);
+        return JSON.parse(JSON.stringify(saved.value), revive);
+      }
+      return null;
+    });
+    try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshots)); } catch {}
+    let [obs, hourly, alerts, tides, buoy, week] = values;
+    const gaps = res.flatMap((r, i) => r.status === "rejected" ? [names[i]] : []);
+    if (obs && !freshAt(obs.at, OBS_MAX_AGE_MS, now)) { obs = null; gaps.push("stale airport obs"); }
+    if (buoy && !freshAt(buoy.at, BUOY_MAX_AGE_MS, now)) { buoy = null; gaps.push("stale buoy"); }
+    // A cached alert list cannot establish the absence of current hazards.
+    const alertsKnown = alerts != null && !cached.includes("alerts");
+    alerts = (alerts ?? []).filter(a => !Number.isFinite(+a.ends) || a.ends > now);
+    const next12 = (hourly ?? []).filter(p => p.end > now && p.start < new Date(+now + 12 * 3600e3));
+    const fMaxWind = finiteMax(next12.map(p => p.windMph));
+    const rainPct = finiteMax(next12.map(p => p.rainPct));
+    const windMph = finiteMax([obs?.windMph, fMaxWind]);
+    const ctx = { windMph, gustMph: obs?.gustMph ?? null, seasM: buoy?.waveM ?? null, rainPct, alerts };
+    const v = verdict(ctx);
+    const forecastComplete = next12.length > 0 && next12.every(p => Number.isFinite(p.windMph) && Number.isFinite(p.rainPct)) && next12[0].start <= now && next12.at(-1).end >= +now + 12 * 3600e3 && next12.every((p, i) => !i || p.start <= next12[i - 1].end);
+    if (!forecastComplete) gaps.push("incomplete 12-hour forecast");
+    if (buoy && !Number.isFinite(buoy.waveM)) gaps.push("missing wave height");
+    // Do not turn incomplete core data or an unchecked alert feed into a green Go.
+    if (v.level === 0 && (!forecastComplete || !alertsKnown || cached.includes("forecast"))) {
+      v.level = null; v.label = "Unconfirmed"; v.reasons = ["Current forecast or alerts could not be fully checked."];
+    }
+    renderHero(v, alerts, ctx);
+    const notes = [];
+    if (!buoy || !Number.isFinite(buoy.waveM)) notes.push("Marine reading unavailable; score excludes seas.");
+    if (!alertsKnown) notes.push("Current alerts unverified.");
+    if (cached.length) notes.push(`Saved data: ${cached.join(", ")}.`);
+    if (gaps.length && !notes.length) notes.push("Some sources are stale or incomplete.");
+    $("coverage").textContent = notes.join(" ");
+    renderStats({ obs, buoy, rainPct, windMph: forecastAtNow(hourly, now)?.windMph ?? null, tides, now });
+    if (alerts.some(a => classifyAlert(a.event) > 0)) {
+      $("windows").replaceChildren(el("li", { class: "empty" }, "Suggestions withheld while a caution or warning alert is active. Review the alert above."));
+    } else if (tides && hourly && alertsKnown && !cached.includes("forecast") && v.level !== 2) {
+      renderTimes(pickWindows({ now, series: tides.series, hourly, events: sunEvents(now) }), now);
+    } else $("windows").replaceChildren(el("li", { class: "empty" }, "Suggestions unavailable until current forecast, tide and alert data can be checked, with no Skip conditions."));
+    if (week) {
+      const days = week.days.filter(d => d.day >= localDay(now));
+      renderWeek($("week-chart"), days, { today: localDay(now) });
+      $("week-status").textContent = days.length ? `${cached.includes("7-day") ? "Saved" : "NWS"} · ${fDay.format(week.updated)} ${fClock(week.updated)}` : "Forecast expired";
+    } else $("week-status").textContent = "Forecast unavailable";
+    $("updated").replaceChildren(el("span", { class: "lbl" }, "Checked "), document.createTextNode(fClock(now)));
+    $("status").textContent = `${navigator.onLine ? "" : "Offline · "}${gaps.length ? `Partial data: ${[...new Set(gaps)].join(", ")}` : "Sources checked"}`;
+  } catch (error) {
+    console.error("Report refresh failed", error);
+    $("status").textContent = "Refresh failed. Try again.";
+  } finally {
+    running = false; lastRun = Date.now();
+    $("refresh").classList.remove("spin"); $("refresh").disabled = false;
+  }
 }
+const forecastAtNow = (hourly, now) => (hourly ?? []).find(p => p.start <= now && p.end > now);
 
 $("refresh").addEventListener("click", refresh);
+window.addEventListener("online", refresh);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && Date.now() - lastRun > 2 * 60e3) refresh(); });
 setInterval(() => { if (!document.hidden) refresh(); }, REFRESH_MS);
 refresh();

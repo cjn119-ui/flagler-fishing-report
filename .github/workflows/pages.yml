@@ -30,7 +30,9 @@ jobs:
         with:
           node-version: 22
       - name: Unit tests
-        run: node scripts/test-logic.mjs
+        run: |
+          node scripts/test-logic.mjs
+          node scripts/test-app.mjs
       - uses: actions/configure-pages@v5
         id: pages
       - name: Generate report and live data

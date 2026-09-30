@@ -39,10 +39,13 @@ export function weeklyOutlook(periods, days = 7) {
   return [...byDay.values()].slice(0, days).map((d) => {
     const main = d.day_p ?? d.night_p;
     const wind = parseWindMph(main.windSpeed);
-    const rain = main.probabilityOfPrecipitation?.value ?? 0;
+    const rain = main.probabilityOfPrecipitation?.value ?? null;
     const hi = d.day_p?.temperature ?? null, lo = d.night_p?.temperature ?? null;
     const v = verdict({ windMph: wind, rainPct: rain });
-    return { day: d.day, wind, rain, hi, lo, short: main.shortForecast, score: bandScore(v.level, dayScore(wind, rain)), verdict: v };
+    if (v.level === 0 && (wind == null || rain == null)) {
+      v.level = null; v.label = "Unknown"; v.reasons = ["Wind or rain forecast missing."];
+    }
+    return { day: d.day, wind, rain, hi, lo, short: main.shortForecast, score: v.level == null ? null : bandScore(v.level, dayScore(wind, rain)), verdict: v };
   });
 }
 
@@ -57,11 +60,11 @@ export function renderWeek(root, days, { today } = {}) {
     const lvl = d.verdict.level ?? "none";
     const li = el("li", "wk-col");
     li.dataset.level = lvl;
-    li.setAttribute("aria-label", `${name}: ${d.verdict.label}, score ${d.score} of 100, wind up to ${Math.round(d.wind ?? 0)} mph, ${Math.round(d.rain)} percent rain`);
+    li.setAttribute("aria-label", `${name}: ${d.verdict.label}, score ${d.score ?? "unknown"} of 100, wind ${d.wind == null ? "unknown" : `up to ${Math.round(d.wind)} mph`}, rain ${d.rain == null ? "unknown" : `${Math.round(d.rain)} percent`}`);
     const track = el("div", "wk-track");
-    const bar = el("div", "wk-bar"); bar.style.height = `${Math.max(d.score, 6)}%`;
+    const bar = el("div", "wk-bar"); bar.style.height = `${d.score == null ? 0 : Math.max(d.score, 6)}%`;
     track.append(bar);
-    li.append(el("span", "wk-score", String(d.score)), track, el("b", "wk-day", name), el("span", "wk-meta", `${Math.round(d.wind ?? 0)} mph`), el("span", "wk-meta", `${Math.round(d.rain)}%`));
+    li.append(el("span", "wk-score", d.score == null ? "–" : String(d.score)), track, el("b", "wk-day", name), el("span", "wk-label", d.verdict.label), el("span", "wk-meta", d.wind == null ? "– mph" : `${Math.round(d.wind)} mph`), el("span", "wk-meta", d.rain == null ? "– %" : `${Math.round(d.rain)}%`));
     list.append(li);
   });
   root.append(list);

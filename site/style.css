@@ -8,7 +8,7 @@
 }
 @media (prefers-color-scheme: light) {
   :root { --bg: #F3F6F9; --surface: #FFFFFF; --surface-2: #F0F4F8; --line: rgba(15,30,45,.08); --line-strong: rgba(15,30,45,.16);
-    --text: #0E1A24; --muted: #5B6B7A; --accent: #0A84B5; --go: #0E9F6E; --mid: #C98A04; --skip: #DC3B3B; --none: #8A97A5;
+    --text: #0E1A24; --muted: #5B6B7A; --accent: #0A84B5; --go: #087A53; --mid: #946200; --skip: #DC3B3B; --none: #8A97A5;
     --shadow: 0 1px 2px rgba(15,30,45,.05), 0 12px 28px -18px rgba(15,30,45,.25); }
 }
 * { box-sizing: border-box; }
@@ -108,3 +108,24 @@ footer p { margin: 4px 0; }
 @media (max-width: 360px) { .hero-main { flex-direction: column; align-items: flex-start; } .status { font-size: 30px; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 @media (max-width: 420px) { .chip .lbl { display: none; } .brand p { max-width: 150px; } }
+
+/* Keep the report readable at narrow phone sizes and without color cues. */
+#coverage:empty { display: none; }
+#coverage { padding-top: 8px; }
+#refresh { min-width: 44px; min-height: 44px; }
+#refresh:disabled { cursor: wait; opacity: .7; }
+summary { min-height: 44px; display: flex; align-items: center; gap: 6px; }
+summary::before { content: "▸"; }
+details[open] > summary::before { content: "▾"; }
+.card-h { gap: 12px; flex-wrap: wrap; }
+.wk-label { font-size: 10px; color: var(--text); }
+@media (max-width: 420px) {
+  .bar { flex-wrap: wrap; }
+  .tools { margin-left: auto; }
+  .wk-bars { gap: 4px; }
+  .wk-meta, .wk-label { font-size: 9px; }
+  .times li { grid-template-columns: 26px minmax(0, 1fr); gap: 8px; }
+  .times .badge { grid-column: 2; justify-self: start; }
+  .times b { font-size: 14px; }
+  #v-rules td { vertical-align: top; }
+}

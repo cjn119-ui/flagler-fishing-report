@@ -71,3 +71,22 @@ assert.equal(nowScore({ windMph: 5, rainPct: 0, seasM: 0.5 }, 0), 100);
 assert.ok(nowScore({ windMph: 9, rainPct: 17, seasM: 0.8 }, 0) >= 70);
 assert.ok(nowScore({ windMph: 9, rainPct: 17, seasM: 1.5 }, 1) <= 69);
 console.log("all logic tests passed");
+
+// Missing forecast values must remain unknown, and hazards still win without weather.
+assert.equal(verdict({ alerts: [{ event: "Tornado Warning" }] }).label, "Skip");
+assert.equal(verdict({ seasM: 3 }).label, "Skip");
+const unknownWeek = weeklyOutlook([mk("2026-09-30T06:00:00-04:00", true, "", null, 80)]);
+assert.equal(unknownWeek[0].rain, null);
+assert.equal(unknownWeek[0].score, null);
+assert.equal(unknownWeek[0].verdict.label, "Unknown");
+assert.equal(pickWindows({ now, series, hourly: [], events: sunEvents(now) }).length, 0);
+assert.equal(pickWindows({ now, series: [], hourly, events: sunEvents(now) }).length, 0);
+assert.equal(pickWindows({ now, series, hourly: hourly.map(p => ({ ...p, rainPct: null })), events: sunEvents(now) }).length, 0);
+const changing = hourly.map((p, i) => ({ ...p, windMph: i % 2 ? 14 : 1 }));
+for (const w of pickWindows({ now, series, hourly: changing, events: sunEvents(now) })) {
+  const covered = changing.filter(p => p.start < w.end && p.end > w.start);
+  assert.equal(w.windMph, Math.max(...covered.map(p => p.windMph)));
+  const daylight = sunEvents(now);
+  assert.ok(daylight.some((e, i) => e.kind === "sunrise" && daylight[i + 1]?.kind === "sunset" && w.start >= +e.t - 45 * 60e3 && w.end <= +daylight[i + 1].t + 45 * 60e3));
+}
+console.log("audit regression tests passed");
