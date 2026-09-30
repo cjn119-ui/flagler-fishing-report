@@ -64,7 +64,9 @@ assert.match(JSON.stringify(get('windows')),/withheld/);
 
 // Every precached app dependency must exist, even before a user visits it.
 const sw = await readFile(new URL('../site/service-worker.js',import.meta.url),'utf8');
+new vm.Script(sw, { filename: 'service-worker.js' });
+new vm.Script(await readFile(new URL('../site/v3/sw.js',import.meta.url),'utf8'), { filename: 'v3/sw.js' });
 const shell = vm.runInNewContext(sw.match(/const SHELL = (\[[^;]+\]);/)[1]);
 for (const path of shell) await access(new URL('../site/'+(path==='./'?'index.html':path),import.meta.url));
-assert.ok(shell.includes('v2/logic.js') && shell.includes('shared/week.js'));
+assert.ok(shell.some(p => p.startsWith('v2/logic.js')) && shell.some(p => p.startsWith('shared/week.js')));
 console.log('app failure-state and offline shell tests passed');
