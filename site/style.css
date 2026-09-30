@@ -83,6 +83,19 @@ summary { cursor: pointer; font-size: 13px; color: var(--accent); min-height: 26
 .stat.off .v { font-size: 15px; font-weight: 500; color: var(--muted); }
 
 /* best times */
+.spot-choice { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line); border-radius: 13px; }
+.spot-choice button { min-height: 44px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font: inherit; font-weight: 600; cursor: pointer; }
+.spot-choice button[aria-pressed="true"] { color: var(--text); background: var(--surface); box-shadow: var(--shadow); }
+.bite-result { padding: 14px 2px 16px; }
+.bite-label { font-size: 23px; font-weight: 720; letter-spacing: -.025em; line-height: 1.2; margin: 0; color: var(--muted); }
+.bite-label[data-level="promising"] { color: var(--go); }
+.bite-label[data-level="mixed"] { color: var(--mid); }
+.bite-label[data-level="slow"] { color: var(--text); }
+.bite-time { font-size: 15px; font-weight: 600; margin: 4px 0 0; font-variant-numeric: tabular-nums; }
+.bite-result .fine { margin-top: 5px; }
+.bite-targets { color: var(--muted); font-size: 12px; margin: 9px 0 0; }
+.bite-targets:empty { display: none; }
+.times-title { font-size: 12px; font-weight: 650; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin: 0 0 9px; }
 .times { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .times li { display: grid; grid-template-columns: 30px 1fr auto; gap: 12px; align-items: center; padding: 12px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); }
 .times li:first-child { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }

@@ -153,24 +153,25 @@ export function forecastAt(hourly, time) {
   return hourly.find((p) => time >= p.start && time < p.end) ?? null;
 }
 
-export function scoreSlot(time, { series, hourly, events, maxRate }) {
-  const rate = tideRate(series, time);
+export function scoreSlot(time, { series, hourly, events, maxRate, habitat = "inshore" }) {
+  const rate = habitat === "inshore" ? tideRate(series, time) : null;
   const f = forecastAt(hourly, time);
   const near = events.reduce((best, e) => Math.min(best, Math.abs(e.t - time) / 60e3), Infinity);
   const day = events.some((e, i) => e.kind === "sunrise" && events[i + 1]?.kind === "sunset" && time >= e.t - 45 * 60e3 && time <= events[i + 1].t.getTime() + 45 * 60e3);
-  if (!day || !f || !Number.isFinite(f.windMph) || !Number.isFinite(f.rainPct) || rate == null) return null;
+  if (!day || !f || !Number.isFinite(f.windMph) || !Number.isFinite(f.rainPct) || (habitat === "inshore" && rate == null)) return null;
   const parts = {
-    tide: !maxRate ? 0 : clamp01(rate / maxRate),
+    tide: habitat === "inshore" ? (!maxRate ? 0 : clamp01(rate / maxRate)) : null,
     light: near <= 60 ? 1 : near <= 120 ? 0.75 : 0.5,
     wind: windScore(f?.windMph ?? null),
     rain: f?.rainPct == null ? 0.7 : clamp01(1 - f.rainPct / 100),
   };
-  const score = Object.entries(WEIGHTS).reduce((s, [k, w]) => s + parts[k] * w, 0);
+  const activeWeights = habitat === "inshore" ? WEIGHTS : { light: .45, wind: .30, rain: .25 };
+  const score = Object.entries(activeWeights).reduce((s, [k, w]) => s + parts[k] * w, 0);
   return { time, score, parts, windMph: f?.windMph ?? null, rainPct: f?.rainPct ?? null, nearEvent: near <= 90 ? events.reduce((b, e) => (Math.abs(e.t - time) < Math.abs(b.t - time) ? e : b)).kind : null };
 }
 
 /** Best non-overlapping 2-hour windows in the next 24 h. Returns up to `max`, best first. */
-export function pickWindows({ now, series, hourly, events }, { max = 3, hours = 24, lengthMin = 120 } = {}) {
+export function pickWindows({ now, series = [], hourly, events }, { max = 3, hours = 24, lengthMin = 120, habitat = "inshore" } = {}) {
   if (!Number.isFinite(hours) || hours <= 0 || !Number.isInteger(lengthMin / 30) || lengthMin <= 0) return [];
   const maxRate = series.reduce((m, p) => Math.max(m, tideRate(series, p.time) ?? 0), 0);
   const step = 30 * 60e3, slotsPerWindow = lengthMin / 30;
@@ -193,10 +194,10 @@ export function pickWindows({ now, series, hourly, events }, { max = 3, hours = 
     const windMph = Math.max(...covered.map(p => p.windMph));
     const rainPct = Math.max(...covered.map(p => p.rainPct));
     if (verdict({ windMph, rainPct }).level === 2) continue;
-    const w = Array.from({ length: slotsPerWindow }, (_, i) => scoreSlot(new Date(t + (i + .5) * step), { series, hourly, events, maxRate }));
-    if (w.some(s => s === null) || tideRate(series, new Date(t)) == null || tideRate(series, new Date(end)) == null) continue;
+    const w = Array.from({ length: slotsPerWindow }, (_, i) => scoreSlot(new Date(t + (i + .5) * step), { series, hourly, events, maxRate, habitat }));
+    if (w.some(s => s === null) || (habitat === "inshore" && (tideRate(series, new Date(t)) == null || tideRate(series, new Date(end)) == null))) continue;
     const avg = w.reduce((sum, x) => sum + x.score, 0) / w.length;
-    const parts = Object.fromEntries(Object.keys(WEIGHTS).map(k => [k, w.reduce((sum, x) => sum + x.parts[k], 0) / w.length]));
+    const parts = Object.fromEntries(Object.keys(WEIGHTS).map(k => [k, k === "tide" && habitat !== "inshore" ? null : w.reduce((sum, x) => sum + x.parts[k], 0) / w.length]));
     wins.push({ start: new Date(t), end: new Date(end), score: avg, parts, windMph, rainPct, nearEvent: w.find(x => x.nearEvent)?.nearEvent ?? null });
   }
   wins.sort((a, b) => b.score - a.score);
@@ -211,8 +212,8 @@ export function pickWindows({ now, series, hourly, events }, { max = 3, hours = 
 /** Short reason from the strongest components of a window. */
 export function windowReason(w) {
   const bits = [];
-  if (w.parts.tide >= 0.7) bits.push("moving tide");
-  else if (w.parts.tide < 0.3) bits.push("slack tide");
+  if (Number.isFinite(w.parts.tide) && w.parts.tide >= 0.7) bits.push("moving tide");
+  else if (Number.isFinite(w.parts.tide) && w.parts.tide < 0.3) bits.push("slack tide");
   if (w.nearEvent) bits.push(w.nearEvent === "sunrise" ? "sunrise light" : "sunset light");
   if (w.windMph != null) bits.push(w.windMph <= 10 ? `light wind (${Math.round(w.windMph)} mph)` : `wind ${Math.round(w.windMph)} mph`);
   if (w.rainPct >= 30) bits.push(`${Math.round(w.rainPct)}% rain`);

@@ -651,7 +651,7 @@ function renderReport({ targetDate, preview, weather, observation, coastal, buoy
   } else {
     lines.push("• Hazards: no current NWS alert in the returned feed overlaps this report date; this does not establish that surf or water conditions are safe.");
   }
-  lines.push(`• Fishing score/rating: not generated from the official feeds. The official NWS, NDBC, and NOAA feeds have no fishing-rating field, so none is given here; see the conditions grade on this page for a simple weather-only heuristic.`);
+  lines.push(`• Fishing score/rating: not supplied by the official feeds. The home page's bite outlook is a separate, uncalibrated environmental heuristic, not an observed catch probability; this full report uses its own conditions grade.`);
   lines.push("• Sunrise/sunset: sunrise near " + displayLocalTime(sun.sunrise) + "; sunset near " + displayLocalTime(sun.sunset) + " (calculated for Flagler Beach coordinates).", "");
 
   const sunrise = sun.sunrise;

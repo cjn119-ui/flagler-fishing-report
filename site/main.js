@@ -1,8 +1,9 @@
 import {
   TZ, RULES, OBS_MAX_AGE_MS, BUOY_MAX_AGE_MS, msToMph, cToF, mToFt, parseWindMph, classifyAlert, verdict,
   sunEvents, seriesFromHilo, pickWindows, windowReason, localDay, isoDay, addDays,
-} from "./v2/logic.js?v=calc-20260930";
-import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js?v=calc-20260930";
+} from "./v2/logic.js?v=catch-20260930";
+import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js?v=catch-20260930";
+import { biteOutlook, seasonalTargets } from "./shared/catch.js?v=catch-20260930";
 
 const $ = (id) => document.getElementById(id);
 const NWS = "https://api.weather.gov";
@@ -11,6 +12,7 @@ const POINT = "29.4738,-81.131";
 const CO_OPS = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
 const REFRESH_MS = 5 * 60e3;
 const SNAPSHOT_KEY = "flagler-fishing-sources-v1";
+const SPOT_KEY = "flagler-fishing-spot-v1";
 const RING = 2 * Math.PI * 52;
 
 const fmt = (opts) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...opts });
@@ -118,9 +120,9 @@ function renderStats({ obs, buoy, rainPct, windMph, tides, now }) {
   if (root.children.length % 2) root.lastElementChild.classList.add("wide");
 }
 
-function renderTimes(windows, now) {
+function renderTimes(windows, now, spot) {
   const ol = $("windows"); ol.replaceChildren();
-  if (!windows.length) { ol.append(el("li", { class: "empty" }, "No complete daylight/twilight windows with forecast and tide coverage in the next 24 hours.")); return; }
+  if (!windows.length) { ol.append(el("li", { class: "empty" }, `No complete daylight/twilight windows with forecast${spot === "inshore" ? " and tide" : ""} coverage in the next 24 hours.`)); return; }
   const today = localDay(now);
   windows.forEach((w, i) => {
     const li = el("li"), body = el("div");
@@ -131,6 +133,52 @@ function renderTimes(windows, now) {
     ol.append(li);
   });
 }
+
+let spot = "surf";
+try { if (localStorage.getItem(SPOT_KEY) === "inshore") spot = "inshore"; } catch {}
+let prediction = { reason: "Checking current forecast and alerts…", now: new Date(), windows: { surf: [], inshore: [] }, buoyReady: false };
+function renderPrediction() {
+  const label = spot === "surf" ? "surf / pier" : "inshore";
+  $("spot-surf").setAttribute("aria-pressed", String(spot === "surf"));
+  $("spot-inshore").setAttribute("aria-pressed", String(spot === "inshore"));
+  $("times-title").textContent = `Best ${label} times`;
+  const windows = prediction.windows[spot];
+  if (prediction.reason || (spot === "inshore" && prediction.tideMissing)) {
+    const reason = prediction.reason ?? "Smith Creek tide predictions unavailable for the inshore outlook.";
+    $("bite-label").textContent = "Prediction unavailable";
+    $("bite-label").dataset.level = "none";
+    $("bite-time").textContent = "";
+    $("bite-why").textContent = reason;
+    $("bite-targets").textContent = "";
+    $("windows").replaceChildren(el("li", { class: "empty" }, reason));
+    return;
+  }
+  const outlook = biteOutlook(windows);
+  if (!outlook) {
+    $("bite-label").textContent = "No recommended window";
+    $("bite-label").dataset.level = "none";
+    $("bite-time").textContent = "";
+    $("bite-why").textContent = "No complete, suitable daylight window in the next 24 hours.";
+    $("bite-targets").textContent = "";
+    renderTimes([], prediction.now, spot);
+    return;
+  }
+  $("bite-label").textContent = `${outlook.label} bite outlook`;
+  $("bite-label").dataset.level = outlook.level;
+  const day = localDay(outlook.window.start) === localDay(prediction.now) ? "Today" : "Tomorrow";
+  $("bite-time").textContent = `${day} · ${fClock(outlook.window.start)} – ${fClock(outlook.window.end)}`;
+  $("bite-why").textContent = `${windowReason(outlook.window)}${spot === "surf" ? prediction.buoyReady ? " · Beach surf may differ from offshore buoy conditions." : " · Beach surf unverified; offshore reading unavailable." : " · Tide timing uses inland Smith Creek."}`;
+  const month = Number(fmt({ month: "numeric" }).format(outlook.window.start));
+  const targets = seasonalTargets(spot, month);
+  $("bite-targets").textContent = targets.length ? `Seasonal targets: ${targets.join(" · ")}` : "No seasonal targets listed for this month.";
+  renderTimes(windows, prediction.now, spot);
+}
+for (const choice of ["surf", "inshore"]) $("spot-" + choice).addEventListener("click", () => {
+  spot = choice;
+  try { localStorage.setItem(SPOT_KEY, choice); } catch {}
+  renderPrediction();
+});
+renderPrediction();
 
 // ---- Orchestration -----------------------------------------------------------
 let running = false, lastRun = 0;
@@ -195,11 +243,19 @@ async function refresh() {
     if (gaps.length && !notes.length) notes.push("Some sources are stale or incomplete.");
     $("coverage").textContent = notes.join(" ");
     renderStats({ obs, buoy, rainPct, windMph: forecastAtNow(hourly, now)?.windMph ?? null, tides, now });
-    if (alerts.some(a => classifyAlert(a.event) > 0)) {
-      $("windows").replaceChildren(el("li", { class: "empty" }, "Suggestions withheld while a caution or warning alert is active. Review the alert above."));
-    } else if (tides && hourly && alertsKnown && !cached.includes("forecast") && v.level !== 2) {
-      renderTimes(pickWindows({ now, series: tides.series, hourly, events: sunEvents(now) }), now);
-    } else $("windows").replaceChildren(el("li", { class: "empty" }, "Suggestions unavailable until current forecast, tide and alert data can be checked, with no Skip conditions."));
+    const hazard = alerts.some(a => classifyAlert(a.event) > 0);
+    const reason = hazard ? "Suggestions withheld while a caution or warning alert is active. Review the alert above."
+      : !hourly || cached.includes("forecast") || !alertsKnown ? "Prediction unavailable until current forecast and alerts can be checked."
+      : v.level === 2 ? "Suggestions withheld during Skip-level conditions." : null;
+    const events = reason ? null : sunEvents(now);
+    prediction = {
+      now, reason, buoyReady: Number.isFinite(buoy?.waveM), tideMissing: !tides || cached.includes("tides"),
+      windows: {
+        surf: events ? pickWindows({ now, hourly, events }, { habitat: "surf" }) : [],
+        inshore: events && tides && !cached.includes("tides") ? pickWindows({ now, series: tides.series, hourly, events }, { habitat: "inshore" }) : [],
+      },
+    };
+    renderPrediction();
     if (week) {
       const days = week.days.filter(d => d.day >= localDay(now));
       renderWeek($("week-chart"), days, { today: localDay(now) });

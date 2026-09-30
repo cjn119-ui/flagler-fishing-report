@@ -4,18 +4,20 @@ Static PWA on GitHub Pages. A GitHub Actions job (every 30 min) fetches NWS, NDB
 
 - Local build: `SITE_URL= node scripts/generate.mjs` then serve `site/`.
 - The last good report is carried forward from the deployed `api/state.json` if a feed is down.
-- Reports are rule-based from official feeds (no fishing rating, no LLM commentary).
+- Reports are rule-based from official feeds; the home page adds an uncalibrated bite outlook. No LLM commentary.
 
 ## Layout
-- `/` current app (Flagler Fishing): live conditions, best times, 7-day outlook.
+- `/` current app (Flagler Fishing): live conditions, surf / pier and inshore bite outlooks, best times, 7-day outlook.
 - `/v1/`, `/v2/`, `/v3/` earlier versions, kept for reference. `/flagler-fishing/` and `/v4/` redirect to `/`.
 - `/api/` JSON built by the scheduled workflow; `/shared/` code used by more than one version.
 
 ## Reliability checks
 
-Run `node scripts/test-logic.mjs` and `node scripts/test-app.mjs`. CI runs both before generating data and publishing.
+Run `node scripts/test-logic.mjs`, `node scripts/test-app.mjs`, `node scripts/test-catch.mjs` and `node scripts/test-calculations.mjs`. CI runs them before generating data and publishing.
 
 The root app keeps successful source responses on the device for up to 24 hours of fallback viewing, labels saved data, and still expires airport observations after 2 hours and buoy observations after 3 hours. A failed forecast or alert check cannot produce a green Go, and active caution/warning alerts withhold time suggestions. Forecast windows require wind, rain and tide coverage throughout the interval. The score is a transparent conditions heuristic, not a catch forecast or safety clearance.
+
+The separate bite outlook ranks fully covered, non-overlapping 2-hour windows. Surf / pier uses daylight proximity (45%), forecast wind (30%) and rain chance (25%), never the inland tide. Inshore uses Smith Creek tide movement (35%), light (25%), wind (20%) and rain (20%). The best window is labelled Promising at 0.78+, Mixed at 0.62+, otherwise Slow. These are relative, uncalibrated bands, not measured catch probabilities. Missing forecast or unchecked alerts withhold both views; missing tide data withholds inshore. FWC's regional guide informs seasonal target names, not legal harvest rules. The offshore buoy is current context only, not a local surf forecast.
 
 Smith Creek 8720833 is an inland tide reference; its timings and interpolated movement are not ocean beach tides. NDBC 41117 is an offshore St. Augustine reference. Scheduled GitHub Actions runs can be delayed, so the page checks source observation timestamps rather than treating a successful request or page refresh as proof of fresh data.
 
