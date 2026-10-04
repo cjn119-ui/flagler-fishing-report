@@ -11,6 +11,7 @@ on:
         type: boolean
         default: false
 permissions:
+  actions: write
   contents: read
   issues: write
   pages: write
@@ -57,3 +58,8 @@ jobs:
             gh issue create --label refresh-failure --title "Scheduled refresh failed" \
               --body "The scheduled refresh failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. The site keeps serving the last good data. Close this issue after fixing; a new one opens on the next failure."
           fi
+      - name: Keep schedule alive
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/$GITHUB_REPOSITORY/actions/workflows/pages.yml/enable" || true

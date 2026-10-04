@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import vm from 'node:vm';
-import {msToMph,cToF,mToFt,RULES,verdict,parseWindMph,seriesFromHilo,heightAt,tideRate,pickWindows,sun,sunEvents,localDay} from '../site/v2/logic.js';
+import {msToMph,cToF,mToFt,RULES,verdict,parseWindMph,seriesFromHilo,heightAt,tideRate,pickWindows,sun,sunEvents,localDay} from '../site/shared/logic.js';
 import {nowScore,dayScore,weeklyOutlook,GRID_FORECAST} from '../site/shared/week.js';
 const close=(actual,expected,tolerance=1e-9)=>assert.ok(Math.abs(actual-expected)<=tolerance,`${actual} != ${expected}`);
 // Exact international unit definitions, with known reference values.

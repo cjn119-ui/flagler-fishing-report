@@ -1,5 +1,5 @@
 import { GRID_FORECAST, weeklyOutlook, renderWeek } from "../shared/week.js?v=calc-20260930";
-import { localDay } from "../v2/logic.js?v=calc-20260930";
+import { localDay } from "../shared/logic.js?v=calc-20260930";
 
 const status = document.getElementById("week-status");
 const chart = document.getElementById("week-chart");

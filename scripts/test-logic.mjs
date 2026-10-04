@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { weeklyOutlook, dayScore, bandScore, nowScore } from "../site/shared/week.js";
-import { verdict, parseWindMph, classifyAlert, sun, sunEvents, parseTideSeries, seriesFromHilo, tideRate, pickWindows, dailyOutlook } from "../site/v2/logic.js";
+import { verdict, parseWindMph, classifyAlert, sun, sunEvents, parseTideSeries, seriesFromHilo, tideRate, pickWindows, dailyOutlook } from "../site/shared/logic.js";
 
 assert.equal(parseWindMph("5 to 10 mph"), 10);
 assert.equal(parseWindMph("12 mph"), 12);

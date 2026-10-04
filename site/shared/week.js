@@ -1,5 +1,5 @@
 // 7-day fishing outlook from the NWS daily forecast. Shared by v3 and flagler-fishing.
-import { verdict, parseWindMph, localDay } from "../v2/logic.js?v=calc-20260930";
+import { verdict, parseWindMph, localDay } from "./logic.js?v=calc-20260930";
 
 export const GRID_FORECAST = "https://api.weather.gov/gridpoints/JAX/89,29/forecast";
 
