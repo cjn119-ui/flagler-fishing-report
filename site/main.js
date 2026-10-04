@@ -3,7 +3,7 @@ import {
   sunEvents, seriesFromHilo, pickWindows, windowReason, localDay, isoDay, addDays, nextHours,
 } from "./shared/logic.js?v=catch-20260930b";
 import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js?v=catch-20260930b";
-import { biteOutlook, seasonalTargets } from "./shared/catch.js?v=catch-20260930b";
+import { biteOutlook, seasonalTargets, biteConfidence } from "./shared/catch.js?v=catch-20260930b";
 
 const $ = (id) => document.getElementById(id);
 const NWS = "https://api.weather.gov";
@@ -38,7 +38,10 @@ async function loadObs() {
 }
 async function loadHourly() {
   const props = (await getJson(`${GRID}/forecast/hourly`)).properties;
-  return props.periods.map((q) => ({ start: new Date(q.startTime), end: new Date(q.endTime), windMph: parseWindMph(q.windSpeed), rainPct: q.probabilityOfPrecipitation?.value ?? null }));
+  return {
+    updated: new Date(props.updateTime ?? props.generatedAt),
+    periods: props.periods.map((q) => ({ start: new Date(q.startTime), end: new Date(q.endTime), windMph: parseWindMph(q.windSpeed), rainPct: q.probabilityOfPrecipitation?.value ?? null })),
+  };
 }
 async function loadWeek() {
   const props = (await getJson(GRID_FORECAST)).properties;
@@ -158,6 +161,7 @@ try { if (localStorage.getItem(SPOT_KEY) === "inshore") spot = "inshore"; } catc
 let prediction = { reason: "Checking current forecast and alerts…", now: new Date(), windows: { surf: [], inshore: [] }, buoyReady: false };
 function renderPrediction() {
   const label = spot === "surf" ? "surf / pier" : "inshore";
+  $("bite-conf").textContent = ""; $("bite-conf").dataset.level = "none"; $("bite-conf-why").textContent = ""; $("bite-label").dataset.confidence = "";
   $("spot-surf").setAttribute("aria-pressed", String(spot === "surf"));
   $("spot-inshore").setAttribute("aria-pressed", String(spot === "inshore"));
   $("times-title").textContent = `Best ${label} times`;
@@ -184,6 +188,12 @@ function renderPrediction() {
   }
   $("bite-label").textContent = `${outlook.label} bite outlook`;
   $("bite-label").dataset.level = outlook.level;
+  const conf = prediction.confidence?.[spot];
+  if (conf) {
+    $("bite-conf").textContent = conf.label; $("bite-conf").dataset.level = conf.level;
+    $("bite-conf-why").textContent = `${conf.reasons.length ? conf.reasons.join(" ") : "Forecast, alerts and nearby readings are current and complete."} Confidence reflects data quality, not catch odds.`;
+    $("bite-label").dataset.confidence = conf.level;
+  }
   const day = localDay(outlook.window.start) === localDay(prediction.now) ? "Today" : "Tomorrow";
   $("bite-time").textContent = `${day} · ${fClock(outlook.window.start)} – ${fClock(outlook.window.end)}`;
   $("bite-why").textContent = `${windowReason(outlook.window)}${spot === "surf" ? prediction.buoyReady ? " · Beach surf may differ from offshore buoy conditions." : " · Beach surf unverified; offshore reading unavailable." : " · Tide timing uses inland Smith Creek."}`;
@@ -234,7 +244,9 @@ async function refresh() {
       return null;
     });
     try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(snapshots)); } catch {}
-    let [obs, hourly, alerts, tides, buoy, week] = values;
+    let [obs, hourlyFeed, alerts, tides, buoy, week] = values;
+    // Saved snapshots from before the feed carried its issue time are bare arrays.
+    const hourly = Array.isArray(hourlyFeed) ? hourlyFeed : hourlyFeed?.periods ?? null;
     const gaps = res.flatMap((r, i) => r.status === "rejected" ? [names[i]] : []);
     if (obs && !freshAt(obs.at, OBS_MAX_AGE_MS, now)) { obs = null; gaps.push("stale airport obs"); }
     if (buoy && !freshAt(buoy.at, BUOY_MAX_AGE_MS, now)) { buoy = null; gaps.push("stale buoy"); }
@@ -269,7 +281,12 @@ async function refresh() {
       : !hourly || cached.includes("forecast") || !alertsKnown ? "Prediction unavailable until current forecast and alerts can be checked."
       : v.level === 2 ? "Suggestions withheld during Skip-level conditions." : null;
     const events = reason ? null : sunEvents(now);
+    const confidenceFor = (spotName) => biteConfidence({
+      spot: spotName, now, forecastUpdated: hourlyFeed?.updated, alertsKnown, tidesOk: !!tides && !cached.includes("tides"),
+      buoyAt: Number.isFinite(buoy?.waveM) ? buoy.at : null, obsAt: obs?.at ?? null,
+    });
     prediction = {
+      confidence: { surf: confidenceFor("surf"), inshore: confidenceFor("inshore") },
       now, reason, buoyReady: Number.isFinite(buoy?.waveM), tideMissing: !tides || cached.includes("tides"),
       windows: {
         surf: events ? pickWindows({ now, hourly, events }, { habitat: "surf" }) : [],

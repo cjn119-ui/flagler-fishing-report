@@ -65,6 +65,8 @@
     <div class="bite-result" aria-live="polite" aria-atomic="true">
       <p id="bite-label" class="bite-label">Checking…</p>
       <p id="bite-time" class="bite-time"></p>
+      <p id="bite-conf" class="bite-conf" data-level="none"></p>
+      <p id="bite-conf-why" class="fine"></p>
       <p id="bite-why" class="fine"></p>
       <p id="bite-targets" class="bite-targets"></p>
     </div>
@@ -73,6 +75,7 @@
     <details class="how"><summary>How the bite outlook is estimated</summary>
       <p class="fine">The strongest fully covered 2-hour daylight/twilight window sets the relative bite label: Promising at 0.78+, Mixed at 0.62–0.77, otherwise Slow. These are heuristic score bands, not measured chances of catching a fish. No local catch/no-catch data calibrates them.</p>
       <p class="fine">Every 30-minute slot uses the NWS hourly forecast. Surf / pier weights sunrise or sunset light 45%, wind 30%, rain chance 25%. Inshore weights Smith Creek water-level change 35%, light 25%, wind 20%, rain 20%. Water-level change is interpolated between predicted highs and lows; it is not a tidal-current prediction. Windows need complete inputs, can include 45 minutes of twilight, and never overlap. Skip-level forecast wind or rain and active caution/warning alerts withhold suggestions. Offshore buoy 41117 is a current St. Augustine reference, not a forecast of local surf; check the beach before going.</p>
+      <p class="fine">Confidence compares input quality, not catch odds: Low if the forecast is over 6 h old, alerts are unverified or inshore tide predictions are missing, or if two or more inputs are missing or aging (forecast 3–6 h old, offshore reading missing or over 90 min old, no airport observation); Moderate with one such gap; otherwise High. A Low reading dims the outlook label.</p>
       <p class="fine">Seasonal targets follow <a href="https://myfwc.com/fishing/saltwater/outreach/wheretofish/">FWC’s St. Johns / Flagler fishing guide</a>. They do not predict species catches or indicate legal harvest. Smith Creek is an inland tide reference and is used only for the inshore view.</p>
     </details>
   </section>

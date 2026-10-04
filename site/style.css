@@ -98,6 +98,10 @@ summary { cursor: pointer; font-size: 13px; color: var(--accent); min-height: 26
 .bite-label[data-level="promising"] { color: var(--go); }
 .bite-label[data-level="mixed"] { color: var(--mid); }
 .bite-label[data-level="slow"] { color: var(--text); }
+.bite-label[data-confidence="low"] { opacity: .6; }
+.bite-conf { --c: var(--none); display: inline-block; margin: 8px 0 2px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 650; color: var(--c); border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); }
+.bite-conf:empty { display: none; }
+.bite-conf[data-level="high"] { --c: var(--go); } .bite-conf[data-level="moderate"] { --c: var(--mid); } .bite-conf[data-level="low"] { --c: var(--skip); }
 .bite-time { font-size: 15px; font-weight: 600; margin: 4px 0 0; font-variant-numeric: tabular-nums; }
 .bite-result .fine { margin-top: 5px; }
 .bite-targets { color: var(--muted); font-size: 12px; margin: 9px 0 0; }
