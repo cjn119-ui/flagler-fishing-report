@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { weeklyOutlook, dayScore, bandScore, nowScore } from "../site/shared/week.js";
-import { verdict, parseWindMph, classifyAlert, sun, sunEvents, parseTideSeries, seriesFromHilo, tideRate, pickWindows, dailyOutlook } from "../site/shared/logic.js";
+import { verdict, parseWindMph, classifyAlert, sun, sunEvents, parseTideSeries, seriesFromHilo, tideRate, pickWindows, dailyOutlook, nextHours } from "../site/shared/logic.js";
 
 assert.equal(parseWindMph("5 to 10 mph"), 10);
 assert.equal(parseWindMph("12 mph"), 12);
@@ -90,3 +90,18 @@ for (const w of pickWindows({ now, series, hourly: changing, events: sunEvents(n
   assert.ok(daylight.some((e, i) => e.kind === "sunrise" && daylight[i + 1]?.kind === "sunset" && w.start >= +e.t - 45 * 60e3 && w.end <= +daylight[i + 1].t + 45 * 60e3));
 }
 console.log("audit regression tests passed");
+
+{
+  const t0 = new Date("2026-10-01T14:20:00Z"), hr = (i, windMph, rainPct) => ({ start: new Date(+t0 - 20 * 60e3 + i * 3600e3), end: new Date(+t0 + 40 * 60e3 + i * 3600e3), windMph, rainPct });
+  const hrs = [hr(-1, 30, 90), hr(0, 5, 10), hr(1, 16, 20), hr(2, 5, 65), hr(3, 21, 65), hr(4, 5, 10), hr(5, 5, 10), hr(6, 5, 10)];
+  const { slots, worst } = nextHours(hrs, t0);
+  assert.equal(slots.length, 6);
+  assert.equal(+slots[0].start, +hrs[1].start, "past hour dropped, current hour kept");
+  assert.deepEqual(slots.map(s => s.level), [0, 1, 2, 2, 0, 0]);
+  assert.equal(+worst.slot.start, +hrs[3].start, "earliest slot at the highest level");
+  assert.equal(worst.cause, "rain");
+  assert.equal(nextHours(hrs.slice(5), t0).worst, null);
+  assert.equal(nextHours([hr(0, null, null)], t0).slots[0].level, null);
+  assert.deepEqual(nextHours(null, t0), { slots: [], worst: null });
+}
+console.log("next-hours tests passed");

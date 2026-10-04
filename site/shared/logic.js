@@ -28,6 +28,23 @@ function level(value, rule) {
   return value >= rule.skip ? 2 : value >= rule.marginal ? 1 : 0;
 }
 
+/**
+ * Next `count` hourly forecast slots (the current hour included), each rated by the same wind and
+ * rain thresholds as the verdict. `worst` is the earliest slot at the highest non-zero level.
+ * Returns { slots: [{ ...period, level: 0|1|2|null }], worst: { slot, cause: "wind"|"rain" } | null }.
+ */
+export function nextHours(hourly, now, count = 6) {
+  const slots = (hourly ?? []).filter((p) => p.end > now).slice(0, count).map((p) => {
+    const w = level(p.windMph, RULES.wind), r = level(p.rainPct, RULES.rain);
+    return { ...p, level: w == null && r == null ? null : Math.max(w ?? 0, r ?? 0), windLevel: w, rainLevel: r };
+  });
+  let worst = null;
+  for (const slot of slots) {
+    if (slot.level > 0 && (!worst || slot.level > worst.slot.level)) worst = { slot, cause: (slot.rainLevel ?? 0) > (slot.windLevel ?? 0) ? "rain" : "wind" };
+  }
+  return { slots, worst };
+}
+
 /** 2 = skip-worthy (warnings/watches), 1 = caution, 0 = informational. */
 export function classifyAlert(event = "") {
   if (/warning|watch/i.test(event)) return 2;
