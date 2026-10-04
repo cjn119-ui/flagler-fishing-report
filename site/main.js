@@ -1,6 +1,6 @@
 import {
   TZ, RULES, OBS_MAX_AGE_MS, BUOY_MAX_AGE_MS, msToMph, cToF, mToFt, parseWindMph, classifyAlert, verdict,
-  sunEvents, seriesFromHilo, pickWindows, windowReason, localDay, isoDay, addDays,
+  sunEvents, seriesFromHilo, pickWindows, windowReason, localDay, isoDay, addDays, nextHours,
 } from "./shared/logic.js?v=catch-20260930b";
 import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js?v=catch-20260930b";
 import { biteOutlook, seasonalTargets } from "./shared/catch.js?v=catch-20260930b";
@@ -18,6 +18,7 @@ const RING = 2 * Math.PI * 52;
 const fmt = (opts) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...opts });
 const fTime = fmt({ hour: "numeric", minute: "2-digit" });
 const fDay = fmt({ weekday: "short" });
+const fHour = fmt({ hour: "numeric" });
 const fClock = (d) => fTime.format(d).replace(/\s/g, " ");
 const el = (tag, attrs = {}, text) => { const e = document.createElement(tag); for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v); if (text != null) e.textContent = text; return e; };
 const age = (d) => { const m = Math.round((Date.now() - d) / 60e3); return m < 1 ? "just now" : m < 90 ? `${m} min ago` : `${Math.round(m / 60)} h ago`; };
@@ -99,6 +100,24 @@ function stat(root, label, value, unit, detail, { off = false, wide = false, com
   main.append(v);
   s.append(main, el("div", { class: "d" }, detail));
   root.append(s);
+}
+
+const LEVEL_WORD = ["Go", "Caution", "Skip"];
+function renderHours(hourly, now, saved) {
+  const ol = $("hours"), sum = $("hours-summary");
+  ol.replaceChildren();
+  const { slots, worst } = hourly ? nextHours(hourly, now) : { slots: [], worst: null };
+  $("hours-status").textContent = !slots.length ? "" : saved ? "Saved forecast" : "NWS hourly";
+  if (!slots.length) { sum.textContent = "Hourly forecast unavailable."; return; }
+  for (const s of slots) {
+    const wind = s.windMph == null ? "no wind data" : `${Math.round(s.windMph)} mph`, rain = s.rainPct == null ? "no rain data" : `${Math.round(s.rainPct)}%`;
+    const li = el("li", { "aria-label": `${fHour.format(s.start)}: wind ${wind}, rain ${rain}, ${s.level == null ? "no rating" : LEVEL_WORD[s.level]}` });
+    li.append(el("b", {}, fHour.format(s.start)), el("span", { class: "dot", "data-l": s.level ?? "" }), el("span", {}, s.windMph == null ? "–" : `${Math.round(s.windMph)} mph`), el("span", {}, s.rainPct == null ? "–" : `${Math.round(s.rainPct)}%`));
+    ol.append(li);
+  }
+  sum.textContent = worst
+    ? `${worst.cause === "rain" ? `Rain ${Math.round(worst.slot.rainPct)}%` : `Wind ${Math.round(worst.slot.windMph)} mph`} around ${fHour.format(worst.slot.start)} (${LEVEL_WORD[worst.slot.level].toLowerCase()}).`
+    : slots.some((s) => s.level == null) ? "Some hours have incomplete forecast data." : "No wind or rain concerns in the next 6 hours.";
 }
 
 function renderStats({ obs, buoy, rainPct, windMph, tides, now }) {
@@ -243,6 +262,7 @@ async function refresh() {
     if (cached.length) notes.push(`Saved data: ${cached.join(", ")}.`);
     if (gaps.length && !notes.length) notes.push("Some sources are stale or incomplete.");
     $("coverage").textContent = notes.join(" ");
+    renderHours(hourly, now, cached.includes("forecast"));
     renderStats({ obs, buoy, rainPct, windMph: forecastAtNow(hourly, now)?.windMph ?? null, tides, now });
     const hazard = alerts.some(a => classifyAlert(a.event) > 0);
     const reason = hazard ? "Suggestions withheld while a caution or warning alert is active. Review the alert above."
