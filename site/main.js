@@ -281,17 +281,19 @@ async function refresh() {
       : !hourly || cached.includes("forecast") || !alertsKnown ? "Prediction unavailable until current forecast and alerts can be checked."
       : v.level === 2 ? "Suggestions withheld during Skip-level conditions." : null;
     const events = reason ? null : sunEvents(now);
+    const windows = {
+      surf: events ? pickWindows({ now, hourly, events }, { habitat: "surf" }) : [],
+      inshore: events && tides && !cached.includes("tides") ? pickWindows({ now, series: tides.series, hourly, events }, { habitat: "inshore" }) : [],
+    };
     const confidenceFor = (spotName) => biteConfidence({
       spot: spotName, now, forecastUpdated: hourlyFeed?.updated, alertsKnown, tidesOk: !!tides && !cached.includes("tides"),
       buoyAt: Number.isFinite(buoy?.waveM) ? buoy.at : null, obsAt: obs?.at ?? null,
+      window: biteOutlook(windows[spotName])?.window ?? null, obsWindMph: obs?.windMph ?? null, forecastWindMph: forecastAtNow(hourly, now)?.windMph ?? null,
     });
     prediction = {
       confidence: { surf: confidenceFor("surf"), inshore: confidenceFor("inshore") },
       now, reason, buoyReady: Number.isFinite(buoy?.waveM), tideMissing: !tides || cached.includes("tides"),
-      windows: {
-        surf: events ? pickWindows({ now, hourly, events }, { habitat: "surf" }) : [],
-        inshore: events && tides && !cached.includes("tides") ? pickWindows({ now, series: tides.series, hourly, events }, { habitat: "inshore" }) : [],
-      },
+      windows,
     };
     renderPrediction();
     if (week) {
