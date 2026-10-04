@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import { readFile, access } from 'node:fs/promises';
-import * as logic from '../site/v2/logic.js';
+import * as logic from '../site/shared/logic.js';
 import * as week from '../site/shared/week.js';
 import * as catchLogic from '../site/shared/catch.js';
 class Element {
@@ -86,5 +86,5 @@ new vm.Script(sw, { filename: 'service-worker.js' });
 new vm.Script(await readFile(new URL('../site/v3/sw.js',import.meta.url),'utf8'), { filename: 'v3/sw.js' });
 const shell = vm.runInNewContext(sw.match(/const SHELL = (\[[^;]+\]);/)[1]);
 for (const path of shell) await access(new URL('../site/'+(path==='./'?'index.html':path),import.meta.url));
-assert.ok(shell.some(p => p.startsWith('v2/logic.js')) && shell.some(p => p.startsWith('shared/week.js')) && shell.some(p => p.startsWith('shared/catch.js')));
+assert.ok(shell.some(p => p.startsWith('shared/logic.js')) && shell.some(p => p.startsWith('shared/week.js')) && shell.some(p => p.startsWith('shared/catch.js')));
 console.log('app failure-state and offline shell tests passed');

@@ -1,7 +1,7 @@
 import {
   TZ, RULES, OBS_MAX_AGE_MS, BUOY_MAX_AGE_MS, msToMph, cToF, mToFt, parseWindMph, classifyAlert, verdict,
   sunEvents, seriesFromHilo, pickWindows, windowReason, localDay, isoDay, addDays,
-} from "./v2/logic.js?v=catch-20260930b";
+} from "./shared/logic.js?v=catch-20260930b";
 import { GRID_FORECAST, weeklyOutlook, renderWeek, nowScore } from "./shared/week.js?v=catch-20260930b";
 import { biteOutlook, seasonalTargets } from "./shared/catch.js?v=catch-20260930b";
 
@@ -236,6 +236,7 @@ async function refresh() {
       v.level = null; v.label = "Unconfirmed"; v.reasons = ["Current forecast or alerts could not be fully checked."];
     }
     renderHero(v, alerts, ctx);
+    if (!alertsKnown) $("v-alerts").append(el("li", { "data-l": "1" }, "Current alerts unverified"));
     const notes = [];
     if (!buoy || !Number.isFinite(buoy.waveM)) notes.push("Marine reading unavailable; score excludes seas.");
     if (!alertsKnown) notes.push("Current alerts unverified.");

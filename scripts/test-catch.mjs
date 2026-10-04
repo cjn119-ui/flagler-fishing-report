@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { pickWindows, scoreSlot, sunEvents, seriesFromHilo } from '../site/v2/logic.js';
+import { pickWindows, scoreSlot, sunEvents, seriesFromHilo } from '../site/shared/logic.js';
 import { biteOutlook, seasonalTargets } from '../site/shared/catch.js';
 
 const now = new Date('2026-09-30T10:10:00-04:00');
