@@ -36,6 +36,7 @@ jobs:
           node scripts/test-app.mjs
           node scripts/test-catch.mjs
           node scripts/test-calculations.mjs
+          node scripts/test-validator.mjs
       - uses: actions/configure-pages@v5
         id: pages
       - name: Generate report and live data
@@ -43,6 +44,8 @@ jobs:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
           FORCE_REFRESH: ${{ inputs.force }}
         run: node scripts/generate.mjs
+      - name: Validate generated output
+        run: node scripts/test-generated-output.mjs
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
