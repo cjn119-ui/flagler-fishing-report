@@ -43,4 +43,6 @@ Consequential milestones get both: Sol High implementation review + Opus High pr
 
 **Workflow.** 1 CHIEF (Luna Med) → 2 product spec (Sonnet High) → 3 hard product decisions (Opus High, only if needed) → 4 technical architecture (Sol High) → 5 architecture red team (Opus High) → 6 implementation (Luna High) → 7 data/prediction validation (Luna High) → 8 statistical/scoring escalation (Sol High) → 9 UX polish (Sonnet High) → 10 technical review (Sol High) → 11 product/architecture review (Opus High) → 12 targeted fixes (Luna/Sonnet/Sol by failure type) → 13 final RC review: Sol XHigh + Opus High, independent.
 
+**Owner cap (2026-10-05): GPT-6.1 Sol effort is capped at Medium in this repo.** Wherever the table or workflow above says Sol High or Sol XHigh (architecture, technical review, scoring escalation, final RC review), use Sol Medium instead; for work that would have needed more, narrow the problem or use Opus High / Luna High rather than raising Sol. Raising the cap needs Chris's explicit say-so.
+
 **Mechanics.** Codex runs: always set the working directory explicitly (`--cwd` / `-C /Users/christiannunez/flagler-fishing-report`) and pass model + effort explicitly (`gpt-6-luna` / `gpt-6.1-sol`, `low|medium|high|xhigh`). Claude roles run as Claude subagents with the named model. Never redispatch a running Codex job; check its status first.

@@ -22,7 +22,7 @@ Rates are unweighted shares of interviewed anglers plus WP_INT-weighted versions
 They describe what intercepted anglers reported, mostly at piers, not a
 calibrated forecast for a specific day.
 """
-import argparse, csv, glob, gzip, io, json, math, os, statistics, sys, urllib.request, zipfile
+import argparse, csv, glob, gzip, io, json, math, os, re, statistics, sys, urllib.request, zipfile
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -44,6 +44,16 @@ BAIT = {
     "BIGEYE SCAD", "ATLANTIC MENHADEN", "MENHADEN GENUS", "PINFISH", "ATLANTIC BUMPER",
 }
 UNKNOWN = {"", "UNIDENTIFIED FISH"}
+
+def species_catalog():
+    """Read stable species ids/names/MRIP aliases without executing browser JS."""
+    path = os.path.join(os.path.dirname(__file__), "..", "site", "v5", "species.js")
+    source = open(path, encoding="utf-8").read()
+    pattern = re.compile(r'id:\s*"([^"]+)".*?name:\s*"([^"]+)".*?mrip:\s*\[([^\]]*)\]', re.S)
+    return {
+        species_id: {"name": name, "mrip": re.findall(r'"([^"]+)"', aliases)}
+        for species_id, name, aliases in pattern.findall(source)
+    }
 
 
 def fetch(url, path):
@@ -112,10 +122,18 @@ def collect_mrip(cache, years, counties):
                     hour = hh
             trips[key] = {
                 "year": int(d["YEAR"]), "month": month, "county": d["CNTY"], "area": AREAS[d["AREA_X"]],
-                "id_code": d.get("ID_CODE", ""), "f_by_p": d.get("F_BY_P", ""), "catch_flag": d.get("CATCH", ""),
+                "id_code": d.get("ID_CODE", ""), "wave": d.get("WAVE", ""),
+                "f_by_p": d.get("F_BY_P", ""), "catch_flag": d.get("CATCH", ""),
+                "imputed_proxy": (num(d.get("IMP_REC")) == 1 or
+                                  (d.get("ID_CODE", "")[5:9].isdigit() and
+                                   int(d["ID_CODE"][5:9]) != int(d["YEAR"]))),
                 "mode_f": d.get("MODE_F", ""), "w": num(d.get("WP_INT")) or 0.0,
                 "hrsf": num(d.get("HRSF")) or None, "hour": hour,
-                "catch": defaultdict(float), "reported_catch": defaultdict(float), "catch_rows": 0,
+                "catch": defaultdict(float), "legacy_personal_catch": defaultdict(float),
+                "reported_catch": defaultdict(float),
+                "personal_catch": defaultdict(float), "species_hits": set(),
+                "species_hit_type": defaultdict(set), "type_a": False, "type_b": False,
+                "catch_rows": 0,
             }
     for z in zips:
         for d in read_zip_csvs(z, "catch_", years):
@@ -127,70 +145,166 @@ def collect_mrip(cache, years, counties):
             t["catch_rows"] += 1
             if num(d.get("CLAIM_UNADJ")) > num(d.get("CLAIM")):
                 diagnostics["group_adjusted_claim_rows"] += 1
+            if num(d.get("IMP_REC")) == 1:
+                t["imputed_proxy"] = True
+            common = (d.get("COMMON") or "").strip().upper()
+            claim, harvest, release = (num(d.get(k)) for k in ("CLAIM", "HARVEST", "RELEASE"))
             n = num(d.get("TOT_CAT"))
             if n > 0:
-                common = (d.get("COMMON") or "").strip().upper()
                 t["reported_catch"][common] += n
-                # F_BY_P=1 attributes this catch to the interviewed respondent.
                 if t["f_by_p"] == "1":
-                    t["catch"][common] += n
-                else:
+                    t["legacy_personal_catch"][common] += n
+                if t["f_by_p"] != "1":
                     diagnostics["positive_nonindividual_tot_cat_rows"] += 1
+            # Preserve the prior respondent-attributed Type-A-only definition.
+            if claim > 0 and t["f_by_p"] == "1":
+                t["catch"][common] += claim
+                t["type_a"] = True
+            # Type B1/B2 are reported by the interviewed angler even when
+            # F_BY_P=8; group Type-A (F_BY_P=2) is not credited to them.
+            if harvest > 0 or release > 0:
+                t["personal_catch"][common] += harvest + release
+                t["type_b"] = True
+            if (claim > 0 and t["f_by_p"] == "1") or harvest > 0 or release > 0:
+                t["species_hits"].add(common)
+                if claim > 0 and t["f_by_p"] == "1":
+                    t["species_hit_type"][common].add("A")
+                if harvest > 0:
+                    t["species_hit_type"][common].add("B1")
+                if release > 0:
+                    t["species_hit_type"][common].add("B2")
     diagnostics["id_code_collision_groups"] = sum(len(keys) > 1 for keys in id_code_keys.values())
-    diagnostics["imputed_proxy_trip_rows"] = sum(
-        t["id_code"][5:9].isdigit() and int(t["id_code"][5:9]) != t["year"]
-        for t in trips.values()
-    )
+    diagnostics["imputed_proxy_trip_rows"] = sum(t["imputed_proxy"] for t in trips.values())
+    diagnostics["imputed_proxy_interviews"] = [
+        {"year": t["year"], "wave": key[1], "id_code": t["id_code"], "imputed_proxy": True}
+        for key, t in sorted(trips.items()) if t["imputed_proxy"]
+    ]
     diagnostics["trips_without_catch_rows"] = sum(t["catch_rows"] == 0 for t in trips.values())
     diagnostics["trips_with_positive_tot_cat"] = sum(bool(t["reported_catch"]) for t in trips.values())
-    diagnostics["trips_with_individual_catch"] = sum(bool(t["catch"]) for t in trips.values())
-    diagnostics["trips_with_group_only_catch"] = sum(bool(t["reported_catch"]) and not t["catch"] for t in trips.values())
+    diagnostics["trips_with_individual_catch"] = sum(bool(t["legacy_personal_catch"]) for t in trips.values())
+    diagnostics["trips_with_personal_type_a_or_b_catch"] = sum(bool(t["species_hits"]) for t in trips.values())
+    diagnostics["trips_type_a_only"] = sum(t["type_a"] and not t["type_b"] for t in trips.values())
+    diagnostics["trips_type_b_only"] = sum(t["type_b"] and not t["type_a"] for t in trips.values())
+    diagnostics["trips_type_a_and_b"] = sum(t["type_a"] and t["type_b"] for t in trips.values())
+    diagnostics["trips_with_group_only_catch"] = sum(bool(t["reported_catch"]) and not t["legacy_personal_catch"] for t in trips.values())
     diagnostics["trip_catch_yes_flag"] = sum(t["catch_flag"] == "1" for t in trips.values())
     diagnostics["catch_yes_without_individual_species_rows"] = sum(
-        t["catch_flag"] == "1" and not t["catch"] for t in trips.values()
+        t["catch_flag"] == "1" and not t["legacy_personal_catch"] for t in trips.values()
     )
     return trips, diagnostics
 
 
-def summarize(group):
-    """Rates for a list of trips: unweighted and WP_INT-weighted."""
-    n = len(group)
+def summarize(group, catalog):
+    """Rates on unique non-proxy interviews; include proxy sensitivity fields."""
+    all_n = len(group)
+    n = sum(not t["imputed_proxy"] for t in group)
     if not n:
-        return {"n": 0}
-    W = sum(t["w"] for t in group) or None
-    def rate(pred):
-        u = sum(1 for t in group if pred(t)) / n
-        w = (sum(t["w"] for t in group if pred(t)) / W) if W else None
+        return {"n": 0, "n_including_imputed_proxy": all_n, "imputed_proxy_n": all_n}
+    primary = [t for t in group if not t["imputed_proxy"]]
+    W = sum(t["w"] for t in primary) or None
+    def rate(rows, pred, denom):
+        u = sum(1 for t in rows if pred(t)) / denom
+        w = (sum(t["w"] for t in rows if pred(t)) / W) if W and rows is primary else None
         return round(u, 4), (round(w, 4) if w is not None else None)
-    fish = lambda t: sum(v for k, v in t["catch"].items() if k not in BAIT and k not in UNKNOWN)
-    reported_fish = lambda t: sum(v for k, v in t["reported_catch"].items() if k not in BAIT and k not in UNKNOWN)
-    target_u, target_w = rate(lambda t: fish(t) > 0)
-    catch_yes_u, catch_yes_w = rate(lambda t: t["catch_flag"] == "1")
-    group_u = sum(1 for t in group if reported_fish(t) > 0) / n
-    group_w = (sum(t["w"] for t in group if reported_fish(t) > 0) / W) if W else None
-    hrs = [t["hrsf"] for t in group if t["hrsf"]]
-    species = defaultdict(lambda: [0, 0.0, 0.0])  # trips with >=1, total fish, weighted trips with >=1
-    for t in group:
-        for k, v in t["catch"].items():
+    def caught(t):
+        return any(k not in BAIT and k not in UNKNOWN for k in t["species_hits"])
+    def old_caught(t):
+        return any(k not in BAIT and k not in UNKNOWN and v > 0 for k, v in t["legacy_personal_catch"].items())
+    def reported_fish(t):
+        return any(k not in BAIT and k not in UNKNOWN and v > 0 for k, v in t["reported_catch"].items())
+    target_u, target_w = rate(primary, caught, n)
+    old_u, old_w = rate(primary, old_caught, n)
+    proxy_target_u = round(sum(caught(t) for t in group) / all_n, 4) if all_n else None
+    proxy_old_u = round(sum(old_caught(t) for t in group) / all_n, 4) if all_n else None
+    catch_yes_u, catch_yes_w = rate(primary, lambda t: t["catch_flag"] == "1", n)
+    group_u = sum(reported_fish(t) for t in primary) / n
+    group_w = (sum(t["w"] for t in primary if reported_fish(t)) / W) if W else None
+    all_W = sum(t["w"] for t in group) or None
+    group_u_all = sum(reported_fish(t) for t in group) / all_n if all_n else None
+    group_w_all = (sum(t["w"] for t in group if reported_fish(t)) / all_W) if all_W else None
+    hrs = [t["hrsf"] for t in primary if t["hrsf"]]
+    species = defaultdict(lambda: [0, 0.0, 0.0, 0])
+    legacy_species = defaultdict(lambda: [0, 0.0, 0.0])
+    for t in primary:
+        for k in t["species_hits"]:
             if k in UNKNOWN:
                 continue
             s = species[k]
-            s[0] += 1; s[1] += v; s[2] += t["w"]
+            s[0] += 1; s[2] += t["w"]
+            s[3] += not t["imputed_proxy"]
+        for k, v in t["personal_catch"].items():
+            if k not in UNKNOWN:
+                species[k][1] += v
+        for k, v in t["legacy_personal_catch"].items():
+            if k in UNKNOWN or v <= 0:
+                continue
+            legacy_species[k][0] += 1
+            legacy_species[k][1] += v
+            legacy_species[k][2] += t["w"]
     sp = {
-        k: {"p": round(c / n, 4), "pw": round(w / W, 4) if W else None, "per_trip": round(tot / n, 3)}
-        for k, (c, tot, w) in species.items()
+        k: {"p": round(c / n, 4), "pw": round(w / W, 4) if W else None,
+            "per_trip": round(tot / n, 3), "hitTrips": c, "nTrips": n,
+            "hitTripsIncludingImputedProxy": c,
+            "p_legacy_personal_type_a_only": round(legacy_species[k][0] / n, 4) if n else 0,
+            "pw_legacy_personal_type_a_only": round(legacy_species[k][2] / W, 4) if W else None,
+            "per_trip_legacy_personal_type_a_only": round(legacy_species[k][1] / n, 3) if n else 0}
+        for k, (c, tot, w, _) in species.items()
     }
+    for k, (hits, total, weight) in legacy_species.items():
+        if k not in sp:
+            sp[k] = {"p": 0, "pw": 0 if W else None, "per_trip": 0,
+                     "hitTrips": 0, "nTrips": n, "hitTripsIncludingImputedProxy": 0,
+                     "p_legacy_personal_type_a_only": round(hits / n, 4),
+                     "pw_legacy_personal_type_a_only": round(weight / W, 4) if W else None,
+                     "per_trip_legacy_personal_type_a_only": round(total / n, 3)}
+    all_species_hits = defaultdict(set)
+    all_species_fish = defaultdict(float)
+    for t in group:
+        for k in t["species_hits"]:
+            all_species_hits[k].add((t["year"], t["wave"], t["id_code"]))
+        for k, v in t["personal_catch"].items():
+            all_species_fish[k] += v
+    for k in set(sp) | set(all_species_hits):
+        if k not in sp:
+            sp[k] = {"p": 0, "pw": 0, "per_trip": 0, "hitTrips": 0, "nTrips": n, "hitTripsIncludingImputedProxy": 0}
+        sp[k]["hitTripsIncludingImputedProxy"] = len(all_species_hits[k])
+        sp[k]["pIncludingImputedProxy"] = round(len(all_species_hits[k]) / all_n, 4) if all_n else None
+    target_species = {}
+    for species_id, entry in catalog.items():
+        aliases = set(entry["mrip"])
+        hits = sum(1 for t in primary if t["species_hits"] & aliases)
+        all_hits = sum(1 for t in group if t["species_hits"] & aliases)
+        target_species[species_id] = {
+            "name": entry["name"], "hitTrips": hits, "nTrips": n,
+            "p": round(hits / n, 4), "hitTripsIncludingImputedProxy": all_hits,
+            "nTripsIncludingImputedProxy": all_n,
+            "pIncludingImputedProxy": round(all_hits / all_n, 4) if all_n else None,
+            "p_legacy_personal_type_a_only": round(sum(1 for t in primary if any(k in aliases and v > 0 for k, v in t["legacy_personal_catch"].items())) / n, 4),
+        }
     return {
-        "n": n,
-        # Preserve p_any_fish's nonbait fish-rate meaning, now respondent-attributed.
+        "n": n, "n_including_imputed_proxy": all_n, "imputed_proxy_n": all_n - n,
+        "nTrips": n, "personalAnyCatchTrips": sum(caught(t) for t in primary),
+        # Preserve prior estimator values under explicit legacy names.
         "p_any_fish": target_u, "p_any_fish_w": target_w,
+        "p_any_fish_legacy_personal_type_a_only": old_u,
+        "p_any_fish_legacy_personal_type_a_only_w": old_w,
+        "p_any_fish_including_imputed_proxy": proxy_target_u,
+        "p_any_fish_legacy_personal_type_a_only_including_imputed_proxy": proxy_old_u,
         "p_catch_yes": catch_yes_u, "p_catch_yes_w": catch_yes_w,
         "p_any_target_fish": target_u, "p_any_target_fish_w": target_w,
-        "p_any_target_fish_group_inclusive": round(group_u, 4),
-        "p_any_target_fish_group_inclusive_w": round(group_w, 4) if group_w is not None else None,
-        "fish_per_trip": round(sum(fish(t) for t in group) / n, 3),
+        "p_any_target_fish_legacy_personal_type_a_only": old_u,
+        "p_any_target_fish_legacy_personal_type_a_only_w": old_w,
+        "p_any_target_fish_group_inclusive": round(group_u_all, 4) if group_u_all is not None else None,
+        "p_any_target_fish_group_inclusive_legacy": round(group_u_all, 4) if group_u_all is not None else None,
+        "p_any_target_fish_group_inclusive_nonproxy": round(group_u, 4),
+        "p_any_target_fish_group_inclusive_including_imputed_proxy": round(group_u_all, 4) if group_u_all is not None else None,
+        "p_any_target_fish_group_inclusive_w": round(group_w_all, 4) if group_w_all is not None else None,
+        "p_any_target_fish_group_inclusive_w_nonproxy": round(group_w, 4) if group_w is not None else None,
+        "fish_per_trip": round(sum(sum(v for k, v in t["personal_catch"].items() if k not in BAIT and k not in UNKNOWN) for t in primary) / n, 3),
+        "fish_per_trip_legacy_personal_type_a_only": round(sum(sum(v for k, v in t["legacy_personal_catch"].items() if k not in BAIT and k not in UNKNOWN) for t in primary) / n, 3),
         "median_hours": round(statistics.median(hrs), 2) if hrs else None,
         "species": dict(sorted(sp.items(), key=lambda kv: -kv[1]["p"])),
+        "target_species": target_species,
     }
 
 
@@ -260,16 +374,19 @@ def main():
     counties = dict(COUNTIES, **(VOLUSIA if a.with_volusia else {}))
 
     trips, qa = collect_mrip(a.cache, years, counties)
+    catalog = species_catalog()
     result = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "region": "First Coast (NE Florida): " + ", ".join(counties.values()),
         "years": [y0, y1],
         "notes": [
             "MRIP Access Point Angler Intercept Survey microdata, Florida shore mode, interviewed anglers only.",
-            "p_any_fish = share of interviewed anglers with >=1 personally caught nonbait species (F_BY_P=1).",
-            "p_catch_yes = CATCH=yes interview answer; it can include bait or catch by other contributors.",
-            "p_any_target_fish duplicates p_any_fish for explicit target-rate consumers; species p uses respondent-attributed F_BY_P=1 catch.",
-            "p_any_target_fish_group_inclusive is diagnostic only and may include other contributors' catch.",
+            "p_any_fish = share of non-proxy interviewed anglers with >=1 nonbait species hit: individually attributed Type A (CLAIM>0 and F_BY_P=1) or reported Type B1/B2 (HARVEST>0 or RELEASE>0).",
+            "p_any_fish_legacy_personal_type_a_only preserves the former respondent-attributed TOT_CAT definition for provenance.",
+            "p_catch_yes = CATCH=yes interview answer, retained as an availability diagnostic rather than the caught-one definition.",
+            "Species p uses the same Type A/B1/B2 rule, with aliases unioned once per unique interview.",
+            "Rates and n exclude imputed proxy interviews; *_including_imputed_proxy fields report sensitivity with proxies included.",
+            "p_any_target_fish_group_inclusive_legacy is diagnostic only and may include other contributors' catch.",
             "Ocean shore intercepts are mostly at man-made structures (piers/jetties).",
             "Interview hour is when the angler was interviewed, usually near the end of the trip.",
         ],
@@ -279,12 +396,12 @@ def main():
     for area in AREAS.values():
         group = [t for t in trips.values() if t["area"] == area]
         result[area] = {
-            "all": summarize(group),
-            "by_month": {str(m): summarize([t for t in group if t["month"] == m]) for m in range(1, 13)},
-            "by_county": {name: summarize([t for t in group if t["county"] == c]) for c, name in counties.items()},
-            "by_site_type": {label: summarize([t for t in group if MODE_F.get(t["mode_f"]) == label]) for label in sorted(set(MODE_F.values()))},
-            "by_interview_hour": {f"{h:02d}": summarize([t for t in group if t["hour"] is not None and h <= t["hour"] < h + 3]) for h in range(0, 24, 3)},
-            "by_year": {str(y): summarize([t for t in group if t["year"] == y]) for y in sorted(years)},
+            "all": summarize(group, catalog),
+            "by_month": {str(m): summarize([t for t in group if t["month"] == m], catalog) for m in range(1, 13)},
+            "by_county": {name: summarize([t for t in group if t["county"] == c], catalog) for c, name in counties.items()},
+            "by_site_type": {label: summarize([t for t in group if MODE_F.get(t["mode_f"]) == label], catalog) for label in sorted(set(MODE_F.values()))},
+            "by_interview_hour": {f"{h:02d}": summarize([t for t in group if t["hour"] is not None and h <= t["hour"] < h + 3], catalog) for h in range(0, 24, 3)},
+            "by_year": {str(y): summarize([t for t in group if t["year"] == y], catalog) for y in sorted(years)},
         }
         # Keep the per-slice species lists short; the "all" list keeps everything.
         for key in ("by_month", "by_county", "by_site_type", "by_interview_hour", "by_year"):
