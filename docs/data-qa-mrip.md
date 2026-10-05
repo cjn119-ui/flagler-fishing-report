@@ -1,0 +1,21 @@
+# MRIP / NDBC history QA
+
+Built with system Python and cached MRIP zips (`2015–2025`). Baseline → corrected: ocean **n=931, p_any_fish=.6284** → **n=936, .1303**; inland **n=1,742, .4420** → **n=1,767, .1149** ([artifact](../site/v5/data/first-coast-history.json:1)). `p_any_fish` retains its nonbait meaning with respondent attribution; added `p_catch_yes` for the interview answer.
+
+## Checks
+
+- **Trip/catch grain and group catches:** NOAA defines TRIP as one interview and CATCH as one species per interview. Imputed records reuse `ID_CODE`; ID-only joining collapsed **30** 2020 proxy rows. `(YEAR,WAVE,ID_CODE)` retains **2,703** trips and **4,020** catch rows ([builder](../scripts/build_first_coast_history.py:88)). `CATCH=1` means yes; `F_BY_P=1` attributes fish to respondent. **1,107** positive-`TOT_CAT` trips have `CATCH=2`, `F_BY_P=8`, `CNTRBTRS=1`; ID-level `TOT_CAT>0` overstates respondent catch. Two `CATCH=1` trips have only `F_BY_P=2` species rows: keep yes, assign no species. `TOT_CAT=A+B1+B2`; 32 `CLAIM_UNADJ > CLAIM` rows may be group/incomplete-shore adjustments; `LEADER` identifies a group leader. Group-inclusive vs personal nonbait rate: ocean `.6271/.1303`, inland `.4426/.1149` ([builder](../scripts/build_first_coast_history.py:117)).
+- **Denominator / codes / time:** All trips remain in the denominator (0 lacked catch rows); positive `TOT_CAT`=1,447, `CATCH=1`=340, personal catches=338. `AREA_X=1` ocean ≤3 mi; `5` inland. `MODE_FX=3` shore; `MODE_F`: 1 pier/dock, 2 jetty, 3 bridge, 4 other man-made, 5 beach/bank ([builder](../scripts/build_first_coast_history.py:32)). Month/WAVE agree; all 2,703 `TIME` values are valid HHMM ([builder](../scripts/build_first_coast_history.py:99)).
+- **Thin samples:** Monthly n, Jan–Dec: ocean `43,37,72,122,81,113,197,146,19,33,41,32`; inland `121,109,159,197,183,192,150,148,139,154,116,99`. County Duval/Flagler/Nassau/St. Johns: ocean `511/346/9/70`; inland `1066/100/337/264`. Site-type n (pier/beach/jetty/bridge/other-man-made): ocean `814/94/17/11/0`; inland `541/929/30/131/136`. Thin: ocean September, Nassau, bridge, jetty, other-man-made; inland none below 30. Pool or shrink these.
+- **Species mapping (read-only):** Whiting maps Kingfish genus and Gulf/Southern kingfish; flounder maps Southern/Gulf and lefteye flounder genus. No unmapped flounder name reaches five personal-catch trips. Unmapped trips, ocean/inland: Atlantic spadefish `15/10`, spot `14/21`, silver perch `14/9`, bonnethead `11/—`, weakfish `10/—`, requiem shark family `6/—`, ladyfish `6/6`, hammerhead shark genus `5/—`, sand seatrout `—/15`, stingray genus `—/14`, pigfish `—/9`, black sea bass `—/9`, oyster toadfish `—/7`. Review shark/ray names as bycatch. No species.js edits.
+- **WP_INT / NDBC:** Weights are positive: `112–211,944`, median ≈`10,000`; maximum is 0.62% ocean / 0.66% inland weight total; Kish effective-n ≈`410/701`. Weighted/unweighted `p_any_fish`: ocean `.1478/.1303`, inland `.1188/.1149`. Keep weighted rates descriptive pending design-based uncertainty work. NDBC `WTMP` converts °C→°F; `>=99` removes 99/999 (one `999.0`); valid years 2017–2025 and all 365 bins populate. Leap handling omits Feb 29 and shifts later dates back one day ([builder](../scripts/build_first_coast_history.py:176)).
+
+## For GPT-6.1 Sol / architecture owner
+
+- Decide whether the engine should use respondent-declared `p_any_fish`, nonbait `p_any_target_fish`, or both; choose whether/how to use WP_INT and represent uncertainty.
+- Set shrinkage for thin monthly/site slices. NOAA cautions that MRIP is not designed for site-level estimates.
+- Review whether unmapped names should be targets, bycatch-only, or excluded.
+
+## Sources
+
+[MRIP Data User Handbook](https://media.fisheries.noaa.gov/2022-06/MRIP-Data-User-Handbook-Updated-2022-06-21.pdf) pp. 7–9, 32–33; [MRIP Read Me](https://www.fisheries.noaa.gov/s3/2023-04/MRIP-Read-Me.pdf) pp. 1–2 (imputation and grain); [MRIP Survey Variables workbook](https://media.fisheries.noaa.gov/2022-06/MRIP-Survey-Variables-for-Web.xls); [MRIP downloads](https://www.fisheries.noaa.gov/recreational-fishing-data/recreational-fishing-data-downloads); [TOT_CAT definition](https://www.st.nmfs.noaa.gov/st1/recreational/pubs/data_users/append_f.pdf); [NDBC units and missing-value conventions](https://www.ndbc.noaa.gov/faq/measdes.shtml).
