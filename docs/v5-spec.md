@@ -289,126 +289,165 @@ Genuinely ambiguous, product-defining. Recommendations are not final.
 
 ## Architecture
 
-```
-raw sources → normalized observations → derived factors → predictions → PredictionRun JSON → UI
+The implementation contract and numbered rationale are in [`docs/v5-architecture-decisions.md`](v5-architecture-decisions.md). This section is the build specification. Data flow is:
+
+```text
+providers → NormalizedObservation → factors → candidates and scope views → PredictionRun JSON → PWA/native client
 ```
 
-One engine, no DOM, importable in the browser **and** Node (generator, tests, future API/notifications/widgets):
+One DOM-free ES-module engine runs unchanged in Node and the browser. Root `/` and v1–v3 remain untouched.
 
-```
+```text
 site/v5/engine/
-  contracts.js   MODEL_VERSION, JSDoc typedefs, small constructors + validate*() for every contract below
-  sources.js     fetchers → NormalizedObservation; every fetch injectable (fetchImpl) and failure-tolerant
-  astro.js       sunrise/sunset/civil twilight, moon phase/illumination, moon transit/underfoot/rise/set, solunar periods
-  factors.js     pure factor functions: (inputs) → PredictionFactor
-  model.js       species suitability, windows, recommendation, confidence, today-vs-tomorrow
-  run.js         buildPredictionRun({ now, horizon, locations, fetchImpl, history }) → PredictionRun
+  contracts.js   schema/model versions, JSDoc types, constructors, validateRun()
+  copy.js        canonical human-readable and accessibility strings
+  history.js     personal trip hits, shrinkage, season curves, sample labels
+  sources.js     provider adapters, normalization, cache, isolated failures
+  astro.js       sun/twilight, moon phase/transit/rise/set, solunar periods
+  factors.js     pure factor functions and per-mode WEIGHTS
+  model.js       suitability, confidence, windows, verdicts, backups, scope views
+  run.js         buildPredictionRun({ now, locations, fetchImpl, history, previousRuns, preferences }) → { today, tomorrow }
 ```
 
-Morning (current-day) and evening (next-day) views both call `buildPredictionRun` with `horizon: "today" | "tomorrow"`. Presentation may differ; calculation must not. No important value is computed only in UI code.
+`buildPredictionRun({now,locations,fetchImpl,history,previousRuns,preferences})` is called once and returns `{today: PredictionRun, tomorrow: PredictionRun}`. It fetches/normalizes shared observations once, builds both horizons through the same scoring path, and compares their summaries before returning. Each result has its own horizon, target date and validity interval. No morning/evening-specific scoring path exists. The output is deterministic for `now`, observations, history, preferences and prior runs.
+
+Reuse `site/shared/logic.js` tide helpers (`seriesFromHilo`, `heightAt`, `tideRate`) and unit conversions where their contracts fit; reuse the NWS response/failure patterns in `src/worker.mjs` and deployed-state seed pattern in `scripts/generate.mjs`. `weightedScore` in `site/shared/week.js` is a reference for missing-factor renormalization, not a reason to change the shared helper. Do not edit those shared files or change root-app behavior for V5.
 
 ### Sources (`sources.js`)
 
-Each returns `{ ok, source, station, url, observedAt, fetchedAt, values, error }` and never throws. Missing input lowers confidence; it never breaks the run.
+Every adapter returns a `NormalizedObservation` (or an explicit unavailable result), never throws through the source orchestrator:
 
-| Input | Source | Notes |
+```js
+{ provider, kind, locationId, station, units, observedAt, fetchedAt,
+  values, ok, stale, usedFallback, safeErrorCode }
+```
+
+| Input | Adapter and cache | Normalization and failure rule |
 |---|---|---|
-| Hourly forecast (wind speed/dir, gusts, rain %, short forecast/thunder) | NWS `/points/{lat},{lon}` → `forecastHourly` | Cache the points lookup per location (localStorage in browser, memory in Node). |
-| Alerts | NWS `/alerts/active?point=` | Unchecked alerts ⇒ confidence penalty, never GO. |
-| Pressure trend | NWS `/stations/{id}/observations?limit=12` where id = `observationStations[0]` from points | 3 h and 6 h change in hPa. |
-| Tides | CO-OPS `datagetter` `product=predictions&interval=hilo&time_zone=gmt&datum=MLLW` for `spot.tide`, 3-day range | Interpolate (cosine) to 30-min series; rate + direction. |
-| Waves / buoy water temp | `buoyUrls(spot.cdip)` (SECOORA ERDDAP); fallback `api/live/marine.json` | ERDDAP rows: `[time, Hs m, Tp s, dir]` and `[time, °C]`. Stale > 3 h ⇒ treat as missing. |
-| Water temp (nearshore) | CO-OPS `product=water_temperature&date=latest` for `spot.waterTemp` when set | Else buoy; inshore using buoy ⇒ confidence penalty + note. |
-| History | `data/first-coast-history.json` | Loaded once. |
+| NWS point metadata | `/points/{lat},{lon}`; browser localStorage / Node in-memory cache, 7-day TTL; stale metadata may be used up to 30 days only if refresh fails | Resolve `forecastHourly` and `observationStations[0]` once per location. Cache metadata separately from changing forecast/alerts. |
+| Hourly forecast | NWS `forecastHourly`; 30-minute cache | Normalize wind speed/direction, gusts, temperature, PoP, short forecast and thunder indicator. Missing/older than 6 h blocks GO. |
+| Alerts | NWS `/alerts/active?point=...`; 10-minute cache | “Checked and none” differs from fetch failure. Unchecked blocks GO; matching active warnings create safety gates. |
+| Pressure | NWS selected station observations, up to 12 readings; 15-minute cache | Normalize 3 h/6 h changes to hPa. Failure removes only pressure factor. |
+| Tide | CO-OPS `datagetter`, `product=predictions`, `interval=hilo`, `datum=MLLW`, `time_zone=gmt`; cache by station + date range for 6 h | Keep instants in UTC, interpolate the 3-day hilo series to 30-minute values. Convert to America/New_York only in engine copy/labels; never use a fixed DST offset. A distant station is a structural confidence reason, distinct from a failed tide fetch. |
+| Waves and buoy water temperature | Query `buoyUrls(spot.cdip)` (SECOORA ERDDAP) first; fallback to `site/api/live/marine.json` (scheduled NDBC snapshot); cache responses for 30 min | Waves/temp are separate ERDDAP rows. Reject invalid values and observations older than 3 h. Preserve provider and timestamp; stale/missing ocean waves block GO. Inshore buoy temperature is marked structural. |
+| CO-OPS nearshore water temperature | `product=water_temperature&date=latest` for `spot.waterTemp` when configured | Prefer this to buoy temperature. If unavailable, use the buoy per catalog and lower confidence for inshore. |
+| MRIP history | `site/v5/data/first-coast-history.json`, loaded once per run | Use only explicit hit counts and denominators. An omitted/truncated species slice is unavailable, never a zero. |
+
+Cache keys include provider, location/station and request horizon. Reuse a cached observation only within its TTL; a stale-on-error value remains marked stale and cannot satisfy a GO-required live input. Each provider failure is isolated. `sourceStatus[]` records `ageMinutes`, `stale`, `usedFallback`, `affects[]`, and safe status text for Data & sources.
 
 ### Factors (`factors.js`)
 
-Each factor is a `PredictionFactor`:
-`{ key, label, value, unit, score (0–1), weight, contribution (score×weight, normalized), detail (one short sentence), source, available }`.
-Unavailable factors are excluded and the remaining weights renormalize (same rule as `weightedScore` in `shared/week.js`), and `available:false` factors are still listed so the UI can say what was missing.
+`PredictionFactor` carries `{key,label,group,value,unit,score,weight,contribution,effect,humanLabel,summary,detail,source,available,limiting}`. Scores are 0–1. Map groups: season→`season`, waterTemp→`water`, tide→`tide`, light→`light`, solunar→`moon`, wind→`wind`, waves→`surf`, pressure→`pressure`, rain→`weather`. `effect` is `helps` at score ≥0.67, `neutral` at ≥0.34 and <0.67, otherwise `hurts`; mark the single lowest available factor `limiting` when its score <0.34 (tie by the factor order below). For unavailable factors, set `effect/score/contribution` null, `limiting:false`, and provide missing-input text. Available weights are renormalized per species/window; unavailable factors remain listed and do not contribute. Preserve the current nine factors and weights:
 
-| key | How scored (heuristic v5.0 — tune later) |
+Apply tide-sensitivity multipliers to its configured base weight, then for available factors set serialized `weight = normalizedWeight = adjustedWeight / sum(available adjusted weights)`, `contribution = score × weight`, and `suitability = round(100 × sum(contribution))` once. Unavailable factors have null weight/contribution. Show factor `value/score/weight` only at L3.
+
+| Factor | Rule |
 |---|---|
-| `season` | Shrunk monthly share of trips catching the species in that mode: `p_m* = (n_m·p_m + k·p_all)/(n_m + k)`, k = 40, with the month blended 50 % + 25 % each neighbour month; county slice blended in with k = 150. Score = `p_m*` ÷ species' max month `p*` (0–1). Also exported as `historicalRate`. |
-| `waterTemp` | Trapezoid on `species.waterF [min, idealLow, idealHigh, max]`: 1 inside ideal, linear to 0 at min/max. Also report anomaly vs `water_temp.by_day_of_year` (detail only in v5.0). |
-| `tide` | From 30-min tide rate & direction at the slot. `moving`: normalized |rate|; `incoming`/`outgoing`: direction match × rate, with 0.35 floor for the other direction while moving; `any`: 0.7 constant. Weight × `{high:1.3, medium:1, low:0.6}[spot.tideSensitivity]`. |
-| `light` | `lowlight`: 1 within ±60 min of sunrise/sunset, tapering to 0.4 midday, 0.25 night; `day`: 1 daylight, 0.3 night; `any`: 0.8. |
-| `solunar` | 1 in a major period (moon transit/underfoot ±60 min), 0.75 in a minor (moonrise/moonset ±30 min), else 0.45; +0.1 within 3 days of new/full moon (cap 1). |
-| `wind` | Speed: 1 at ≤ 10 mph, linear to 0 at 25 mph (gusts > 30 mph ⇒ 0). Direction vs `windExposure.facingDeg`: offshore +0.1, onshore −0.15 for `calm`-surf species, +0.05 for `rough`-surf species (ocean modes); inshore uses speed only plus −0.1 when the wind blows along the exposed fetch. |
-| `waves` | Ocean modes only. Hs → class: calm < 0.6 m, moderate 0.6–1.2 m, rough > 1.2 m; score 1 if class matches `species.surf`, 0.6 adjacent, 0.2 opposite; Hs > 2 m ⇒ 0. |
-| `pressure` | 6 h change: steady/slowly falling (−0.5 to −3 hPa) 1; steady (±0.5) 0.8; rising 0.5–3 hPa 0.6; rapid change (> 3 hPa either way) 0.4. |
-| `rain` | 1 − rain%/100; thunder in the short forecast ⇒ 0 and a safety gate. |
+| `season` | Use ADR 2's shrunk, personal species trip-hit rate; `score = min(1, rate / 0.20)`. Never normalize to that species' own best month. Same shrunk rate feeds `historicalRate`. |
+| `waterTemp` | Trapezoid using `species.waterF [min, idealLow, idealHigh, max]`: 1 in ideal band; linear to 0 at min/max. Anomaly from NDBC day-of-year climatology is explanatory only in v5. |
+| `tide` | 30-minute rate and direction. `moving` uses normalized absolute rate; `incoming`/`outgoing` match direction × rate, with 0.35 floor for the opposite direction while moving; `any` = 0.7. Multiply weight by tide sensitivity high 1.3, medium 1, low 0.6. |
+| `light` | `lowlight`: 1 within ±60 min sunrise/sunset, taper to 0.4 midday and 0.25 night; `day`: 1 daylight / 0.3 night; `any`: 0.8. |
+| `solunar` | 1 in major period (transit/underfoot ±60 min), 0.75 minor (moonrise/set ±30 min), else 0.45; +0.1 within 3 days of new/full moon, capped at 1. |
+| `wind` | 1 at ≤10 mph, linear to 0 at 25 mph; gust >30 mph scores 0. Ocean direction: offshore +0.1 for calm-surf species, onshore −0.15 for calm / +0.05 for rough. Inshore uses speed, with −0.1 along exposed fetch. Clamp 0–1. |
+| `waves` | Ocean only: calm <0.6 m, moderate 0.6–1.2 m, rough >1.2 m. Species match 1, adjacent class 0.6, opposite 0.2; Hs >2 m scores 0. |
+| `pressure` | 6 h change: −0.5 to −3 hPa = 1; ±0.5 = 0.8; rise 0.5–3 = 0.6; absolute change >3 = 0.4. |
+| `rain` | `1 − PoP/100`; thunder is a separate safety gate. |
 
-Default weights (sum 1 before renormalizing; store in one exported `WEIGHTS[mode]` table):
-
-| | season | waterTemp | tide | light | wind | waves | pressure | solunar | rain |
-|---|---|---|---|---|---|---|---|---|---|
+| Mode | Season | Water | Tide | Light | Wind | Waves | Pressure | Solunar | Rain |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | surf / pier | .24 | .18 | .14 | .10 | .10 | .10 | .05 | .05 | .04 |
 | inshore | .24 | .18 | .20 | .12 | .10 | — | .06 | .06 | .04 |
 
-Hard caps: water temp outside `[min, max]`, or `season` score < 0.1 ⇒ suitability ≤ 20. `needsStructure` species only on locations whose `structure` is pier/jetty/bridge/dock/seawall/rocks. `bycatch` species count toward "anything biting" but are never a target.
+Hard caps: outside species water `[min,max]` or season factor score `<0.1` limits suitability to 20 (`rate <0.02` under the initial 0.20 season-score ceiling). `needsStructure` species score only at pier/jetty/bridge/dock/seawall/rocks. Bycatch can appear under “Also biting” but cannot become a target or drive GO. Keep factor values, score and weight for L3; never show weights in glance/card UI.
 
 ### Model (`model.js`)
 
-- `scoreSpecies(species, location, mode, slotTime, ctx)` → `SpeciesPrediction` with `suitability` (0–100, rounded once), `factors[]`, `historicalRate` (0–1, shrunk), `calibratedProbability: null` (reserved until outcomes exist), `confidence` (0–100) + `confidenceReasons[]`, `setup` from `setupFor(species, mode)`.
-- Slots every 30 min across the horizon window (today: now → 21:00 local, extended into tomorrow 05:00–10:00 if fewer than 3 h remain; tomorrow: 05:00–21:00). Windows = contiguous slots where the location/mode's top-species suitability stays within 8 points of its local max, 60–150 min long, non-overlapping, ranked; expose up to 4 per location/mode. Window time labels in America/New_York (beware DST; reuse the repo's GMT-in, NY-out approach).
-- `Recommendation`: across all active locations × modes × windows, choose the best by `top suitability × confidenceFactor`, where confidenceFactor = 0.6 + 0.4·confidence/100. Verdict: **GO** if top suitability ≥ 70 and confidence ≥ 50 and no gate; **MAYBE** if ≥ 50; else **SKIP**. Gates (force SKIP for the affected windows, list the reason): thunder, sustained wind ≥ 25 mph or gusts ≥ 35 mph, active NWS warning for the point, Hs > 2.5 m for ocean modes. Include `why[]` = the top 3 positive factor details and the worst limiting factor. `targets[]` = top 3 non-bycatch species (suitability + historicalRate). `setup` = setup of the #1 target in that mode. `backup` = best alternative that differs in location **or** mode (prefer a different mode), else a later window. `comparison` = today vs tomorrow best suitability and verdict (the run computes the other horizon's summary too).
-- Confidence 0–100: start 100; −25 forecast missing or > 6 h old (−10 for 3–6 h); −20 alerts unchecked; −20 tide missing (−10 for ocean modes where tide station is > 15 mi away per `tideNote`); −10 waves missing (ocean modes); −10 water temp missing (−5 if inshore uses buoy); −5 pressure missing; −5 to −15 by history n for the slice (n < 30: −15, < 80: −8). Clamp 5–100; level High ≥ 75, Moderate ≥ 50, else Low. Keep every reason string.
+- `scoreSpecies(species, location, mode, slotTime, ctx)` returns heuristic `suitability` 0–100 (round once), factors, the same shrunk `historicalRate`, `calibratedProbability: null`, confidence/reasons and structured setup from `setupFor()`.
+- Generate 30-minute slots: today from `now` to 21:00 local (extend into tomorrow 05:00–10:00 only when fewer than 3 h remain); tomorrow 05:00–21:00 local. For each location/mode, find local peaks in the top-species slot series. For each peak, take the maximal contiguous segment within 8 points of it; expand a short segment by the adjacent higher-scoring slot until it reaches 60 minutes, or discard if it cannot. If longer than 150 minutes, keep the 150-minute slice containing the peak with the greatest mean score (tie: earlier start). Sort segments by peak suitability, then mean suitability, then earlier start; remove overlaps in that order; expose up to four. Never cross local midnight. Window suitability is the best species' unrounded mean slot score across the window, rounded once. Keep UTC instants and engine-built New York labels. Export `isOpenAtGenerated`, `startsInMinAtGenerated` and `endsInMinAtGenerated`; UI may update the countdown from the clock but may not choose or score a window.
+- A location × mode × window recommendation uses the best suitable species; targets are top three non-bycatch species. If any target that is in that spot's `targets` list has shrunk rate ≥0.05 and suitability ≥70, the highest-suitability such realistic target may drive GO. Otherwise the highest-suitability target drives MAYBE/SKIP. Suitability ≥70, confidence ≥50, no gate, forecast age ≤6 h, checked alerts, and (surf/pier) waves present are all required for GO. If not GO, suitability ≥50 is MAYBE; otherwise SKIP. Safety gates force SKIP. High suitability with Low confidence is MAYBE.
+- Recommendation confidence/reasons come from its selected driver species and window; do not average unrelated targets' confidence values. Per-species confidence uses the same inputs plus that species' history sample size.
+- Safety gates: thunder, sustained wind ≥25 mph or gust ≥35 mph, active NWS warning for the point, or ocean Hs >2.5 m. Include `{code,text,startsAt,endsAt,severity}` with plain-language time range. No safety gate can be hidden or overruled by species focus.
+- Best-anywhere ranking is verdict tier, then suitability. The top candidate and all same-verdict candidates within 5 points of that top score tie (no transitive chaining); break ties by user favorite, location target-list membership, then catalog order; expose `tiedWith[]`. Preserve the previous best location + mode unless invalid/gated, a challenger is >5 points better, or it is at least one verdict tier better. The engine takes prior run/preferences explicitly; no hidden state. The Spots list has its own approved order: verdict tier; then Near me distance when enabled; then favourite; then catalog order. Do not reuse Best-anywhere suitability ranking for the Spots list.
+- Backup order follows product decision 2: opposite water type (`other-mode` = ocean surf/pier ↔ inshore) within 7 straight-line miles, including another mode at the same spot when cataloged; later window at same spot/mode; same water type (`other-spot`) within 7 mi; only if none of those reaches MAYBE, the best MAYBE-or-better option anywhere (name area). `backup.reason` explains the change and `distanceMi` is populated for another spot. Never return a backup below MAYBE; focused-species backup uses `other-species` only when a focus is set and no safety gate applies.
+- A species-focused view uses that species' recommendation and labels the verdict “for [species]”; include `overall.verdict`, one-step-better overall copy, and `focusCapped` when the shrunk local rate is below 0.05. Safety SKIP is focus-independent. Focus species appears first in Targets.
+- Suitability bands are Great fit 70–100, Decent fit 50–69, Poor fit 30–49, Not a fit 0–29. `waterFit.state` is cold below `minF`, hot above `maxF`, ideal within `[idealLowF,idealHighF]`, otherwise ok. `displayName` includes the mode only when the location offers multiple modes. Classify `partOfDay` from the window midpoint: dawn is sunrise ±60 min, dusk is sunset ±60 min, morning is after dawn through 11:59, midday 12:00–14:59, afternoon 15:00 until dusk, evening otherwise.
+- `comparison.delta` is better/worse for a verdict-tier change or >5 suitability-point change; otherwise similar. `recommendedHorizon` follows one exported 15:00 America/New_York cutoff, with reason; UI does not implement a second cutoff.
+- Planner has seven days. Days 1–2 carry full forecast verdicts. Days 3–7 are `Promising / Mixed / Tough`, never GO; no spot or minute-precise window, only part of day + tide phase. Outlook uses season, tide, moon/light and daily forecast. “Most promising outlook” is allowed only when days 1 and 2 are both SKIP.
 
-### Contracts (`contracts.js`) — stable JSON for PWA, API, Supabase and native clients
+Confidence starts at 100, applies each reason once, clamps 5–100: forecast missing or >6 h −25 (3–6 h −10); alerts unchecked −20; live tide fetch missing −20; ocean tide station >15 mi away −10 structural even when predictions are available; ocean waves missing −10; water temp missing −10; inshore buoy water temperature −5 structural when used; pressure missing −5; historical `effectiveN<30` or null −15, or `<80` −8 structural. Reasons carry `kind: "live" | "structural"`. Permanent tide-distance/inshore-temperature/history limitations lower confidence and appear in Confidence/Why confidence, but never trigger the amber live-gap qualifier. GO at Moderate is allowed only when required live gate inputs are present; show `amberQualifier` only for GO at Moderate (50–74) with at least one live gap; build its text from `confidenceReasons`. Structural reasons never trigger it.
 
-```
-Location            id, name, area, county, modes[], structure, lat, lon, tide, cdip, tideSensitivity, windExposure, access[], targets[], notes
-Conditions          locationId, at, wind{mph,gustMph,dirDeg,onshore}, rainPct, thunder, airTempF, waterTempF{value,source,anomalyF},
-                    waves{hsFt,periodS,dirDeg,observedAt}, tide{heightFt,rateFtPerHr,direction,nextHigh,nextLow,station},
-                    pressure{hPa,change3h,change6h}, light{sunrise,sunset,phase}, moon{phase,illumination,major[],minor[]},
-                    alerts[], sources[{name,observedAt,fetchedAt,ok,stale}]
-PredictionFactor    key, label, value, unit, score, weight, contribution, detail, source, available
-SpeciesPrediction   speciesId, locationId, mode, windowStart, windowEnd, suitability, historicalRate, calibratedProbability(null),
-                    confidence, confidenceReasons[], factors[], setup{where,bait[],lures[],rig}
-FishingWindow       locationId, mode, start, end, topSuitability, species[SpeciesPrediction], gates[]
-Recommendation      verdict(GO|MAYBE|SKIP), horizon, locationId, mode, window{start,end}, targets[], setup, why[], limiting,
-                    confidence, confidenceLevel, backup{locationId,mode,window,speciesId,reason}, comparison{today,tomorrow}
-PredictionRun       id, modelVersion("v5.0.0"), horizon, generatedAt, validFrom, validTo, region, recommendation,
-                    locations[{location, conditions, windows[]}], inputs{sources[]}, notes[]
-```
+### Contracts (`contracts.js` and `copy.js`)
 
-All times ISO-8601 UTC in JSON; the UI formats America/New_York.
+All timestamps in JSON are ISO-8601 UTC. Engine builds all human-facing strings, including labels, summaries, safety text, accessibility labels and copy in windows/setups, in `copy.js`; web/native clients render the same text. Clients may format raw L3 dates/numbers and update the elapsed window countdown, but may not invent copy, labels, rankings, verdicts, scores or missing values. Validators enforce required types/enums and supported `schemaVersion` / `modelVersion`; unknown optional fields are ignored.
+
+| Contract | Required shape |
+|---|---|
+| `PredictionRun` | `schemaVersion`, `id`, `modelVersion` (`MODEL_VERSION="v5.0.0"` initially), `horizon`, `targetDate`, `generatedAt`, target local-day `validFrom/validTo` converted to UTC, `region`, `status`, `carriedForward`, optional `originalGeneratedAt/attemptedAt`, `missingInputs[]`, `recommendation`, `scopeViews`, `locations[]`, 30-minute `slots[]`, `days[7]`, `inputs.sourceStatus[]`, `notes[]`. `schemaVersion` is independent of `modelVersion`; `generatedAt` is run creation time, separate from target validity. |
+| `Location` | Catalog id/name/area/county/modes/structure/coordinates, tide/CDIP and water-temp station ids, tide sensitivity, wind exposure, access, targets and notes; mirror `spots.js` without frontend-only recomputation. |
+| `Conditions` | location/time; wind, rain/thunder, air/water temperature, waves, tide, pressure, light, moon, alerts; `wind.label`, `waves.label`, `tide.label`, `waterTemp.label`, `sky.label` are plain language. |
+| `PredictionFactor` | Factor row defined above, including effect/group/display strings and availability. |
+| `SpeciesPrediction` | `speciesId`, location/mode/window, `suitability`, `suitabilityBand:great|decent|poor|none`, `calibratedProbability:null`, confidence + reasons, factors, setup `{where,bait[],lures[],rig,tip}` + `useLine`, `historicalRate:{rate,n,effectiveN,month,lowSample,band,unit:"trips",sourceLabel}` where `n` is unique observed non-proxy interviews and `effectiveN` is the Kish effective sample of eligible interviews in the mode/month slice (nullable if weights are unavailable; null triggers the band path). For `effectiveN<80` (or missing/nonpositive weights), show only `band` and low-sample copy, computed from the shrunk rate; numeric band cuts are centralized in `HISTORICAL_BAND_CUTS` after Opus decision. `seasonCurve[12]` of `{month,rate,n,effectiveN,lowSample,band}`, `waterFit:{state,text,minF,idealLowF,idealHighF,maxF,currentF}`. Target rows include `name,suitability,suitabilityBand,historicalRate`.  |
+| `FishingWindow` | location/mode, UTC start/end, `partOfDay`, `isOpenAtGenerated`, start/end minutes at generation, species[], suitability, gates[]. |
+| `Recommendation` | verdict, scope/focus, horizon, location/mode/window, driver species, `headline` (≤~60 chars, species + cause), `whenLabel`, `displayName`, `modeLabel`, `partOfDay`, `useLine`, `reason:{code,text}`, `gates[]`, targets[], setup, why[], limiting factor, confidence/level/reasons/summary, `amberQualifier` (string only for GO at Moderate with a live gap; otherwise null), backup `{kind,reason,distanceMi,verdict,suitability,...}`, comparison `{today,tomorrow,delta,recommendedHorizon,reason}`, `tiedWith[]`, rank. |
+| `scopeViews` | engine-precomputed Best anywhere; every active location × offered mode; each species focus; each location/mode × species focus. Views retain tied candidates so local favorites can be applied by an engine selector, not UI scoring. |
+| Location index | `locations[]` contains catalog location, conditions/source freshness, per-mode windows/recommendation, ranked location summary. `bySpecies[speciesId]` includes best location/mode/window, `fitNow`, focused recommendation and overall verdict. |
+| Timeline slot | `{at,suitability,tide{heightFt,rateFtPerHr,direction,phase},lightPhase,moonMarks[],topSpecies[3],conditionLabels}` for each location × mode × 30-minute slot. |
+| Planner day | Days 1–2: forecast verdict, windows/top species/reason/confidence. Days 3–7: `outlookLabel`, `bestWindow:{partOfDay,tidePhase}`, reason; no location, minute window, GO or suitability number. |
+
+`confidenceReasons[]` entries are `{code,text,penalty,kind}`. Factor, gate, backup, history, setup and comparison strings are produced once by `copy.js`. `reason` is required for every non-GO recommendation. A backup's verdict never exceeds the primary recommendation. Any unrecognized optional field survives validation only as an ignored extension; unsupported required schema/model versions use the error state.
 
 ### Static API (scheduled build)
 
-`scripts/generate-v5.mjs` (run in `.github/workflows/pages.yml` after `generate.mjs`, before validation) calls `buildPredictionRun` with Node `fetch` and writes:
-`site/api/v5/today.json`, `site/api/v5/tomorrow.json` (full PredictionRun each) and `site/api/v5/index.json` ({generatedAt, modelVersion, today: summary, tomorrow: summary}). A failed source degrades confidence; only a total failure keeps the previous deployed files (same carry-forward idea as `generate.mjs`). Keep `site/api/` gitignored.
+`scripts/generate-v5.mjs` runs after `scripts/generate.mjs` in `.github/workflows/pages.yml`, using Node 22 and no dependencies. It loads history once, fetches/normalizes provider inputs once per needed location/station, calls `buildPredictionRun` once, and writes the returned today/tomorrow runs. It reads both deployed horizon files through `SITE_URL` for prior-best hysteresis and carry-forward, following the existing generator pattern.
 
-### Supabase (`supabase/migrations/20261005000000_v5_schema.sql`) — write only, do not apply
+Write (gitignored with the rest of `site/api/`):
 
-Tables (uuid PKs, `created_at timestamptz default now()`, FKs, useful indexes, RLS enabled with no anon write policies):
-`model_versions(version pk, released_at, notes, weights jsonb)`,
-`locations(id text pk, …catalog fields…, active)`,
-`source_observations(id, source, station, location_id null, observed_at, fetched_at, kind, values jsonb, unique(source,station,kind,observed_at))`,
-`prediction_runs(id, model_version fk, horizon, generated_at, valid_from, valid_to, confidence, inputs jsonb)`,
-`species_predictions(id, run_id fk, location_id fk, mode, species_id, window_start, window_end, suitability, historical_rate, calibrated_probability null, confidence, factors jsonb)`,
-`recommendations(id, run_id fk unique, verdict, location_id, mode, window_start, window_end, targets jsonb, setup jsonb, why jsonb, backup jsonb, confidence)`,
-`catch_outcomes(id, fished_start, fished_end, location_id fk, mode, caught bool, species_id null, quantity int, approx_size_in numeric, bait text, notes text, prediction_run_id fk null, species_prediction_id fk null, reported_via text)`.
-Add a view `outcomes_vs_predictions` joining each outcome to the run active at `fished_start` for that location (latest run with `valid_from <= fished_start < valid_to`). Store forecast snapshots only as prediction runs — no duplicate raw forecast tables.
+- `site/api/v5/today.json` — complete `PredictionRun`.
+- `site/api/v5/tomorrow.json` — complete `PredictionRun`.
+- `site/api/v5/index.json` — model/schema version, generation/freshness/status and compact today/tomorrow summaries.
 
-## UI implementation notes (`site/v5/index.html`, `app.js`, `style.css`, `ui/*.js`) — phase B
+Individual source failure produces a valid partial/degraded run with unavailable factors and lower confidence. Fatal engine/contract failure uses a deployed last-valid run only after validating it; retain its original `generatedAt`, target validity and prediction payload, set `status: "degraded"`, `carriedForward: true`, `originalGeneratedAt` and `attemptedAt`, and add the failed attempt to `missingInputs[]`. Never make stale data fresh. If there is no last-valid v5 run, fail generation so the Pages workflow does not publish invalid output. Keep last-good fetch/cache data for browser offline use in the service worker; do not treat an HTTP 200 as source success without payload validation.
 
-Product behaviour is specified in **Product spec** above; this section is only the technical shape of the UI layer.
+### Supabase (`supabase/migrations/20261005000000_v5_schema.sql`) — write only; do not apply
 
-- Mobile-first single page with hash routing and a bottom tab bar (Today · Spots · Species · Plan). Renders `PredictionRun` objects only (no scoring or label logic in the UI). Loads `api/v5/<horizon>.json` first (instant, offline-capable), then optionally re-runs the engine live for the selected scope and swaps in fresher results without layout jump.
-- PWA: `manifest.webmanifest` (scope `./`, standalone), `sw.js` (app shell cache-first, `api/v5/*.json` stale-while-revalidate, external APIs network-first with last-good copy; versioned cache name; never cache errors). The service worker's last-good run is what powers the offline and stale states.
-- Persisted client state (localStorage, always wrapped in try/catch): favourites, last scope, last mode, collapsed/expanded cards, NWS `/points` cache. Session-only: species focus, horizon override.
+Write a single reviewable migration file; do not connect, create a project, or apply it. Tables, UUID keys, `created_at`, foreign keys and indexes:
 
-## Tests (CI-gated)
+- `model_versions(version PK, released_at, notes, weights jsonb)`.
+- `locations(id text PK, catalog fields, active)`.
+- `prediction_runs(id PK, model_version FK, horizon, target_date, generated_at, valid_from, valid_to, status, carried_forward, source_provenance jsonb, payload jsonb)`. `payload` is the canonical full run including conditions/factors; provenance stores source ids/timestamps/status, not a second copy of forecast values.
+- `species_predictions(id PK, run_id FK, location_id FK, mode, species_id, window_start/end, suitability, historical_rate, calibrated_probability nullable, confidence, factors jsonb)`, unique by run/location/mode/species/window and also addressable by `(id,run_id,location_id,mode,species_id)` for outcome constraints.
+- `recommendations(id PK, run_id FK, scope_kind/scope_id, location_id, mode, focus_species nullable, window_start/end, verdict, driver_species_id, targets/setup/why/backup jsonb, confidence, rank)`, unique by run + scope + location/mode/focus/window and also addressable by `(id,run_id,location_id,mode)` for outcome constraints. Do not make `run_id` unique: a run has precomputed scopes.
+- `catch_outcomes(id PK, fished_start/end, location_id FK, mode, caught, species_id nullable, quantity, approx_size_in, bait, notes, prediction_run_id FK nullable, recommendation_id FK nullable, species_prediction_id FK nullable, reported_via)`.
 
-`scripts/test-v5.mjs` (add to the workflow unit-test step):
-catalog integrity (every active spot valid; targets valid for its modes; every species has ≥ 1 MRIP name present in history; tide station ids are 7 digits); factor math (trapezoid edges, shrinkage formula with worked examples, weight renormalization with missing factors, caps and `needsStructure`); window selection (non-overlap, length bounds, DST fall-back day); verdict thresholds and gates; confidence penalties; astro against fixed references (sunrise/sunset for Flagler on 2026-06-21 and 2026-12-21 within 2 min of USNO; moon phase on known full/new moon dates within 1 day; moon transit within 15 min of a published value); a full `buildPredictionRun` against recorded fixtures (`scripts/fixtures/v5/*.json`, fetchImpl stubbed) validating every contract; graceful degradation (each source failing in turn still yields a run with lower confidence). `scripts/test-generated-output.mjs`: add warn-level checks that `api/v5/*.json` exist, validate, and are < 90 min old.
+Enable RLS on every table; define no anonymous write policy. No `source_observations` table: raw forecasts are never stored twice. The run payload is canonical; child rows are indexed projections of derived predictions only.
 
-## Definition of done
+Outcome links are written directly when the user logs a trip from an active recommendation: store `prediction_run_id` and `recommendation_id`, plus `species_prediction_id` when the outcome species is known and represented in that recommendation. For older/offline rows without IDs, choose the latest run generated no later than `fished_start` whose `target_date` equals the New York local date of `fished_start` and whose `[valid_from,valid_to)` contains it; tie-break by ascending run id. Within that run, match only the `scope_kind='location_mode'` recommendation for that exact location/mode whose window overlaps `[fished_start,fished_end)`; if several overlap, choose greatest overlap duration, then earliest start, then ascending id. Keep the run link if no recommendation matches and return an unmatched reason. When `species_id` is present, match only that species prediction in the chosen run/location/mode with a window overlapping the session, using the same overlap/start/id tie-break; if none exists, keep valid higher-level links and leave the species FK null with a reason. Never join a future run or store a duplicate forecast snapshot.
 
-1. `node scripts/test-v5.mjs` and all existing tests pass; existing pages unchanged.
-2. `SITE_URL= node scripts/generate.mjs && node scripts/generate-v5.mjs` writes valid v5 runs from live data.
-3. `site/v5/` served locally renders Today/Spots/Species/Plan for every active location with no console errors, at 375 px and desktop, light and dark; works offline from the last run.
-4. Supabase migration file parses as SQL (`psql --set ON_ERROR_STOP=1` against a throwaway Postgres if available; otherwise a careful review) — never applied to a live project.
-5. README "Layout" gains a `/v5/` line and a short V5 section.
+### UI implementation (`site/v5/app.js`, `ui/*.js`, `style.css`) — phase B
+
+Render validated `PredictionRun` scope views, source/freshness states and engine-authored copy. UI state may select a scope/focus, mode filter, favourites, horizon override and expanded cards; pass favorite/previous-run tie preferences through an engine selector. It must not score, sort candidate recommendations, choose windows/backups, compute verdicts or suitability, classify factors, shrink history, or build human-facing strings. Mode stays inside a spot scope and may be a Spots/Species filter, never a primary tab or default filter. Best anywhere is the default until the user chooses a spot in the picker; only that picker-chosen spot persists. Other scope changes, species focus and horizon override are session-only; last mode, favourites and per-card expansion persist in guarded localStorage. Use `manifest.webmanifest` with scope `./` and standalone display. Cache the app shell cache-first; cache `/api/v5/*.json` stale-while-revalidate; fetch external APIs network-first with last-good responses; use a versioned cache name and never cache error responses. Use the service-worker last-good run immediately, then refresh; preserve a stale run on network failure. Store NWS points metadata in guarded localStorage. Implement product journeys and layout only after phase A contracts are stable.
+
+### Tests (CI-gated)
+
+`scripts/test-v5.mjs` is the phase-A suite and must use Node 22, deterministic fixtures and injected `fetchImpl`:
+
+- catalog/mapping parity; active locations/modes/targets; every target history mapping; station id format; proxy rows excluded from primary `n` and reported in QA.
+- category-based caught-one rules (individual A plus individual-reported B1/B2), `F_BY_P==8` with B1/B2, available-catch flag disagreement QA, group Type A exclusion, alias union per trip, shrinkage `k` examples, Kish effectiveN<80 band path and 80 boundary, WP_INT weighted-rate QA sensitivity, missing-vs-zero slices.
+- factor math: trapezoid edges, season scale, weights, unavailable-factor renormalization, hard caps, `needsStructure`, bycatch and gates.
+- windows, lengths, non-overlap, local-midnight, DST fall-back; confidence live/structural reasons and Moderate GO requirements.
+- GO eligibility, backups/radius/order, 5-point ties, verdict tier, target/favorite/catalog tie-breaks and hysteresis invalidation/improvement.
+- astro fixed references: Flagler sunrise/sunset 2026-06-21 and 2026-12-21 within 2 min of USNO; known full/new moon within 1 day; moon transit within 15 min of published reference.
+- full run validates every required contract field and ignored unknown optional fields; each source failing in turn still yields a run with lower confidence; CO-OPS GMT → New York DST labels; SECOORA fallback freshness.
+- at least 60 distinct dated fixture days, frozen `now`, no live fetches: report GO/MAYBE/SKIP frequency overall and on complete, ungated days. Acceptance is 15–35% GO in that ungated subset; outside the band fails for review. This is a verdict-frequency check, not prediction accuracy.
+
+Add to `scripts/test-generated-output.mjs` warn-level checks for API files existing, schema-valid and <90 minutes old. SQL is parsed against throwaway Postgres if available; otherwise carefully reviewed. Never apply the migration.
+
+### Definition of done
+
+1. Builder catch-definition repair and regenerated history pass QA; aliases are per-trip unions; proxy policy and data provenance are visible. No copy or scoring validation precedes this gate.
+2. `node scripts/test-v5.mjs`, `node scripts/test-logic.mjs`, `node scripts/test-app.mjs`, `node scripts/test-catch.mjs`, `node scripts/test-calculations.mjs`, and `node scripts/test-validator.mjs` pass; no root/v1–v3 behavior changes.
+3. `SITE_URL=… node scripts/generate.mjs && SITE_URL=… node scripts/generate-v5.mjs` writes valid today/tomorrow/index payloads from provider responses; source failure and fatal-build carry-forward paths are verified.
+4. ≥60-day fixture replay reports verdict shares and meets its ungated GO target; report explicitly says this does not measure fishing accuracy.
+5. `/v5/` renders Today/Spots/Species/Plan for each active location at 375 px and desktop, light and dark, accessible, no console errors, and offline from last-valid run.
+6. Migration parses or is carefully reviewed, with RLS and outcome as-of join checked; it remains unapplied.
+7. README Layout and short V5 section are updated. Product/architecture acceptance remains with Chris/Opus, not implied by test passage.
