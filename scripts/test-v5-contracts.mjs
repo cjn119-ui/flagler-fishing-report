@@ -22,6 +22,16 @@ await test('constructors and nested validators accept valid domain contracts',()
   assert.equal(validateFishingWindow(windowFixture()),true);assert.equal(validateRecommendation(recFixture()),true);
 });
 
+await test('species prediction additively validates season basis and coded history notes',()=>{
+  const prediction=createSpeciesPrediction({id:'sp1',speciesId:'redfish',locationId:'vilano-bridge',mode:'inshore',window:windowFixture(),suitability:61,band:'Decent fit',calibratedProbability:null,confidence:70,confidenceReasons:[],eligibility:'realistic',eligibilityReason:{code:'history'},caps:[],setup:{},useLine:message(),historicalRate:{rate:.08,n:45,lowSample:true,band:'Occasional',month:10,unit:'trips',sourceLabel:'river, bridge and bank surveys'},seasonCurve:Array(12).fill(.2),waterFit:{state:'ideal'},seasonBasis:'absoluteOnly',seasonAbsoluteReference:.1407,seasonReferenceFallback:false,historyNotes:[message('Inshore catches are spread over many species.'),{code:'season.thinPeak',params:{species:'Redfish',month:'October'},text:'Too few survey catches to pick Redfish\'s best month; season uses its overall October survey rate.'}],detailsRef:null});
+  assert.equal(validateSpeciesPrediction(prediction),true);
+  assert.throws(()=>validateSpeciesPrediction({...prediction,seasonBasis:'relative'}),/speciesPrediction\.seasonBasis/);
+  assert.throws(()=>validateSpeciesPrediction({...prediction,seasonAbsoluteReference:0}),/speciesPrediction\.seasonAbsoluteReference/);
+  assert.throws(()=>validateSpeciesPrediction({...prediction,seasonReferenceFallback:'false'}),/speciesPrediction\.seasonReferenceFallback/);
+  assert.throws(()=>validateSpeciesPrediction({...prediction,historyNotes:[{code:'bad',params:{}}]}),/speciesPrediction\.historyNotes\[0\]\.text/);
+  const legacy={...prediction};delete legacy.seasonBasis;delete legacy.seasonAbsoluteReference;delete legacy.seasonReferenceFallback;delete legacy.historyNotes;assert.equal(validateSpeciesPrediction(legacy),true);
+});
+
 await test('run accepts unknown optional keys and newer minor/model versions',()=>{
   const run=runFixture({schemaVersion:{major:SCHEMA_VERSION.major,minor:SCHEMA_VERSION.minor+3,futureSchemaField:true},modelVersion:'future-model-99',futureOptional:{ok:true}});
   assert.equal(validatePredictionRun(run),true);
@@ -48,7 +58,7 @@ await test('validates source freshness and strict UTC timestamps',()=>{
 await test('versioned A4 parameters include the provisional floor and hash canonically',async()=>{
   assert.equal(validateParams(),true);assert.equal(MODEL_PARAMS.history.realisticFloor,.05);assert.equal(MODEL_PARAMS.history.realisticFloorProvisional,true);assert.equal(MODEL_PARAMS.thresholds.goSuitabilityMin,null);
   assert.equal(canonicalize({z:1,a:{y:2,x:3}}),'{"a":{"x":3,"y":2},"z":1}');
-  const [one,two]=await Promise.all([hashModelParams(),hashModelParams(JSON.parse(JSON.stringify(MODEL_PARAMS)))]);assert.match(one,/^[a-f0-9]{64}$/);assert.equal(one,two);assert.equal(one,'cbe64b9229435262b53b080b58cb08725c2ee4f432a26260613a46953878ac2b'); // Intentional A4 parameter change: alert policy, .05 provisional floor, season/safety caps, and documented tide-scale proposal.
+  const [one,two]=await Promise.all([hashModelParams(),hashModelParams(JSON.parse(JSON.stringify(MODEL_PARAMS)))]);assert.match(one,/^[a-f0-9]{64}$/);assert.equal(one,two);assert.equal(one,'e59d66d0d8b6d7b47336f00ceb11e3e87f6c87b93c47a1b14146e57756c4ef5d'); // A4 inshore season parameters add the versioned bucket-scaled absolute reference.
   const bad=JSON.parse(JSON.stringify(MODEL_PARAMS));bad.weightsByMode.surf.season=.23;assert.throws(()=>validateParams(bad),/active weights must sum to 1/);
 });
 
@@ -61,6 +71,7 @@ await test('copy uses non-angling trip labels and qualitative low-sample bands',
   const run=runFixture();run.recommendation.mode='inshore';run.recommendation.targets=[{speciesId:'redfish',historicalRate:{rate:.08,n:45,lowSample:true,band:'Occasional',month:10,unit:'trips',sourceLabel:'river, bridge and bank surveys'}}];
   const text=formatRunCopy(run,'2026-10-06T11:00:00Z').historicalRates[0].text;
   assert.match(text,/Occasional in October surveys — low sample/);assert.match(text,/river, bridge and bank surveys/);assert.doesNotMatch(text,/angler|chance|probability/i);
+  assert.deepEqual(formatRunCopy(run,'2026-10-06T11:00:00Z').historyNotes,[{speciesId:'redfish',notes:[{code:'history.inshoreSpread',text:'Inshore catches in the surveys are spread over many species, so none is Common. A GO here means today\'s conditions line up in one of this species\'s better inshore months, not that most trips catch one.'}]}]);
 });
 
 await test('copy verdict line is complete and freshness uses issue time without unavailable ages',()=>{

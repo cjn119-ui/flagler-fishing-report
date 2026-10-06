@@ -1,5 +1,5 @@
 import { MODEL_PARAMS } from "./params.js";
-import { calculateFactors,getWaterFit } from "./factors.js";
+import { calculateFactors,getWaterFit,weightKeyFor } from "./factors.js";
 import { getHistoricalTiming } from "./history.js";
 import { getAstronomy } from "./astro.js";
 
@@ -119,12 +119,12 @@ function waterOutside(species,temp){return has(temp)&&Array.isArray(species.wate
 /** Score every slot for one species, then aggregate per-species windows. */
 export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,horizon="today",forecastAgeHours=null,alertsChecked=false,waveCoverage=()=>false,params=MODEL_PARAMS}){
   if(!species?.modes?.includes(mode))return null;
-  const timing=history?getHistoricalTiming(history,{speciesId:species.id,mripAliases:species.mrip,mode,start:slots[0]??now,end:utc(Date.parse(slots[0]??now)+1),waterF:species.waterF}):null;
+  const timing=history?getHistoricalTiming(history,{speciesId:species.id,speciesName:species.name,mripAliases:species.mrip,mode,start:slots[0]??now,end:utc(Date.parse(slots[0]??now)+1),waterF:species.waterF}):null;
   const histRate=timing?.historicalRate?.rate??null, currentHistoryAvailable=timing?.historyAvailable===true, astronomyByDate=new Map(), eligibility=classifyEligibility({species,spot,mode,rate:histRate,historyAvailable:currentHistoryAvailable,params});
   const scored=(slots??[]).map(at=>{const sourceConditions=conditionsAt(at),wavesOk=mode==="inshore"||waveCoverage(at,horizon,{mode,spot})===true,c=mode!=="inshore"&&!wavesOk?{...sourceConditions,waveHeightM:null}:sourceConditions,ht=timing?{...timing,waterFit:getWaterFit(species,c.waterTempF)}:null,astroDate=localKey(at);let astronomy=astronomyByDate.get(astroDate);if(!astronomy&&has(spot.lat)&&has(spot.lon)){astronomy=getAstronomy(astroDate,spot.lat,spot.lon);astronomyByDate.set(astroDate,astronomy);}const f=calculateFactors({species,mode,conditions:c,at,historyTiming:ht,spot,astronomy,params});
     const cap=[];if(waterOutside(species,c.waterTempF))cap.push({code:"waterOutsideRange",params:{waterTempF:c.waterTempF,range:species.waterF}});if(ht?.seasonAvailable&&ht.seasonScore<params.history.seasonCapBelow)cap.push({code:"outOfSeason",params:{relativeSeason:ht.seasonScore}});if(eligibility.eligibility!=="realistic")cap.push({code:"notRealistic",params:{eligibility:eligibility.eligibility,reason:eligibility.eligibilityReason.code}});
     let rawSuitability=f.rawSuitability;if(cap.some(x=>x.code==="waterOutsideRange"||x.code==="outOfSeason"))rawSuitability=Math.min(rawSuitability??0,params.history.seasonCapSuitability);
-    const availableShare=f.factors.reduce((sum,x)=>sum+(x.available?(params.weightsByMode[mode][x.key]??0):0),0),critical=mode==="inshore"?["wind","rain"]:["wind","rain","waves"],allCriticalMissing=critical.every(key=>!f.factors.find(x=>x.key===key)?.available),cp=params.factors.conditionCaps,score=key=>f.factors.find(x=>x.key===key)?.score;
+    const availableShare=f.factors.reduce((sum,x)=>sum+(x.available?(params.weightsByMode[mode][weightKeyFor(x.key)]??0):0),0),critical=mode==="inshore"?["wind","rain"]:["wind","rain","waves"],allCriticalMissing=critical.every(key=>!f.factors.find(x=>x.key===key)?.available),cp=params.factors.conditionCaps,score=key=>f.factors.find(x=>x.key===key)?.score;
     const onshore=has(c.windDirectionDeg)&&has(spot?.windExposure?.facingDeg)&&Math.abs(((c.windDirectionDeg-spot.windExposure.facingDeg+540)%360)-180)<=params.factors.wind.onshoreSectorHalfWidthDeg;
     const severeCondition=(has(score("wind"))&&score("wind")<cp.sinkBelow)||(mode!=="inshore"&&has(score("waves"))&&score("waves")<cp.sinkBelow)||(has(score("rain"))&&score("rain")<cp.sinkBelow)||(has(c.rainPct)&&c.rainPct>=cp.rainProbabilityPct)||(has(c.thunderPct)&&c.thunderPct>=cp.thunderProbabilityPct)||(mode!=="inshore"&&has(c.waveHeightM)&&c.waveHeightM>cp.waveHeightM)||(onshore&&has(c.windMph)&&c.windMph>=cp.onshoreWindMph)||(has(c.windGustMph)&&c.windGustMph>=cp.windGustMph);
     const insufficientData=availableShare<params.factors.minimumAvailableWeightShare||allCriticalMissing;
@@ -147,7 +147,7 @@ export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,h
     const amberQualifier=w.confidence>=params.thresholds.moderateConfidenceMin?w.confidenceReasons.find(x=>x.kind==="live")?.text??null:null;
     return {...w,gates,verdict:v,caps,confidenceLevel,amberQualifier};
   });
-  return {speciesId:species.id,locationId:spot.id,mode,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,historicalRate:timing?.historicalRate??null,seasonCurve:timing?.seasonCurve??Array(12).fill(null),waterFit:scored[0]?.waterFit??null,slots:scored,windows};
+  return {speciesId:species.id,locationId:spot.id,mode,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,historicalRate:timing?.historicalRate??null,seasonCurve:timing?.seasonCurve??Array(12).fill(null),waterFit:scored[0]?.waterFit??null,seasonBasis:timing?.seasonBasis??null,seasonAbsoluteReference:timing?.seasonAbsoluteReference??null,seasonReferenceFallback:timing?.seasonReferenceFallback??true,historyNotes:timing?.historyNotes??[],slots:scored,windows};
 }
 /** Candidate selector for a set of per-species best windows; applies tie/prior rules. */
 export function selectDriver(candidates,options={}){return tieCandidates(candidates,options);}

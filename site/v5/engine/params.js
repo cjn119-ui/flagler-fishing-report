@@ -1,6 +1,6 @@
 /** Versioned parameters. `null` values are deliberate gates for later evidence. */
 export const MODEL_PARAMS = Object.freeze({
-  paramsVersion: "v5-params-a4-review-fixes",
+  paramsVersion: "v5-params-a4-inshore-season",
   weightsByMode: Object.freeze({
     surf: Object.freeze({ season: 0.24, water: 0.18, tide: 0.14, light: 0.10, wind: 0.10, waves: 0.10, pressure: 0.05, solunar: 0.05, rain: 0.04 }),
     pier: Object.freeze({ season: 0.24, water: 0.18, tide: 0.14, light: 0.10, wind: 0.10, waves: 0.10, pressure: 0.05, solunar: 0.05, rain: 0.04 }),
@@ -21,6 +21,7 @@ export const MODEL_PARAMS = Object.freeze({
     lowSamplePenalty: 8,
     seasonPeakMinimumHits: 10,
     seasonAbsoluteRateCap: 0.20,
+    seasonAbsoluteReference: "bucketAnyCatchScaled",
   }),
   thresholds: Object.freeze({
     greatFit: 70,
@@ -101,6 +102,7 @@ export function validateParams(params = MODEL_PARAMS) {
   assert(h.numericMinN===80&&h.thinMinN===30,"params.history","sample cutoffs must be 80/30");
   assert(h.seasonCapBelow===0.10&&h.seasonCapSuitability===20,"params.history","relative season cap must be 0.10/20");
   assert(Number.isInteger(h.seasonPeakMinimumHits)&&h.seasonPeakMinimumHits>0&&Number.isFinite(h.seasonAbsoluteRateCap)&&h.seasonAbsoluteRateCap>0,"params.history.season","minimum hits and absolute rate cap are required");
+  assert(h.seasonAbsoluteReference==="bucketAnyCatchScaled","params.history.seasonAbsoluteReference","must be bucketAnyCatchScaled");
   assert(isObject(t),"params.thresholds","expected object");
   const go=t.goSuitabilityMin;assert(go===null||(Number.isFinite(go)&&go>=0&&go<=100),"params.thresholds.goSuitabilityMin","expected null pending hindcast or score from 0 to 100");if(go===null)assert(t.goSuitabilityMinProvisional===true,"params.thresholds.goSuitabilityMinProvisional","must mark null as provisional");
   for(const k of ["goConfidenceMin","highConfidenceMin","moderateConfidenceMin"])assert(Number.isFinite(t[k])&&t[k]>=0&&t[k]<=100,`params.thresholds.${k}`,"expected score from 0 to 100");

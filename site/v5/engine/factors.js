@@ -6,6 +6,8 @@ const copy=(code,text,params={})=>({code,params,text});
 const FACTORS=[
   ["season","Season","season"],["waterTemp","Water temperature","water"],["tide","Tide","tide"],["light","Light","light"],["wind","Wind","wind"],["waves","Surf","surf"],["pressure","Pressure","pressure"],["solunar","Solunar","moon"],["rain","Rain","weather"],
 ];
+const WEIGHT_KEY=Object.freeze({waterTemp:"water"});
+export const weightKeyFor=k=>WEIGHT_KEY[k]??k;
 const has=n=>typeof n==="number"&&Number.isFinite(n);
 export function trapezoidFit(value,[min,idealLow,idealHigh,max]){
   if(!has(value)||![min,idealLow,idealHigh,max].every(has)||!(min<=idealLow&&idealLow<=idealHigh&&idealHigh<=max))return null;
@@ -82,6 +84,12 @@ function scoreFor(key,species,mode,c,at,timing,spot,astro,params){
     default:return null;
   }
 }
+function seasonDetail(score,mode,params){
+  if(!has(score))return "Season history is unavailable.";
+  if(score>=params.factors.effectHelpsMin)return mode==="inshore"?"Better inshore month":"Better month";
+  if(score>=params.factors.effectNeutralMin)return "Average month";
+  return "Off-season";
+}
 /** Build all nine factors and a renormalized weighted suitability in [0,100]. */
 export function calculateFactors({species,mode,conditions={},at=conditions.at,history,historyTiming,spot,astronomy,params=MODEL_PARAMS}){
   const timing=historyTiming??history;
@@ -90,10 +98,11 @@ export function calculateFactors({species,mode,conditions={},at=conditions.at,hi
   const weights=params.weightsByMode[mode]; if(!weights)throw new TypeError(`Unsupported mode: ${mode}`);
   const factors=FACTORS.map(([key,label,group])=>{
     const score0=scoreFor(key,species,mode,conditions,at,timing,spot,astro,params),available=has(score0),sens=key==="tide"?(params.factors.tideSensitivityMultipliers[spot?.tideSensitivity??"medium"]??1):1;
-    const base=weights[key],adjusted=base==null?null:base*sens;
+    const base=weights[weightKeyFor(key)],adjusted=base==null?null:base*sens;
+    const detail=mode==="inshore"&&key==="season"?copy(available?"season.factorQualitative":"missing.season",available?seasonDetail(score0,mode,params):"Season history is unavailable.",{seasonBasis:timing?.seasonBasis??null}):null;
     return {key,label,group,value:key==="season"?timing?.historicalRate?.rate??null:key==="waterTemp"?conditions.waterTempF:key==="tide"?conditions.tideRateFtPerHr:key==="wind"?conditions.windMph:key==="waves"?conditions.waveHeightM:key==="pressure"?conditions.pressureChange6hHpa:key==="rain"?conditions.rainPct:key==="light"?at:key==="solunar"?astro?.moon?.phase??null:null,
       unit:{season:"rate ratio",waterTemp:"°F",tide:"ft/hr",light:null,wind:"mph",waves:"m",pressure:"hPa/6h",solunar:null,rain:"%"}[key],score:available?clamp(score0):null,weight:null,contribution:null,effect:available?(score0>=params.factors.effectHelpsMin?"helps":score0>=params.factors.effectNeutralMin?"neutral":"hurts"):null,
-      humanLabel:copy(available?`factor.${key}`:`missing.${key}`,available?label:`${label} unavailable`),summary:copy(available?`factor.${key}`:`missing.${key}`,available?`${label} conditions contribute to fit.`:`${label} input unavailable.`),detail:copy(available?`factor.${key}`:`missing.${key}`,available?`${label} score ${Math.round(score0*100)}%.`:`No current ${label.toLowerCase()} value is available.`),source:copy(`source.${key}`,key==="season"?"MRIP regional survey history":"Normalized observations"),available,limiting:false,adjustedWeight:available?adjusted:null};
+      humanLabel:copy(available?`factor.${key}`:`missing.${key}`,available?label:`${label} unavailable`),summary:copy(available?`factor.${key}`:`missing.${key}`,available?`${label} conditions contribute to fit.`:`${label} input unavailable.`),detail:key==="season"&&mode==="inshore"?detail:copy(available?`factor.${key}`:`missing.${key}`,available?`${label} score ${Math.round(score0*100)}%.`:`No current ${label.toLowerCase()} value is available.`),source:copy(`source.${key}`,key==="season"?"MRIP regional survey history":"Normalized observations"),available,limiting:false,adjustedWeight:available?adjusted:null};
   });
   const sum=factors.reduce((s,f)=>s+(f.available?(f.adjustedWeight??0):0),0);
   for(const f of factors)if(f.available&&sum>0){f.weight=f.adjustedWeight/sum;f.contribution=f.score*f.weight;}

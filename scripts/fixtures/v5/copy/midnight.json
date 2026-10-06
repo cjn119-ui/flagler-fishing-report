@@ -28,6 +28,7 @@
     "confidence":"High confidence · 78 · Forecast and tides are current",
     "freshness":"Forecast: Current data · 12 min old",
     "windowStatus":"Opens in 25 min",
-    "historicalRates":[{"speciesId":"whiting","text":"About 3 in 10 Northeast Florida shore fishing trips caught one in November (2015–2025 surveys); pier and beach surveys."}]
+    "historicalRates":[{"speciesId":"whiting","text":"About 3 in 10 Northeast Florida shore fishing trips caught one in November (2015–2025 surveys); pier and beach surveys."}],
+    "historyNotes":[]
   }
 }

@@ -6,6 +6,7 @@ export const REASON_COPY = Object.freeze({
   historyUnavailable: "Survey history is unavailable for this fish.",
   notRealistic: "Survey history is too low to make this a realistic target.",
 });
+const INSHORE_SPREAD_COPY=Object.freeze({code:"history.inshoreSpread",params:{},text:"Inshore catches in the surveys are spread over many species, so none is Common. A GO here means today's conditions line up in one of this species's better inshore months, not that most trips catch one."});
 export const GATE_COPY = Object.freeze({
   thunder: "Thunderstorms are expected during this window.",
   wind: "Wind reaches unsafe levels during this window.",
@@ -95,11 +96,19 @@ export function formatHistoricalRate(rate, mode) {
 export function formatRates(run, _now) {
   return (run.recommendation.targets ?? []).map(t=>({speciesId:t.speciesId,text:formatHistoricalRate(t.historicalRate,run.recommendation.mode)}));
 }
+export function formatHistoryNotes(run) {
+  const inshore=run.recommendation.mode==="inshore";
+  return (run.recommendation.targets??[]).map(target=>{
+    const notes=Array.isArray(target.historyNotes)?[...target.historyNotes]:[];
+    if(inshore&&!notes.some(x=>x.code==="history.inshoreSpread"))notes.unshift(INSHORE_SPREAD_COPY);
+    return {speciesId:target.speciesId,notes:notes.map(x=>({code:x.code,text:formatCopyMessage(x)}))};
+  }).filter(x=>x.notes.length);
+}
 export function formatRunCopy(run, now) {
   return {
     headline:formatHeadline(run,now), whenLabel:formatWhenLabel(run,now), useLine:formatUseLine(run,now),
     reason:formatReason(run,now), gates:formatGates(run,now), confidence:formatConfidence(run,now),
-    freshness:formatFreshness(run,now), windowStatus:formatWindowStatus(run,now), historicalRates:formatRates(run,now),
+    freshness:formatFreshness(run,now), windowStatus:formatWindowStatus(run,now), historicalRates:formatRates(run,now),historyNotes:formatHistoryNotes(run),
   };
 }
 
