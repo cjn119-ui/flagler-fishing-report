@@ -62,11 +62,38 @@ assert.equal(localDay(new Date('2026-11-01T05:30:00Z')),'2026-11-01');
 assert.equal(localDay(new Date('2026-11-01T06:30:00Z')),'2026-11-01');
 // Test the worker's actual tide parser, including both repeated DST fall-back hours.
 const workerSource=await readFile(new URL('../src/worker.mjs',import.meta.url),'utf8');
-const worker=vm.runInNewContext(workerSource.replace('export default','const worker =')+'; ({tideEvents,localDate,parseBuoy,sunriseSunset})',{Intl,Date,Map,Set,Math,Number,String,URL,console});
+const worker=vm.runInNewContext(workerSource.replace('export default','const worker =')+'; ({tideEvents,tideEventsInWindow,localDate,parseBuoy,sunriseSunset,fetchFreshWeatherObservation})',{Intl,Date,Map,Set,Math,Number,String,URL,console});
 const dst=worker.tideEvents([{t:'2026-11-01 05:30',v:'1',type:'H'},{t:'2026-11-01 06:30',v:'0',type:'L'}]);
 assert.equal(Date.parse(dst[1].time)-Date.parse(dst[0].time),3600e3);
 for(const e of dst) assert.equal(worker.localDate(new Date(e.time)),'2026-11-01');
-const marine=worker.parseBuoy('#YY MM DD hh mm WVHT DPD WTMP WSPD\n2026 09 30 01 26 0.4 10 27.6 MM',null);
+// A strict 24-hour horizon can contain only three upcoming highs/lows just
+// after a prediction, even though NOAA returned the next several events.
+const octTides=worker.tideEvents([
+  {t:'2026-10-06 01:55',v:'1.059',type:'H'}, {t:'2026-10-06 08:28',v:'0.323',type:'L'},
+  {t:'2026-10-06 14:23',v:'0.96',type:'H'}, {t:'2026-10-06 20:43',v:'0.235',type:'L'},
+  {t:'2026-10-07 02:55',v:'1.07',type:'H'}, {t:'2026-10-07 09:23',v:'0.252',type:'L'},
+  {t:'2026-10-07 15:23',v:'1.013',type:'H'}, {t:'2026-10-07 21:43',v:'0.194',type:'L'},
+]);
+const countInNext24h=at=>octTides.filter(e=>Date.parse(e.time)>=at&&Date.parse(e.time)<=at+24*3600e3).length;
+assert.equal(countInNext24h(Date.parse('2026-10-06T20:47:00Z')),3,'the fixed-clock source fixture reproduces the old 24-hour boundary defect');
+const shortHours=Array.from({length:24},(_,h)=>[h,countInNext24h(Date.parse(`2026-10-06T${String(h).padStart(2,'0')}:00:00Z`))]).filter(([,n])=>n<4).map(([h])=>h);
+assert.deepEqual(shortHours,[2,9,15,21]);
+assert.equal(worker.tideEventsInWindow(octTides,Date.parse('2026-10-06T20:47:00Z')).length,4,'the extended prediction window supplies four events at 20:47 UTC');
+for(let h=0;h<24;h++) assert.equal(worker.tideEventsInWindow(octTides,Date.parse(`2026-10-06T${String(h).padStart(2,'0')}:00:00Z`)).length,4,`four events at UTC hour ${h}`);
+const weatherNow=Date.parse('2026-10-06T21:30:00Z'),weatherCalls=[];
+const fallbackWeather=await worker.fetchFreshWeatherObservation(async url=>{
+  weatherCalls.push(url);
+  return {properties:{timestamp:url.includes('/KFIN/')?'2026-10-06T18:50:00Z':'2026-10-06T21:10:00Z'}};
+},weatherNow);
+assert.equal(fallbackWeather.station.id,'KDAB');assert.equal(weatherCalls.length,2,'a stale KFIN record falls back to the next nearby station');
+const primaryWeather=await worker.fetchFreshWeatherObservation(async url=>({properties:{timestamp:'2026-10-06T21:00:00Z'}}),weatherNow);
+assert.equal(primaryWeather.station.id,'KFIN','a fresh local station remains preferred');
+const buoyRaw='#YY MM DD hh mm WVHT DPD WTMP WSPD\n2026 09 30 01 26 0.4 10 27.6 MM';
+const buoyNow=Date.parse('2026-09-30T02:00:00Z');
+assert.throws(()=>worker.parseBuoy(buoyRaw,null,Date.parse('2026-09-30T03:00:01Z')),/NDBC marine observation is stale/);
+assert.throws(()=>worker.parseBuoy(buoyRaw,null,Date.parse('2026-09-30T01:25:59Z')),/NDBC marine observation is stale or future-dated/);
+assert.doesNotThrow(()=>worker.parseBuoy(buoyRaw,null,buoyNow));
+const marine=worker.parseBuoy(buoyRaw,null,buoyNow);
 assert.equal(marine.observed_at,'2026-09-30T01:26:00.000Z');assert.equal(marine.values.wave_height_m,.4);assert.equal(marine.values.wind_speed_ms,null);
 
 // U.S. Naval Observatory reference minutes at 29.4749754,-81.1270035, UTC.
