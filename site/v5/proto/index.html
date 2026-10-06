@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0B1117" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F7FA" media="(prefers-color-scheme: light)">
+<meta name="robots" content="noindex">
+<title>Flagler Fishing V5 prototype</title>
+<link rel="icon" href="../../icons/fishing.svg" type="image/svg+xml">
+<link rel="stylesheet" href="proto.css">
+</head>
+<body>
+<a class="skip" href="#view">Skip to content</a>
+
+<div id="app">
+  <header class="bar">
+    <div class="brand">
+      <button class="mark" id="home" type="button" aria-label="Flagler Fishing, go to Today"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3-2 5-1M2 15c2.5-3 5-3 7.5 0s5 3 7.5 0 3-2 5-1"/></svg></button>
+      <button class="pill" id="spot-pill" type="button" aria-haspopup="dialog" aria-label="Scope: Best anywhere. Change spot">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.3"/></svg>
+        <span id="spot-label">Best anywhere</span>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg>
+      </button>
+    </div>
+    <div class="tools">
+      <span id="fresh" class="chip" data-s="fresh">Loading</span>
+      <button id="refresh" type="button" aria-label="Refresh report"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5"/></svg></button>
+    </div>
+  </header>
+  <main id="main">
+    <div class="ctl" id="ctl"></div>
+    <div id="banner-slot"></div>
+    <section id="view" tabindex="-1" aria-busy="true" aria-label="Report"></section>
+  </main>
+</div>
+
+<nav class="tabbar" id="tabbar" aria-label="Primary">
+  <div class="tabs">
+    <button type="button" class="tab" data-tab="today" aria-current="page">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 16c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2 1 3 1.5"/><path d="M3 20c2.5 0 2.5-2 5-2s2.5 2 5 2 2.5-2 5-2 2 1 3 1.5"/><circle cx="12" cy="7" r="3"/></svg><span>Today</span></button>
+    <button type="button" class="tab" data-tab="spots">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z"/><circle cx="12" cy="10" r="2.3"/></svg><span>Spots</span></button>
+    <button type="button" class="tab" data-tab="species">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12c3-5 8-6 12-4l4-3v14l-4-3c-4 2-9 1-12-4Z"/><circle cx="9" cy="11" r=".8" fill="currentColor"/></svg><span>Species</span></button>
+    <button type="button" class="tab" data-tab="plan">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg><span>Plan</span></button>
+  </div>
+</nav>
+
+<div id="sheet-root"></div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="sr-only" id="live" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<!-- Review-only controls: not part of the product UI. -->
+<div class="review" id="review">
+  <div class="review-panel" id="review-panel" hidden>
+    <p class="eyebrow">State (review only)</p>
+    <div class="review-list" id="review-states"></div>
+    <p class="fine">Non-live states replace Today for the default scope (Best anywhere, Today). Picking a spot or species shows the live sample run.</p>
+    <p class="eyebrow">Theme</p>
+    <div class="review-list" id="review-themes"></div>
+  </div>
+  <button type="button" class="review-btn" id="review-btn" aria-expanded="false" aria-controls="review-panel">Review states</button>
+</div>
+
+<script type="module" src="proto.js"></script>
+</body>
+</html>

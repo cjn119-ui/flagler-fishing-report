@@ -1,0 +1,1074 @@
+{
+ "_proto": {
+  "illustrative": true,
+  "note": "Hand-built, contract-shaped PROTOTYPE data. Every number, spot, species, time and sentence is an illustrative copy shape, never model output. light/tideEvents/factors/dayWindows are proto-only extras standing in for engine outputs not yet emitted. This MAYBE sample is the real 2026-10-05 fixture recommendation (verdict, reason, targets, qualifier) with proto timeline/factors added.",
+  "light": {
+   "sunrise": [
+    "2026-10-05T11:08:00.000Z",
+    "2026-10-06T11:09:00.000Z"
+   ],
+   "sunset": [
+    "2026-10-05T22:56:00.000Z",
+    "2026-10-06T22:55:00.000Z"
+   ]
+  },
+  "factors": [
+   {
+    "key": "tide",
+    "label": "Tide",
+    "group": "tide",
+    "effect": null,
+    "humanLabel": {
+     "code": "factor.tide",
+     "params": {},
+     "text": "Tide unavailable"
+    },
+    "summary": {
+     "code": "factor.tide",
+     "params": {},
+     "text": "Tide unavailable"
+    },
+    "detail": {
+     "code": "factor.tide",
+     "params": {},
+     "text": "No current tide value is available."
+    },
+    "source": {
+     "code": "source.tide",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": null,
+    "unit": "",
+    "score": null,
+    "weight": 0.2,
+    "contribution": null,
+    "available": false,
+    "limiting": false
+   },
+   {
+    "key": "waterTemp",
+    "label": "Water temperature",
+    "group": "water",
+    "effect": "helps",
+    "humanLabel": {
+     "code": "factor.waterTemp",
+     "params": {},
+     "text": "Comfortable"
+    },
+    "summary": {
+     "code": "factor.waterTemp",
+     "params": {},
+     "text": "Comfortable"
+    },
+    "detail": {
+     "code": "factor.waterTemp",
+     "params": {},
+     "text": "Water temperature fits both targets."
+    },
+    "source": {
+     "code": "source.waterTemp",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 75.2,
+    "unit": "°F",
+    "score": 0.88,
+    "weight": 0,
+    "contribution": 0,
+    "available": true,
+    "limiting": false
+   },
+   {
+    "key": "light",
+    "label": "Light",
+    "group": "light",
+    "effect": "helps",
+    "humanLabel": {
+     "code": "factor.light",
+     "params": {},
+     "text": "Morning light"
+    },
+    "summary": {
+     "code": "factor.light",
+     "params": {},
+     "text": "Morning light"
+    },
+    "detail": {
+     "code": "factor.light",
+     "params": {},
+     "text": "Soft light early in the day."
+    },
+    "source": {
+     "code": "source.light",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": null,
+    "unit": "",
+    "score": 0.8,
+    "weight": 0.19,
+    "contribution": 0.152,
+    "available": true,
+    "limiting": false
+   },
+   {
+    "key": "wind",
+    "label": "Wind",
+    "group": "wind",
+    "effect": "helps",
+    "humanLabel": {
+     "code": "factor.wind",
+     "params": {},
+     "text": "Light"
+    },
+    "summary": {
+     "code": "factor.wind",
+     "params": {},
+     "text": "Light"
+    },
+    "detail": {
+     "code": "factor.wind",
+     "params": {},
+     "text": "Light wind from the east."
+    },
+    "source": {
+     "code": "source.wind",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 8,
+    "unit": "mph",
+    "score": 0.9,
+    "weight": 0.16,
+    "contribution": 0.144,
+    "available": true,
+    "limiting": false
+   },
+   {
+    "key": "season",
+    "label": "Season",
+    "group": "season",
+    "effect": "neutral",
+    "humanLabel": {
+     "code": "factor.season",
+     "params": {},
+     "text": "Typical for October"
+    },
+    "summary": {
+     "code": "factor.season",
+     "params": {},
+     "text": "Typical for October"
+    },
+    "detail": {
+     "code": "factor.season",
+     "params": {},
+     "text": "Season conditions contribute to fit."
+    },
+    "source": {
+     "code": "source.season",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 0.07,
+    "unit": "rate ratio",
+    "score": 0.36,
+    "weight": 0.39,
+    "contribution": 0.14,
+    "available": true,
+    "limiting": false
+   },
+   {
+    "key": "pressure",
+    "label": "Pressure",
+    "group": "pressure",
+    "effect": "neutral",
+    "humanLabel": {
+     "code": "factor.pressure",
+     "params": {},
+     "text": "Steady"
+    },
+    "summary": {
+     "code": "factor.pressure",
+     "params": {},
+     "text": "Steady"
+    },
+    "detail": {
+     "code": "factor.pressure",
+     "params": {},
+     "text": "Pressure is holding steady."
+    },
+    "source": {
+     "code": "source.pressure",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 0.6,
+    "unit": "hPa/6h",
+    "score": 0.6,
+    "weight": 0.1,
+    "contribution": 0.06,
+    "available": true,
+    "limiting": false
+   },
+   {
+    "key": "rain",
+    "label": "Rain",
+    "group": "rain",
+    "effect": "helps",
+    "humanLabel": {
+     "code": "factor.rain",
+     "params": {},
+     "text": "Dry"
+    },
+    "summary": {
+     "code": "factor.rain",
+     "params": {},
+     "text": "Dry"
+    },
+    "detail": {
+     "code": "factor.rain",
+     "params": {},
+     "text": "Little chance of rain."
+    },
+    "source": {
+     "code": "source.rain",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 5,
+    "unit": "%",
+    "score": 0.95,
+    "weight": 0.06,
+    "contribution": 0.057,
+    "available": true,
+    "limiting": false
+   }
+  ]
+ },
+ "schemaVersion": {
+  "major": 1,
+  "minor": 0
+ },
+ "id": "proto-maybe-proto",
+ "modelVersion": "v5.0.0-a1",
+ "paramsHash": "proto",
+ "historyHash": "proto",
+ "catalogHash": "proto",
+ "codeRevision": "proto",
+ "horizon": "today",
+ "targetDate": "2026-10-05",
+ "region": "First Coast",
+ "generatedAt": "2026-10-05T12:00:00.000Z",
+ "validFrom": "2026-10-05T12:00:00.000Z",
+ "validTo": "2026-10-06T01:00:00.000Z",
+ "status": "partial",
+ "carriedForward": false,
+ "missingInputs": [
+  "tidePredictions"
+ ],
+ "recommendation": {
+  "id": "proto-maybe:best:all:none:vilano-bridge:inshore:mangrove:2026-10-05T12:30:00.000Z",
+  "scope": {
+   "kind": "best"
+  },
+  "focus": null,
+  "horizon": "today",
+  "locationId": "vilano-bridge",
+  "mode": "inshore",
+  "modeLabel": {
+   "code": "mode.label",
+   "params": {},
+   "text": "inshore"
+  },
+  "displayName": "Vilano Bridge fishing piers",
+  "driverSpeciesId": "mangrove",
+  "partOfDay": "morning",
+  "window": {
+   "id": "vilano-bridge:inshore:mangrove:2026-10-05T12:30:00.000Z",
+   "locationId": "vilano-bridge",
+   "mode": "inshore",
+   "partOfDay": "morning",
+   "start": "2026-10-05T12:30:00.000Z",
+   "end": "2026-10-05T13:30:00.000Z",
+   "suitability": 82,
+   "confidence": 75,
+   "isOpenAtGenerated": false,
+   "startsInMinAtGenerated": 30,
+   "endsInMinAtGenerated": 90,
+   "gates": []
+  },
+  "verdict": "MAYBE",
+  "suitability": 82,
+  "headline": {
+   "code": "recommendation.headline",
+   "params": {},
+   "text": "Mangrove snapper morning window"
+  },
+  "whenLabel": {
+   "code": "recommendation.when",
+   "params": {},
+   "text": "Today morning"
+  },
+  "useLine": {
+   "code": "recommendation.use",
+   "params": {},
+   "text": "Dock and bridge pilings, rock edges; they hold tight to structure."
+  },
+  "reason": {
+   "code": "provisionalGoThreshold",
+   "text": {
+    "code": "provisionalGoThreshold",
+    "params": {},
+    "text": "This is a strong GO candidate, but the GO threshold is provisional; recommendation stays MAYBE."
+   }
+  },
+  "gates": [],
+  "caps": [],
+  "targets": [
+   {
+    "band": "Great fit",
+    "eligibility": "realistic",
+    "eligibilityReason": {
+     "code": "realistic"
+    },
+    "historicalRate": {
+     "available": true,
+     "band": "Occasional",
+     "hitTrips": 27,
+     "lowSample": false,
+     "month": 10,
+     "monthName": "October",
+     "n": 154,
+     "rate": 0.1506969455161255,
+     "shrunk": true,
+     "sourceLabel": "river, bridge and bank surveys",
+     "unit": "trips"
+    },
+    "name": "Mangrove snapper",
+    "setup": {
+     "bait": [
+      "Live shrimp",
+      "Small live pinfish or mud minnows",
+      "Cut sardine"
+     ],
+     "lures": [],
+     "rig": "Light 15–20 lb fluoro leader, small #1–1/0 circle hook, just enough split shot.",
+     "where": "Dock and bridge pilings, rock edges; they hold tight to structure."
+    },
+    "speciesId": "mangrove",
+    "suitability": 82,
+    "tags": []
+   },
+   {
+    "band": "Decent fit",
+    "eligibility": "realistic",
+    "eligibilityReason": {
+     "code": "realistic"
+    },
+    "historicalRate": {
+     "available": true,
+     "band": "Occasional",
+     "hitTrips": 12,
+     "lowSample": false,
+     "month": 10,
+     "monthName": "October",
+     "n": 154,
+     "rate": 0.07121364074557791,
+     "shrunk": true,
+     "sourceLabel": "river, bridge and bank surveys",
+     "unit": "trips"
+    },
+    "name": "Black drum",
+    "setup": {
+     "bait": [
+      "Fresh shrimp",
+      "Blue crab chunks",
+      "Sand fleas or clams"
+     ],
+     "lures": [],
+     "rig": "Fishfinder or knocker rig, 1/0–3/0 circle hook, enough weight to hold bottom.",
+     "where": "Docks, bridge pilings, oyster bars and the deeper sloughs."
+    },
+    "speciesId": "blackdrum",
+    "suitability": 66,
+    "tags": []
+   }
+  ],
+  "setup": {
+   "bait": [
+    "Live shrimp",
+    "Small live pinfish or mud minnows",
+    "Cut sardine"
+   ],
+   "lures": [],
+   "rig": "Light 15–20 lb fluoro leader, small #1–1/0 circle hook, just enough split shot.",
+   "where": "Dock and bridge pilings, rock edges; they hold tight to structure."
+  },
+  "why": [
+   {
+    "code": "tideUnavailable",
+    "text": "Tide timing is unavailable",
+    "effect": "hurts"
+   },
+   {
+    "code": "inshoreBuoyTemp",
+    "text": "Inshore temperature uses an offshore buoy",
+    "effect": "neutral"
+   }
+  ],
+  "limitingFactor": null,
+  "confidence": 75,
+  "confidenceLevel": "High",
+  "confidenceReasons": [
+   {
+    "code": "tideUnavailable",
+    "kind": "live",
+    "params": {},
+    "penalty": 20,
+    "text": {
+     "code": "tideUnavailable",
+     "params": {},
+     "text": "Tide timing is unavailable"
+    }
+   },
+   {
+    "code": "inshoreBuoyTemp",
+    "kind": "structural",
+    "params": {},
+    "penalty": 5,
+    "text": {
+     "code": "inshoreBuoyTemp",
+     "params": {},
+     "text": "Inshore temperature uses an offshore buoy"
+    }
+   }
+  ],
+  "confidenceSummary": {
+   "code": "confidence.summary",
+   "params": {},
+   "text": "Tide timing is unavailable; Inshore temperature uses an offshore buoy"
+  },
+  "amberQualifier": {
+   "code": "tideUnavailable",
+   "params": {},
+   "text": "Tide timing is unavailable"
+  },
+  "backup": {
+   "area": "St. Augustine",
+   "distanceMi": 1.5435407721452232,
+   "id": "bridge-of-lions:inshore:mangrove:2026-10-05T12:30:00.000Z",
+   "kind": "nearby-same-water",
+   "locationId": "bridge-of-lions",
+   "mode": "inshore",
+   "reason": "A nearby alternative has a similar fit.",
+   "speciesId": "mangrove",
+   "verdict": "MAYBE"
+  },
+  "nextOption": null,
+  "comparison": {
+   "horizon": "tomorrow",
+   "kind": "similar"
+  },
+  "tiedWith": [],
+  "rank": 1,
+  "selection": {
+   "heldFromRunId": null,
+   "preferenceKey": "default",
+   "priorRecommendationId": null,
+   "reason": "tie"
+  },
+  "freshness": {
+   "affects": "hourlyForecast",
+   "ageMinutes": 120,
+   "available": true,
+   "fetchedAt": "2026-10-05T12:00:00.000Z",
+   "issuedAt": "2026-10-05T10:00:00.000Z",
+   "kind": "hourlyForecast",
+   "label": "forecast",
+   "observedAt": null,
+   "stale": false,
+   "status": "current",
+   "usedFallback": false
+  }
+ },
+ "bySpecies": {},
+ "scopeViews": {
+  "best": {
+   "recommendationId": "proto-maybe:best:all:none:vilano-bridge:inshore:mangrove:2026-10-05T12:30:00.000Z"
+  }
+ },
+ "locations": [
+  {
+   "id": "vilano-beach",
+   "name": "Vilano Beach",
+   "area": "St. Augustine",
+   "modes": [
+    "surf"
+   ],
+   "lat": 29.92,
+   "lon": -81.295,
+   "county": "St. Johns",
+   "structure": "beach",
+   "active": true
+  },
+  {
+   "id": "vilano-bridge",
+   "name": "Vilano Bridge fishing piers",
+   "area": "St. Augustine",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.914,
+   "lon": -81.302,
+   "county": "St. Johns",
+   "structure": "bridge",
+   "active": true
+  },
+  {
+   "id": "bridge-of-lions",
+   "name": "Bridge of Lions & bayfront seawall",
+   "area": "St. Augustine",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.8925,
+   "lon": -81.309,
+   "county": "St. Johns",
+   "structure": "seawall",
+   "active": true
+  },
+  {
+   "id": "salt-run",
+   "name": "Salt Run (Anastasia State Park)",
+   "area": "St. Augustine",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.879,
+   "lon": -81.279,
+   "county": "St. Johns",
+   "structure": "creek",
+   "active": true
+  },
+  {
+   "id": "staug-pier",
+   "name": "St. Augustine Beach Pier",
+   "area": "St. Augustine Beach",
+   "modes": [
+    "pier",
+    "surf"
+   ],
+   "lat": 29.857,
+   "lon": -81.264,
+   "county": "St. Johns",
+   "structure": "pier",
+   "active": true
+  },
+  {
+   "id": "matanzas-inlet",
+   "name": "Matanzas Inlet",
+   "area": "Crescent Beach",
+   "modes": [
+    "inshore",
+    "surf"
+   ],
+   "lat": 29.707,
+   "lon": -81.229,
+   "county": "St. Johns",
+   "structure": "inlet",
+   "active": true
+  },
+  {
+   "id": "marineland",
+   "name": "Marineland / Washington Oaks",
+   "area": "Palm Coast",
+   "modes": [
+    "surf"
+   ],
+   "lat": 29.63,
+   "lon": -81.205,
+   "county": "Flagler",
+   "structure": "rocks",
+   "active": true
+  },
+  {
+   "id": "bings-landing",
+   "name": "Bings Landing",
+   "area": "Palm Coast",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.615,
+   "lon": -81.205,
+   "county": "Flagler",
+   "structure": "dock",
+   "active": true
+  },
+  {
+   "id": "beverly-beach",
+   "name": "Beverly Beach",
+   "area": "Flagler Beach",
+   "modes": [
+    "surf"
+   ],
+   "lat": 29.517,
+   "lon": -81.145,
+   "county": "Flagler",
+   "structure": "beach",
+   "active": true
+  },
+  {
+   "id": "flagler-pier",
+   "name": "Flagler Beach Pier",
+   "area": "Flagler Beach",
+   "modes": [
+    "pier",
+    "surf"
+   ],
+   "lat": 29.481,
+   "lon": -81.127,
+   "county": "Flagler",
+   "structure": "pier",
+   "active": true
+  },
+  {
+   "id": "flagler-icw",
+   "name": "Flagler Beach ICW (Veterans Park)",
+   "area": "Flagler Beach",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.477,
+   "lon": -81.1335,
+   "county": "Flagler",
+   "structure": "dock",
+   "active": true
+  }
+ ],
+ "slots": [
+  {
+   "locationId": "vilano-bridge",
+   "mode": "inshore",
+   "slots": [
+    {
+     "at": "2026-10-05T10:00:00.000Z",
+     "suitability": 31,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T11:00:00.000Z",
+     "suitability": 42,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T12:00:00.000Z",
+     "suitability": 68,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T13:00:00.000Z",
+     "suitability": 81,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T14:00:00.000Z",
+     "suitability": 58,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T15:00:00.000Z",
+     "suitability": 36,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T16:00:00.000Z",
+     "suitability": 31,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T17:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T18:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T19:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T20:00:00.000Z",
+     "suitability": 34,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T21:00:00.000Z",
+     "suitability": 45,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T22:00:00.000Z",
+     "suitability": 59,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T23:00:00.000Z",
+     "suitability": 55,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T00:00:00.000Z",
+     "suitability": 40,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T01:00:00.000Z",
+     "suitability": 32,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T02:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T03:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T04:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T05:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T06:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T07:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T08:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T09:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T10:00:00.000Z",
+     "suitability": 32,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T11:00:00.000Z",
+     "suitability": 45,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T12:00:00.000Z",
+     "suitability": 66,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T13:00:00.000Z",
+     "suitability": 66,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T14:00:00.000Z",
+     "suitability": 45,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T15:00:00.000Z",
+     "suitability": 32,
+     "tide": null,
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T16:00:00.000Z",
+     "suitability": 30,
+     "tide": null,
+     "lightPhase": null
+    }
+   ],
+   "tideEvents": []
+  }
+ ],
+ "days": [
+  {
+   "confidence": 75,
+   "date": "2026-10-05",
+   "kind": "forecast",
+   "reason": {
+    "code": "planner.forecast",
+    "params": {},
+    "text": "Today's forecast conditions and safety gates determine this day."
+   },
+   "topSpecies": [
+    {
+     "name": "Mangrove snapper",
+     "speciesId": "mangrove",
+     "suitability": 82
+    }
+   ],
+   "verdict": "MAYBE",
+   "windows": [
+    {
+     "start": "2026-10-05T12:30:00.000Z",
+     "end": "2026-10-05T13:30:00.000Z",
+     "locationId": "vilano-bridge",
+     "mode": "inshore",
+     "displayName": "Vilano Bridge fishing piers",
+     "partOfDay": "morning"
+    }
+   ]
+  },
+  {
+   "confidence": 67,
+   "date": "2026-10-06",
+   "kind": "forecast",
+   "reason": {
+    "code": "planner.forecast",
+    "params": {},
+    "text": "Tomorrow's forecast conditions and safety gates determine this day."
+   },
+   "topSpecies": [
+    {
+     "name": "Bluefish",
+     "speciesId": "bluefish",
+     "suitability": 78
+    }
+   ],
+   "verdict": "MAYBE",
+   "windows": [
+    {
+     "start": "2026-10-06T10:30:00.000Z",
+     "end": "2026-10-06T11:30:00.000Z",
+     "locationId": "vilano-beach",
+     "mode": "surf",
+     "displayName": "Vilano Beach",
+     "partOfDay": "morning"
+    }
+   ]
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "morning",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-07",
+   "kind": "outlook",
+   "outlookLabel": "Promising",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "evening",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-08",
+   "kind": "outlook",
+   "outlookLabel": "Mixed",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "morning",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-09",
+   "kind": "outlook",
+   "outlookLabel": "Tough",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "morning",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-10",
+   "kind": "outlook",
+   "outlookLabel": "Mixed",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "evening",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-11",
+   "kind": "outlook",
+   "outlookLabel": "Promising",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  }
+ ],
+ "inputs": {
+  "sourceStatus": [
+   {
+    "affects": "alerts",
+    "ageMinutes": 120,
+    "available": true,
+    "fetchedAt": "2026-10-05T12:00:00.000Z",
+    "issuedAt": null,
+    "kind": "alerts",
+    "label": "Weather alerts",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "hourlyForecast",
+    "ageMinutes": 120,
+    "available": true,
+    "fetchedAt": "2026-10-05T12:00:00.000Z",
+    "issuedAt": "2026-10-05T10:00:00.000Z",
+    "kind": "hourlyForecast",
+    "label": "Hourly forecast",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "tidePredictions",
+    "ageMinutes": null,
+    "available": false,
+    "fetchedAt": null,
+    "issuedAt": null,
+    "kind": "tidePredictions",
+    "label": "Tide predictions",
+    "observedAt": null,
+    "stale": false,
+    "status": "unavailable",
+    "usedFallback": false
+   },
+   {
+    "affects": "waterTemperature",
+    "ageMinutes": 120,
+    "available": true,
+    "fetchedAt": "2026-10-05T12:00:00.000Z",
+    "issuedAt": "2026-10-05T10:00:00.000Z",
+    "kind": "waterTemperature",
+    "label": "Water temperature",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "waveForecast",
+    "ageMinutes": 120,
+    "available": true,
+    "fetchedAt": "2026-10-05T12:00:00.000Z",
+    "issuedAt": "2026-10-05T10:00:00.000Z",
+    "kind": "waveForecast",
+    "label": "Wave forecast",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "waves",
+    "ageMinutes": 120,
+    "available": true,
+    "fetchedAt": "2026-10-05T12:00:00.000Z",
+    "issuedAt": "2026-10-05T10:00:00.000Z",
+    "kind": "waves",
+    "label": "Wave reading",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "pressureObservations",
+    "ageMinutes": 120,
+    "available": true,
+    "fetchedAt": "2026-10-05T12:00:00.000Z",
+    "issuedAt": "2026-10-05T10:00:00.000Z",
+    "kind": "pressureObservations",
+    "label": "Pressure reading",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   }
+  ]
+ },
+ "notes": [],
+ "detailsRefs": []
+}
