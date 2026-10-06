@@ -62,7 +62,8 @@ assert.equal(localDay(new Date('2026-11-01T05:30:00Z')),'2026-11-01');
 assert.equal(localDay(new Date('2026-11-01T06:30:00Z')),'2026-11-01');
 // Test the worker's actual tide parser, including both repeated DST fall-back hours.
 const workerSource=await readFile(new URL('../src/worker.mjs',import.meta.url),'utf8');
-const worker=vm.runInNewContext(workerSource.replace('export default','const worker =')+'; ({tideEvents,localDate,parseBuoy,sunriseSunset})',{Intl,Date,Map,Set,Math,Number,String,URL,console});
+const sanitizedWorker = workerSource.replace(/^import\s+[\s\S]*?;/gm, '').replace('export default','const worker =');
+const worker=vm.runInNewContext(sanitizedWorker+'; ({tideEvents,localDate,parseBuoy,sunriseSunset})',{Intl,Date,Map,Set,Math,Number,String,URL,console});
 const dst=worker.tideEvents([{t:'2026-11-01 05:30',v:'1',type:'H'},{t:'2026-11-01 06:30',v:'0',type:'L'}]);
 assert.equal(Date.parse(dst[1].time)-Date.parse(dst[0].time),3600e3);
 for(const e of dst) assert.equal(worker.localDate(new Date(e.time)),'2026-11-01');

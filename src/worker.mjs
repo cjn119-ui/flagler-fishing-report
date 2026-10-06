@@ -18,6 +18,8 @@ const NWS_CWF_LIST_URL = "https://api.weather.gov/products/types/CWF/locations/J
 const NDBC_URL = "https://www.ndbc.noaa.gov/data/realtime2/41117.txt";
 const NOAA_TIDES_URL = "https://api.tidesandcurrents.noaa.gov/api/prod/datagetter";
 const CAPTAIN_REPORTS_URL = "https://captainexperiences.com/fishing-reports/locations/regions/flagler-beach";
+import { saveReportToSupabase, fetchReportFromSupabase } from "./supabase.mjs";
+
 const FLAGLER_LAT = 29.4749754;
 const FLAGLER_LON = -81.1270035;
 const liveCache = new Map();
@@ -729,14 +731,19 @@ function publicReport(report) {
 }
 
 async function readReport(env, key) {
-  const raw = await env.REPORTS.get(key);
-  if (!raw) return null;
-  let report;
-  try {
-    report = JSON.parse(raw);
-  } catch {
-    throw new UpstreamError("Stored report JSON is invalid.");
+  let raw = await env.REPORTS.get(key);
+  let report = null;
+  if (raw) {
+    try {
+      report = JSON.parse(raw);
+    } catch {
+      throw new UpstreamError("Stored report JSON is invalid.");
+    }
+  } else {
+    // Fall back to Supabase if KV has no report stored
+    report = await fetchReportFromSupabase(key, env);
   }
+  if (!report) return null;
   if (!validateStoredReport(report)) throw new UpstreamError("Stored report does not match schema version 1.");
   return report;
 }
@@ -885,6 +892,7 @@ async function writeScheduledReport(env, kind, targetDate, mode) {
   }
   const report = await buildFishingReport(targetDate, preview, runId);
   await env.REPORTS.put(key, JSON.stringify(report));
+  await saveReportToSupabase(key, report, env).catch((err) => console.warn(`[supabase] report sync failed: ${err.message}`));
   console.log(`[schedule] ${kind} report stored for ${targetDate} in ${key} (${mode})`);
 }
 

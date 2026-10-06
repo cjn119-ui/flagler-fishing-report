@@ -4,6 +4,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import worker from "../src/worker.mjs";
+import { saveReportToSupabase, fetchReportFromSupabase, saveSnapshotToSupabase } from "../src/supabase.mjs";
 
 const SITE_URL = (process.env.SITE_URL || "").replace(/\/$/, "");
 const FORCE = process.env.FORCE_REFRESH === "true";
@@ -37,18 +38,36 @@ function scheduledAt(hour) {
 }
 
 async function seedFromDeployed() {
-  if (!SITE_URL) return;
-  try {
-    const res = await fetch(`${SITE_URL}/api/state.json`, { signal: AbortSignal.timeout(15000) });
-    if (!res.ok) return;
-    const state = await res.json();
-    for (const key of ["current-report", "next-day-report"]) {
-      const r = state[key];
-      if (r && r.forecast_grid === "JAX/89,29" && Date.now() - Date.parse(r.generated_at) < REFRESH_MS) store.set(key, JSON.stringify(r));
-      else if (r) store.set(`stale:${key}`, JSON.stringify(r));
+  if (SITE_URL) {
+    try {
+      const res = await fetch(`${SITE_URL}/api/state.json`, { signal: AbortSignal.timeout(15000) });
+      if (res.ok) {
+        const state = await res.json();
+        for (const key of ["current-report", "next-day-report"]) {
+          const r = state[key];
+          if (r && r.forecast_grid === "JAX/89,29" && Date.now() - Date.parse(r.generated_at) < REFRESH_MS) store.set(key, JSON.stringify(r));
+          else if (r) store.set(`stale:${key}`, JSON.stringify(r));
+        }
+      }
+    } catch (e) {
+      console.warn("no previous state from site URL:", e.message);
     }
-  } catch (e) {
-    console.warn("no previous state:", e.message);
+  }
+
+  // Fallback: seed from Supabase if missing
+  for (const key of ["current-report", "next-day-report"]) {
+    if (!store.has(key)) {
+      try {
+        const r = await fetchReportFromSupabase(key);
+        if (r && r.forecast_grid === "JAX/89,29" && Date.now() - Date.parse(r.generated_at) < REFRESH_MS) {
+          store.set(key, JSON.stringify(r));
+        } else if (r && !store.has(`stale:${key}`)) {
+          store.set(`stale:${key}`, JSON.stringify(r));
+        }
+      } catch (e) {
+        console.warn(`no previous state from Supabase for ${key}:`, e.message);
+      }
+    }
   }
 }
 
@@ -83,7 +102,19 @@ for (const [path, file] of [
   else wrote++;
   // Always write a body: the client checks payload.ok, and static hosting can't return 503.
   await writeFile(`${OUT}${file}`, body);
+  await saveSnapshotToSupabase(file, body).catch(() => {});
 }
+
+for (const key of ["current-report", "next-day-report"]) {
+  if (store.has(key)) {
+    try {
+      await saveReportToSupabase(key, JSON.parse(store.get(key)));
+    } catch (e) {
+      console.warn(`could not save ${key} to Supabase:`, e.message);
+    }
+  }
+}
+
 await writeFile(`${OUT}state.json`, JSON.stringify({
   "current-report": JSON.parse(store.get("current-report") ?? "null"),
   "next-day-report": JSON.parse(store.get("next-day-report") ?? "null"),
