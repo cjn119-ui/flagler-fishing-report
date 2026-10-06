@@ -1,37 +1,31 @@
-# PROJECT
-Flagler Fishing V5 — First Coast fishing-decision PWA (St. Augustine → Flagler; surf/pier/inshore). Foundation of a future app.
+# Flagler Fishing V5 — project state (updated 2026-10-06)
 
-## OBJECTIVE
-Answer in ~10 s: worth fishing? where? when? what to target? what to throw? GO/MAYBE/SKIP + species suitability (never "chance") + separate historical trip rate. Spec: `docs/v5-spec.md`; decisions: `docs/v5-product-decisions.md`, `docs/v5-architecture-decisions.md`, `docs/v5-inshore-go-decision.md`. Rules/routing: `AGENTS.md`.
+## Objective
+First Coast fishing-decision PWA (St. Augustine → Flagler; surf/pier/inshore) that answers: worth fishing, where, when, what to target, what to throw. V5 lives under `site/v5/`; the root page and `/v1/`–`/v3/` are protected. Policy: `AGENTS.md`; spec: `docs/v5-spec.md`; decisions: `docs/v5-product-decisions.md`, `docs/v5-architecture-decisions.md`, `docs/v5-inshore-go-decision.md`, `docs/v5-go-definition-decision.md`.
 
-## CURRENT PHASE
-Engine A1–A4 done and review-fixed; inshore scoring fix in progress; hindcast data acquired; UI prototype being restyled. A5 (hindcast + GO threshold) and phase B (real UI) not started.
+## Where things stand
+- **Live on main (deployed, Pages):** the interactive prototype at `/v5/proto/` (sample data), the V5 engine/catalogs/history under `site/v5/` (static files), generation-pipeline fix (PR #12: 26 h tide window, KFIN→KDAB→KSGJ weather fallback, NDBC 90 min guard restored). Deploy depends on live data passing `scripts/test-generated-output.mjs`; it failed transiently on stale weather/tide data before the fix.
+- **Engine done and tested:** contracts, params, copy, sources/adapters, history math, astro, factors, model, run builder, generator, local archive scaffolding. Seasonal-benchmark GO rule (owner-approved 2026-10-06): GO = fit ≥ 70 AND ≥ benchmark + 4 for the location×mode and date; null benchmark caps at MAYBE.
+- **Tests (all pass):** `scripts/test-v5-contracts.mjs` (11 groups), `-sources` (13), `-integration`, `-model` (62), `-run` (22), `-hindcast` (12), `test-hindcast-data.mjs`, plus the five legacy suites. Note `test-app.mjs` once failed on a time-dependent assertion (`stats` JSON containing "32") and passed again.
+- **Hindcast (perfect-observation sensitivity, 2025-10-01…2026-09-30, 364 source-complete days):** headline GO 30.5% (target 15–40%), monthly max 60%, coverage passes. **Fails the 3%-per-cell floor for two inshore cells:** vilano-bridge 0.8%, bridge-of-lions 2.5%. The "absolute-only" info row duplicates the headline (likely a reporting bug). See `docs/v5-hindcast-report.md`.
 
-## CURRENT BRANCH / HEAD
-`v5-catch-forecast`, local only (nothing pushed, no PR). Last commit c9513dc. Uncommitted work in progress: inshore fix (engine/tests/fixtures), prototype restyle (`site/v5/proto/`), untracked draft `supabase/` (unverified, never applied).
+## Pending owner decisions
+1. The two failing inshore cells: review inputs vs request an exception (not pre-authorized).
+2. Accept launch values: `goSuitabilityMin` 70, `goBenchmarkMargin` 4, realistic floor 0.05, tide scale 0.50 (all still provisional/unaccepted in `params.js` except as the approved GO rule states).
+3. Benchmarks are in-sample on one year; a holdout year is needed before claiming more.
+4. Archive uploads to GitHub release assets (400-day retention) are designed but NOT enabled; needs explicit go-ahead.
+5. PR #11 put the full V5 branch on main; confirm that exposure (engine/history JSON are served under `/v5/`) is intended.
 
-## COMPLETED
-- Catalogs (11 active spots, 19 species); MRIP history with repaired catch definition (ocean .628 n=931, inland .442 n=1742); threshold sheet.
-- Engine: contracts, params, copy, sources/adapters, history/astro/factors/model, run builder, generator (`scripts/generate-v5.mjs`), local archive scaffolding (upload refuses).
-- Reviews: Opus red team, Luna XHigh A3 review, Sonnet adversarial review (F1–F18 fixed, 037e864), Opus inshore decision (8779c66).
-- Hindcast data acquisition (`scripts/hindcast/`, data in ignored `.cache/hindcast`); Today-screen prototype v1.
+## Unfinished work (branch `v5-wip-glass-supabase`, pushed, NOT merged)
+- Liquid Glass / iOS mobile restyle of the prototype: `index.html` and `proto.css` partly edited, `check-layout.mjs` layout audit added, screenshots in `site/v5/proto/shots/glass-*.png`; `proto.js` untouched, NOTES not updated. Resume from `docs/`-less brief: fix overlapping text at 320/375/393/430 px, safe areas, ≥12px type, glass surfaces with fallbacks, spring/pressed button states, 44px targets, AA contrast.
+- `supabase/` migration draft: UNAPPLIED and UNVERIFIED (no local Postgres); a known gap is no table/FK for the shared `build_id`. Keep off main until loaded into a throwaway Postgres. No live Supabase project exists or is authorized.
+- `site/v5/proto/AUDIT-design.md`, `AUDIT-deterministic.md`, `handoff.md` (stale; superseded by this file).
 
-## DECISIONS
-Path `/v5/`; region St. Aug→Flagler; trips not anglers; bands Common≥.20/Occasional .05–.20/Rare<.05; floor .05 provisional; GO threshold and tide scale provisional; no county adjustment; GO target 15–40% via full-year hindcast (perfect-observation proxy; past forecasts/alerts not recoverable); archive upload design approved but upload/push/PR/merge each need Chris's separate go-ahead; inshore: fix water-key bug + no-hit months score low + mode-relative season reference (Opus decision, owner-approved); keep Supabase out of the live path (static JSON on Pages).
-Routing (Chris): no Sol; Luna Low/Med/High bounded; Luna XHigh only former-Sol roles or when Chris says; Sonnet/Opus Medium for taste/judgment; Sonnet for adversarial review; deterministic checks run by orchestrator; launch Codex directly via `codex-companion task --write --model … --effort … --cwd … --prompt-file …`; arm a watcher with strict status check; verify a cancel stopped the thread.
+## Routing (owner rules, 2026-10-05/06)
+No Sol in delegation. Bounded work → Codex GPT-6 Luna Low/Medium/High (XHigh only in previously allowed roles); judgment/taste → Claude Sonnet/Opus Medium; adversarial review → Claude Sonnet; deterministic checks run directly (never delegated). Launch Codex directly with `codex-companion task --write --model gpt-6-luna --effort <e> --cwd <repo> --prompt-file <f>`; verify model/effort in the session file. Never push/merge/deploy/enable Supabase without explicit approval.
 
-## TEST STATUS
-Before the in-progress inshore job: all 10 suites passed (contracts 9, sources 13, integration, model 44, run 20, five legacy). Re-run after the inshore job finishes.
-
-## CURRENT WORKER
-Luna XHigh (inshore fix, task-muwdhh87-glu0e8); Sonnet Medium (prototype restyle to main-report theme).
-
-## NEXT TASK
-1. Verify + commit inshore fix (run all suites, coverage: expect inshore ≈8/72, surf ≈64/72, pier 24/24).
-2. Review prototype restyle in browser; record owner taste answers.
-3. A5 on Luna XHigh: hindcast harness over `.cache/hindcast`, per-mode/per-spot GO gates, set provisional thresholds; bring measured failures to Chris.
-4. Sonnet adversarial re-check; then phase B (real UI).
-5. Validate `supabase/` migration in a throwaway Postgres (needs install approval), then commit.
-
-## BLOCKERS / OPEN QUESTIONS
-Postgres not installed locally; Supabase project creation needs cost approval; inshore GO rarity (owner exception only if a spot fails ≥3% hindcast gate); prototype taste questions in `site/v5/proto/NOTES.md`.
+## Next tasks
+1. Owner decisions above.
+2. Fix the "absolute-only" reporting row in `scripts/hindcast/run-hindcast.mjs`.
+3. Resume the glass restyle from the WIP branch (Luna High), then a Sonnet Medium design review and a browser check before any publish.
+4. Production V5 UI (phase B) only after the prototype is accepted; A6 migration validation in a throwaway Postgres.
