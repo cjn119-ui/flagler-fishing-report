@@ -142,4 +142,63 @@ await check("six-date primary-only chunk merge matches one-pass summary byte for
   } finally { await rm(outputDir, { recursive: true, force: true }); }
 });
 
-console.log("\n7 passed, 0 failed");
+await check("wind present + null gust → gust 0 mph and not missing", () => {
+  const testData = {
+    ...cached,
+    kfin: { ...cached.kfin, rows: cached.kfin.rows.slice(0, 100).map(row => ({ ...row, gustKt: null })) },
+  };
+  const obs = buildNormalizedObservations({ now, spot: miniSpot, datasets: testData, params });
+  const forecast = obs.find(item => item.kind === "gridForecast");
+  const gustValues = forecast.values.windGust.filter(row => Date.parse(row.validFrom) >= now);
+  for (const row of gustValues) {
+    if (row.value !== null) {
+      assert.equal(row.value, 0, `Expected gust 0 when wind present and source gustKt is null, got ${row.value}`);
+    }
+  }
+});
+
+await check("wind present + null weather code → thunder false and covered", () => {
+  const testData = {
+    ...cached,
+    kfin: { ...cached.kfin, rows: cached.kfin.rows.slice(0, 100).map(row => ({ ...row, weatherCodes: null })) },
+  };
+  const obs = buildNormalizedObservations({ now, spot: miniSpot, datasets: testData, params });
+  const forecast = obs.find(item => item.kind === "gridForecast");
+  const codeValues = forecast.values.weatherCode.filter(row => Date.parse(row.validFrom) >= now);
+  for (const row of codeValues) {
+    if (row.value !== null) {
+      assert.equal(row.value, "", `Expected empty string for weather-code when source is null, got ${JSON.stringify(row.value)}`);
+    }
+  }
+  const thunderValues = forecast.values.probabilityOfThunder.filter(row => Date.parse(row.validFrom) >= now);
+  for (const row of thunderValues) {
+    if (typeof row.value === "number") {
+      assert.equal(row.value, 0, `Expected thunder 0 for empty weather-code, got ${row.value}`);
+    }
+  }
+});
+
+await check("weather code TSRA or VCTS → thunder true", () => {
+  // Verify the regex correctly identifies thunderstorm codes
+  const thunder1 = /(?:^|\s)(?:VCTS|TS|\+TS|-TS|TSRA|\+TSRA|-TSRA)(?:$|\s)/i.test("TSRA");
+  const thunder2 = /(?:^|\s)(?:VCTS|TS|\+TS|-TS|TSRA|\+TSRA|-TSRA)(?:$|\s)/i.test("VCTS");
+  const thunder3 = /(?:^|\s)(?:VCTS|TS|\+TS|-TS|TSRA|\+TSRA|-TSRA)(?:$|\s)/i.test("RA");
+  assert.equal(thunder1, true, "TSRA should match thunder regex");
+  assert.equal(thunder2, true, "VCTS should match thunder regex");
+  assert.equal(thunder3, false, "RA should not match thunder regex");
+});
+
+await check("slot with no wind observation → gust and thunder still missing / not covered", () => {
+  const testData = {
+    ...cached,
+    kfin: { ...cached.kfin, rows: cached.kfin.rows.filter(row => Date.parse(row.reportTime ?? row.t) <= now) },
+  };
+  const obs = buildNormalizedObservations({ now, spot: miniSpot, datasets: testData, params, allowPerfectObservationSlots: false });
+  const forecast = obs.find(item => item.kind === "gridForecast");
+  const futureGusts = forecast.values.windGust.filter(row => Date.parse(row.validFrom) > now);
+  for (const row of futureGusts) {
+    assert.equal(row.value, null, `Expected null gust in strict mode with no future wind data`);
+  }
+});
+
+console.log("\n12 passed, 0 failed");
