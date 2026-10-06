@@ -1,28 +1,37 @@
-# V5 Today prototype — notes
+# V5 app prototype — notes
 
-Static, non-production look-and-feel prototype of the Today screen (phase B groundwork). Serve `site/` and open `/v5/proto/`.
-Deep links: `#state=go|maybe|skip|stale|offline|partial` and `&theme=light|dark`. "Review states" (bottom right) is review-only.
+Static, non-production, interactive prototype of the V5 app (phase B groundwork). Serve `site/` and open `/v5/proto/`. Vanilla ES modules, no build.
+Look and feel follows the live main report (`site/style.css` tokens, card, score ring, stat tiles, chips, week bars, header bar with brand mark and refresh). No sunset hero.
+
+## Share / review hash
+`#tab=today|spots|species|plan`, `spot=<id>`, `mode=surf|pier|inshore`, `species=<id>`, `h=today|tomorrow`, `t=<ISO slot>`, `day=0..6`, `state=go|maybe|skip|stale|offline|partial`, `theme=light|dark`. "Review states" (bottom right) is review-only.
 
 ## Data
-- `sample-today.json` is the real fixture MAYBE recommendation (`generate-v5.mjs --fixtures`, provisional-GO wording, tide missing) trimmed. `sample-go|skip|stale|partial.json` are hand-built. All five pass `validatePredictionRun`. Every number, spot, species and time is illustrative.
-- Proto-only extras (not yet engine outputs): `_proto.factors` (L2/L3 factor rows from the details files, with plain-word text), `_proto.light` (sunrise/sunset), `slots[0].tideEvents`, `why[].effect`, `backup.reason` text, `days[].windows`, `nextOption` shape. These are the fields the real engine/builder will need to emit.
-- The UI shows each state at a fixed clock (`nowOffsetMin` / `nowIso` in `proto.js`) so ages and "Fish now" are reproducible.
+- `sample-rich.json` / `sample-rich-tomorrow.json` are contract-shaped runs with all locations, `scopeViews` (byLocation, bySpecies focused), `candidates`, `slots` and `days`. `sample-today|go|skip|stale|partial.json` drive the review states. Every number, spot, species and time is illustrative.
+- Proto-only extras (not yet engine outputs): `_proto.factors`, `_proto.light` (sunrise/sunset), `slots[].tideEvents`, `why[].effect`, `backup.reason`, `days[].windows`, `nextOption`. These are the fields the real builder must emit.
+- UI renders only from JSON and `engine/copy.js`; species/spot names and setup text come from `../species.js` and `../spots.js`. No scoring in the UI. Clock is fixed per state (`nowOffsetMin` / `nowIso` in `proto.js`).
 
-## From the spec
-Above-the-fold order (header, verdict, Best bet, Targets, Use, Confidence), then Backup, Why, Best times, Today vs tomorrow, Data & sources. Ring shows the word only (arc is decorative), colour + icon + word, `aria-live="polite"` verdict with a spoken sentence, caption "Last known" when stale. GO/MAYBE/SKIP never recomputed. "Suitability" label plus the dismissible first-use line; "Local history" toggle (`aria-pressed`) reveals the "About N in 10 trips" or band line via `engine/copy.js`. "Rare in surveys" tag. Provisional-GO reason shown verbatim. Amber qualifier under the headline. Safety SKIP: reason first, shield icon, Next best option replaces Best bet, targets hidden. Freshness chip, stale/offline banners, partial chip, struck-through past window with the next one promoted. Light and dark, reduced motion, 44 px targets, no horizontal scroll (375 px verified, 560 px column on desktop).
+## Implemented
+Header (brand mark = Today, spot pill, updated chip, refresh), Today/Tomorrow toggle, mode chips, bottom tabs (Today, Spots, Species, Plan), spot-picker sheet from the pill, Spots ranked list (verdict chips, mode filter, Near me, tap to select and return to Today), Species grid plus detail sheet (12-month `seasonCurve` bars, local history, setup, "Target this"), species focus re-ranks Today with a removable "Targeting" chip, Plan 7-day strip (Promising/Mixed/Tough outlook labels, tap to expand a day), timeline scrubber (tap, drag, arrow keys) with a conditions readout and species ranking for that slot, expandable Why / all-factors table, Backup, Confidence reasons, Local history toggle, Data & sources, hash-based state, review-states panel. Sheets trap focus, close on Escape and return focus. Verdict is an `aria-live` region.
 
-## Not built
-Scrubber, Conditions tiles (engine emits no plain-word tile labels yet), species focus UI (caption code exists), Tomorrow horizon, sheets, real tabs (stubs).
+## Gaps
+- Scrubber reads only the 30-minute `slots` in the JSON. If a slot has no `topSpecies`, the readout says so and keeps window targets; per-slot species ranking depends on the engine emitting that.
+- Species focus uses `scopeViews.bySpecies[id].focused`; a species with no usable window shows a notice instead of a re-rank.
+- Near me uses browser geolocation once per session, nothing stored. Favorites persist only in localStorage `v5proto.*`.
+- Conditions tiles are only as plain-worded as the sample data; engine emits no tile labels yet.
+- Imports `engine/copy.js` directly; if its exports change this prototype breaks.
+- Tomorrow uses a separate sample file; the real app would read the same run's horizon.
 
-## Known gaps
-- At 375x667 with the hint dismissed, Use fits above the tab bar but Confidence sits just below the fold (spec budget not fully met; the hero and verdict card were already tightened).
-- Imports `engine/copy.js` directly; if that file's exports change this prototype breaks.
+## Taste questions, answered with the implemented choice
+1. Hero: dropped the sunset gradient. A normal report card with the ring (word only) and a faint verdict-colour wash; Best bet sits inside it.
+2. Ring: word only, in the report's ring style; the arc is decorative.
+3. SKIP: Targets and Use stay, muted, with a "Muted: <reason>" line (safety SKIP shows the shield and reason first).
+4. Verdict and Best bet merged into one card (about 70 px saved); Next best option replaces Best bet on SKIP.
+5. Backup follows Confidence, before Why.
+6. Provisional-GO sentence shortened to "Strong candidate; GO threshold still provisional." (engine/copy.js still owns the long form).
 
-## Taste questions for the owner
-1. Hero: full sunset gradient vs a quieter navy hero with only a sun glow? Verdict card overlaps the hero edge; keep?
-2. Ring: word-only with a thin decorative arc, or a solid colour disc?
-3. Safety SKIP hides Targets and Use. Right call, or show them muted?
-4. Verdict card plus separate Best bet card, or merge into one block to save about 70 px?
-5. Timeline: dashed tide line over suitability bars, or tide as an area under the bars?
-6. Backup directly after Confidence, or after Why?
-7. Provisional-GO sentence is long; shorten ("Strong candidate; GO threshold still provisional")?
+## Remaining questions for the owner
+- Keep Targets above Use and Confidence, or move Confidence up beside the ring?
+- Should the Today/Tomorrow toggle stay on Spots and Species, or only on Today?
+- Plan outlook days: vertical labels in the bars (current) or a list of days?
+- Remove "Review states" for any non-reviewer build? Draw tide as a line over the scrubber bars?
