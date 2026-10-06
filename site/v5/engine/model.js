@@ -33,12 +33,13 @@ export function classifyEligibility({species,spot,mode,rate,historyAvailable=tru
   return {eligibility:"realistic",eligibilityReason:{code:"realistic"}};
 }
 function cReason(code,penalty,kind="live",params={}){return {code,params,text:{code,params,text:({forecastMissing:"Forecast unavailable",forecastAging:"Forecast is aging",alertsUnchecked:"Weather alerts were not checked",tideUnavailable:"Tide timing is unavailable",distantTideStation:"Tide station is far from this spot",wavesUnavailable:"Fresh wave data is unavailable",waterTempUnavailable:"Water temperature is unavailable",inshoreBuoyTemp:"Inshore temperature uses an offshore buoy",pressureUnavailable:"Pressure trend is unavailable",historyUnavailable:"Survey history is unavailable",historyThin:"Survey history sample is thin"})[code]??code},penalty,kind};}
-export function calculateConfidence({conditions={},mode,spot={},historyN=null,historyAvailable=true,forecastAgeHours=null,alertsChecked=false,wavesAvailable=false,params=MODEL_PARAMS}){
+export function calculateConfidence({conditions={},mode,spot={},historyN=null,historyAvailable=true,forecastAgeHours=null,alertsChecked=false,wavesAvailable=false,tideAvailable=null,params=MODEL_PARAMS}){
   const reasons=[];
   if(!has(forecastAgeHours)||forecastAgeHours>params.freshness.forecastMaxAgeHours)reasons.push(cReason("forecastMissing",params.confidence.forecastMissingOrStale));
   else if(forecastAgeHours>=params.freshness.forecastAgingMinHours)reasons.push(cReason("forecastAging",params.confidence.forecastAging));
   if(!alertsChecked)reasons.push(cReason("alertsUnchecked",params.confidence.alertsUnchecked));
-  if(!has(conditions.tideRateFtPerHr))reasons.push(cReason("tideUnavailable",params.confidence.tideUnavailable));
+  const tideReady=tideAvailable??(has(conditions.tideRateFtPerHr)&&has(params.factors.tide.rateNormalizationScale)&&params.factors.tide.rateNormalizationScale>0);
+  if(!tideReady)reasons.push(cReason("tideUnavailable",params.confidence.tideUnavailable));
   if(mode!=="inshore"&&has(spot.tideDistanceMi)&&spot.tideDistanceMi>params.freshness.distantTideStationMiles)reasons.push(cReason("distantTideStation",params.confidence.distantOceanTideStation,"structural"));
   if(mode!=="inshore"&&!wavesAvailable)reasons.push(cReason("wavesUnavailable",params.confidence.wavesUnavailable));
   if(!has(conditions.waterTempF))reasons.push(cReason("waterTempUnavailable",params.confidence.waterTempUnavailable));
@@ -74,16 +75,24 @@ function partOfDay(start,end,spot,params){
   }
   if(minute<params.windows.middayStartLocalHour*60)return "morning";if(minute<params.windows.afternoonStartLocalHour*60)return "midday";if(minute<params.windows.eveningStartLocalHour*60)return "afternoon";return "evening";
 }
-function localPeakIndices(rows){return rows.map((x,i)=>i).filter(i=>has(slotScore(rows[i]))&&(i===0||slotScore(rows[i])>=slotScore(rows[i-1]))&&(i===rows.length-1||slotScore(rows[i])>=slotScore(rows[i+1])));}
+function localPeakIndices(rows,slotMinutes){
+  const peaks=[];let start=0;
+  const contiguous=(a,b)=>Date.parse(rows[b].at)-Date.parse(rows[a].at)===slotMinutes*60000;
+  while(start<rows.length){let end=start;while(end+1<rows.length&&contiguous(end,end+1)&&slotScore(rows[end+1])===slotScore(rows[start]))end++;
+    const value=slotScore(rows[start]),before=start>0&&contiguous(start-1,start)?slotScore(rows[start-1]):-Infinity,after=end+1<rows.length&&contiguous(end,end+1)?slotScore(rows[end+1]):-Infinity;
+    if(has(value)&&value>=before&&value>=after)peaks.push(Math.floor((start+end)/2));start=end+1;
+  }
+  return peaks;
+}
 export function findSpeciesWindows(rows,{params=MODEL_PARAMS,locationId,mode,speciesId,spot=null,now=rows[0]?.at}={}){
-  const ordered=[...rows].sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)), peaks=localPeakIndices(ordered), candidates=[];
+  const ordered=[...rows].sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)),slotMs=params.windows.slotMinutes*60000,contiguous=(a,b)=>Date.parse(ordered[b].at)-Date.parse(ordered[a].at)===slotMs,peaks=localPeakIndices(ordered,params.windows.slotMinutes), candidates=[];
   for(const pi of peaks){const peak=ordered[pi], floor=peak.suitability-params.windows.peakTolerancePoints;let lo=pi,hi=pi;
-    while(lo>0&&localKey(ordered[lo-1].at)===localKey(peak.at)&&has(ordered[lo-1].suitability)&&ordered[lo-1].suitability>=floor&&inclusiveDuration(lo-1,hi,params.windows.slotMinutes)<=params.windows.maximumMinutes)lo--;
-    while(hi<ordered.length-1&&localKey(ordered[hi+1].at)===localKey(peak.at)&&has(ordered[hi+1].suitability)&&ordered[hi+1].suitability>=floor&&inclusiveDuration(lo,hi+1,params.windows.slotMinutes)<=params.windows.maximumMinutes)hi++;
-    while(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes){const left=lo>0&&localKey(ordered[lo-1].at)===localKey(peak.at)?ordered[lo-1]:null,right=hi<ordered.length-1&&localKey(ordered[hi+1].at)===localKey(peak.at)?ordered[hi+1]:null;if(!left&&!right)break;if(right&&(!left||right.suitability>=left.suitability))hi++;else lo--;}
+    while(lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)&&has(ordered[lo-1].suitability)&&ordered[lo-1].suitability>=floor&&inclusiveDuration(lo-1,hi,params.windows.slotMinutes)<=params.windows.maximumMinutes)lo--;
+    while(hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)&&has(ordered[hi+1].suitability)&&ordered[hi+1].suitability>=floor&&inclusiveDuration(lo,hi+1,params.windows.slotMinutes)<=params.windows.maximumMinutes)hi++;
+    while(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes){const left=lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)?ordered[lo-1]:null,right=hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)?ordered[hi+1]:null;if(!left&&!right)break;if(right&&(!left||right.suitability>=left.suitability))hi++;else lo--;}
     if(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;
     // Select best mean slice <=150 minutes containing peak.
-    let best=null;for(let a=lo;a<=pi;a++){for(let b=pi;b<=hi;b++){if(inclusiveDuration(a,b,params.windows.slotMinutes)>params.windows.maximumMinutes)break;if(inclusiveDuration(a,b,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;const part=ordered.slice(a,b+1),mean=part.reduce((s,x)=>s+x.suitability,0)/part.length;if(!best||mean>best.mean||mean===best.mean&&Date.parse(part[0].at)<Date.parse(best.part[0].at))best={part,mean};}}
+    let best=null;for(let a=lo;a<=pi;a++){for(let b=pi;b<=hi;b++){if(inclusiveDuration(a,b,params.windows.slotMinutes)>params.windows.maximumMinutes)break;if(inclusiveDuration(a,b,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;const part=ordered.slice(a,b+1);if(part.some((x,i)=>i>0&&!contiguous(a+i-1,a+i)))continue;const mean=part.reduce((s,x)=>s+x.suitability,0)/part.length;if(!best||mean>best.mean||mean===best.mean&&Date.parse(part[0].at)<Date.parse(best.part[0].at))best={part,mean};}}
     if(!best)continue;const part=best.part, start=part[0].at,end=utc(Date.parse(part.at(-1).at)+params.windows.slotMinutes*60000),gates=[...new Map(part.flatMap(x=>x.gates??[]).map(x=>[x.code,x])).values()];
     const reasons=[...new Map(part.flatMap(x=>x.confidenceReasons??[]).map(x=>[x.code,x])).values()],confidence=clamp(params.confidence.start-reasons.reduce((sum,x)=>sum+(x.penalty??0),0),params.confidence.minimum,100),nowMs=Date.parse(now??start),startMs=Date.parse(start),endMs=Date.parse(end);
     candidates.push({id:`${locationId}:${mode}:${speciesId}:${start}`,speciesId,locationId,mode,start,end,partOfDay:partOfDay(start,end,spot,params),peak:peak.at,peakSuitability:peak.suitability,mean:best.mean,suitability:Math.round(best.mean),confidence,confidenceReasons:reasons,gates,slots:part,isOpenAtGenerated:nowMs>=startMs&&nowMs<endMs,startsInMinAtGenerated:Math.max(0,Math.ceil((startMs-nowMs)/60000)),endsInMinAtGenerated:Math.max(0,Math.ceil((endMs-nowMs)/60000))});
@@ -110,7 +119,7 @@ export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,h
   const scored=(slots??[]).map(at=>{const sourceConditions=conditionsAt(at),wavesOk=mode==="inshore"||waveCoverage(at,horizon,{mode,spot})===true,c=mode!=="inshore"&&!wavesOk?{...sourceConditions,waveHeightM:null}:sourceConditions,ht=timing?{...timing,waterFit:getWaterFit(species,c.waterTempF)}:null,astroDate=localKey(at);let astronomy=astronomyByDate.get(astroDate);if(!astronomy&&has(spot.lat)&&has(spot.lon)){astronomy=getAstronomy(astroDate,spot.lat,spot.lon);astronomyByDate.set(astroDate,astronomy);}const f=calculateFactors({species,mode,conditions:c,at,historyTiming:ht,spot,astronomy,params});
     const cap=[];if(waterOutside(species,c.waterTempF))cap.push({code:"waterOutsideRange",params:{waterTempF:c.waterTempF,range:species.waterF}});if(ht?.seasonAvailable&&ht.seasonScore<params.history.seasonCapBelow)cap.push({code:"outOfSeason",params:{relativeSeason:ht.seasonScore}});if(eligibility.eligibility!=="realistic")cap.push({code:"notRealistic",params:{eligibility:eligibility.eligibility,reason:eligibility.eligibilityReason.code}});
     let suitability=f.suitability;if(cap.some(x=>x.code==="waterOutsideRange"||x.code==="outOfSeason"))suitability=Math.min(suitability??0,params.history.seasonCapSuitability);
-    const conf=calculateConfidence({conditions:c,mode,spot,historyN:ht?.historicalRate?.n,historyAvailable:!!ht?.seasonAvailable,forecastAgeHours,alertsChecked,wavesAvailable:wavesOk,params}),gates=safetyGates(c,{mode,params});
+    const conf=calculateConfidence({conditions:c,mode,spot,historyN:ht?.historicalRate?.n,historyAvailable:!!ht?.seasonAvailable,forecastAgeHours,alertsChecked,wavesAvailable:wavesOk,tideAvailable:f.factors.find(x=>x.key==="tide")?.available===true,params}),gates=safetyGates(c,{mode,params});
     const safetyInputsReady=has(c.windMph)&&has(c.windGustMph)&&typeof c.thunder==="boolean";
     const conditionsReady=has(f.suitability)&&safetyInputsReady&&forecastAgeHours!=null&&forecastAgeHours<=params.freshness.forecastMaxAgeHours&&alertsChecked&&(mode==="inshore"||wavesOk);
     const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,params});
@@ -134,7 +143,7 @@ const acceptableBackup=x=>x.verdict==="GO"||x.verdict==="MAYBE";
 /** Apply owner-approved backup tiers and the strict 7-mile straight-line radius. */
 export function chooseBackup(primary,candidates,{focusSpeciesId=null,params=MODEL_PARAMS}={}){
   const hasSafetyGate=(primary.gates??[]).some(x=>x.severity==="safety"||["thunder","wind","warning","waves"].includes(x.code));
-  const eligible=candidates.filter(x=>x.id!==primary.id&&acceptableBackup(x)&&(x.speciesId===primary.speciesId||focusSpeciesId&&!hasSafetyGate));
+  const eligible=candidates.filter(x=>x.id!==primary.id&&acceptableBackup(x)&&!(primary.mode==="surf"&&x.mode==="pier")&&(x.speciesId===primary.speciesId||focusSpeciesId&&!hasSafetyGate));
   const distance=x=>has(x.distanceMi)?x.distanceMi:primary.spot&&x.spot?haversineMiles(primary.spot,x.spot):null;
   const nearby=eligible.filter(x=>distance(x)!=null&&distance(x)<=params.selection.backupNearbyMiles);
   const later=eligible.filter(x=>x.locationId===primary.locationId&&x.mode===primary.mode&&Date.parse(x.start)>Date.parse(primary.end));
