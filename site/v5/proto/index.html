@@ -66,5 +66,10 @@
 </div>
 
 <script type="module" src="proto.js"></script>
+<script type="module">
+  if (new URLSearchParams(location.search).has("check")) {
+    import("./check-layout.mjs").then(({ run }) => run());
+  }
+</script>
 </body>
 </html>
