@@ -31,3 +31,11 @@ Solar calculations use NOAA's published fractional-year/equation-of-time sunrise
 - “Wind exposure sector” is interpreted as onshore when the wind's *from* direction is within 90° of the catalog facing direction; A2 should preserve meteorological wind-from convention.
 - Alerts in the safety evaluator assume A2 has already filtered to active warnings overlapping each slot. The evaluator treats a supplied active warning as safety-gating.
 - No specific moon-transit test across the winter local-date boundary was added because the pure astronomy contract takes a calendar date without an IANA zone. Current moon events are UTC instants; consumer date grouping is outside this module.
+
+## A5 review repairs and remaining provisional coverage assumptions
+
+- Astronomy date keys passed by the model are New York calendar dates. Lunar rise/set, upper transit, and underfoot are now searched inside that local-date interval (23/24/25 hours across DST); solunar periods are clipped to that interval. The astronomy helper still emits UTC instants for callers.
+- Season availability remains the complete twelve-month curve used by the season factor/cap. `historyAvailable` separately reports whether the requested month has a valid shrunk rate and denominator; eligibility and history confidence penalties use the requested-month availability.
+- The end-to-end coverage report uses test-only candidate values of GO threshold 70, realistic floor 0.05, and tide scale 0.5 ft/hr. `MODEL_PARAMS` remains provisional; this synthetic sinusoidal tide series demonstrates plumbing and reachability only. These results are not an observed frequency or hindcast.
+- Browser-style smoke rewrites the core scoring module graph to self-contained ECMAScript data modules and imports it with the native module loader; all engine sources are separately checked for `node:` builtins. This does not emulate browser rendering, provider fetches, or the full V5 UI.
+- A live Chromium page smoke remains unverified in this worker: no browser provider was available, and the Chrome UI bridge failed during navigation. The automated data-module import check passed, but it is not a claim of browser-rendering verification.

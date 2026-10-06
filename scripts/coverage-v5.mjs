@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadFirstCoastHistory,getHistoricalTiming } from "../site/v5/engine/history.js";
 import { MODEL_PARAMS } from "../site/v5/engine/params.js";
 import { calculateFactors } from "../site/v5/engine/factors.js";
-import { calculateConfidence,verdictFor } from "../site/v5/engine/model.js";
+import { calculateConfidence,verdictFor,scoreSpecies } from "../site/v5/engine/model.js";
 import { getAstronomy } from "../site/v5/engine/astro.js";
 import { ACTIVE_SPOTS } from "../site/v5/spots.js";
 import { SPECIES } from "../site/v5/species.js";
@@ -14,7 +14,7 @@ const history=await loadFirstCoastHistory({readJson:async()=>JSON.parse(fs.readF
 // test every active spot/mode/month, selecting only catalog-listed realistic species.
 // Tide remains unavailable while its normalization scale is provisional; this both
 // exposes weight renormalization and avoids tuning to an unmeasured tide-rate constant.
-const candidateParams={...MODEL_PARAMS,history:{...MODEL_PARAMS.history,realisticFloor:0.05},thresholds:{...MODEL_PARAMS.thresholds,goSuitabilityMin:70}};
+const candidateParams={...MODEL_PARAMS,history:{...MODEL_PARAMS.history,realisticFloor:0.05},thresholds:{...MODEL_PARAMS.thresholds,goSuitabilityMin:70},factors:{...MODEL_PARAMS.factors,tide:{...MODEL_PARAMS.factors.tide,rateNormalizationScale:0.5}}};
 const modes=["surf","pier","inshore"],summary=Object.fromEntries(modes.map(m=>[m,{cells:0,realisticCells:0,goCells:0,goLocations:new Set(),speciesCandidates:0,bySpot:{}}]));
 const noTarget=[];
 for(const spot of ACTIVE_SPOTS)for(const mode of spot.modes)for(let month=1;month<=12;month++){
@@ -35,7 +35,27 @@ for(const spot of ACTIVE_SPOTS)for(const mode of spot.modes)for(let month=1;mont
  }
  if(hasRealistic){s.realisticCells++;loc.realistic++;}if(best?.verdict==="GO"){s.goCells++;s.goLocations.add(spot.id);loc.go++;}else if(!best)noTarget.push(`${spot.id}/${mode}/${month}`);
 }
-console.log("V5 favourable-input coverage (candidate only; not frequency or acceptance)");
-console.log("Method: one checked forecast, checked alerts, 6 mph wind, ideal species water temperature, species-matched plausible surf, dry weather, falling pressure; 30-minute tide factor unavailable pending calibration. Candidate GO suitability threshold = 70; candidate realistic floor = .05. Only target-list, mode-valid, structure-valid, non-bycatch species with monthly shrunk rate >= .05 qualify.");
-for(const mode of modes){const s=summary[mode];console.log(`${mode}: GO reachable ${s.goCells}/${s.cells} location-month cells across ${s.goLocations.size}/${ACTIVE_SPOTS.filter(x=>x.modes.includes(mode)).length} locations; realistic candidates in ${s.realisticCells}/${s.cells} cells (candidate species checks ${s.speciesCandidates}).`);for(const [id,v] of Object.entries(s.bySpot))console.log(`  ${id}: GO ${v.go}/12 months; realistic targets ${v.realistic}/12 months`);}
-if(noTarget.length)console.log(`No realistic target at candidate floor: ${noTarget.length} cells: ${noTarget.join(", ")}`);
+console.log("V5 factor-level synthetic screen (one instant; not a recommendation, frequency estimate, or acceptance)");
+console.log("Method: checked forecast and alerts, favorable single-slot conditions. Model params remain provisional; screen candidates are GO threshold 70 and realistic floor .05. Tide input omitted in this legacy screen.");
+for(const mode of modes){const s=summary[mode];console.log(`${mode}: candidate factor-level GO ${s.goCells}/${s.cells} location-month cells across ${s.goLocations.size}/${ACTIVE_SPOTS.filter(x=>x.modes.includes(mode)).length} locations; realistic candidates ${s.realisticCells}/${s.cells}.`);}
+if(noTarget.length)console.log(`Factor screen cells without realistic targets: ${noTarget.length}`);
+
+// End-to-end recommendation coverage: scoreSpecies receives six contiguous 30-minute
+// slots, including a physically plausible semidiurnal tide-rate series. Parameters below
+// are test candidates only; none are written to MODEL_PARAMS or used by the app.
+const e2e=Object.fromEntries(modes.map(mode=>[mode,{denominator:0,realisticCells:0,windowCells:0,goCells:0,goWindows:0,bySpot:{}}]));
+for(const spot of ACTIVE_SPOTS)for(const mode of spot.modes)for(let month=1;month<=12;month++){
+ const s=e2e[mode];s.denominator++;const loc=s.bySpot[spot.id]??(s.bySpot[spot.id]={denominator:0,realistic:0,window:0,go:0});loc.denominator++;
+ const day=`2026-${String(month).padStart(2,"0")}-15`,slots=Array.from({length:6},(_,i)=>new Date(Date.UTC(2026,month-1,15,14,i*30)).toISOString());let anyRealistic=false,bestWindows=[];
+ for(const species of SPECIES.filter(x=>x.modes.includes(mode)&&spot.targets.includes(x.id))){
+   const [min,lo,hi,max]=species.waterF??[60,68,72,82],waterTempF=(lo+hi)/2,surfClass=species.surf??"moderate",waveHeightM=surfClass==="calm"?.3:surfClass==="moderate"?.9:1.5;
+   const scored=scoreSpecies({species,spot,mode,history,slots,now:slots[0],forecastAgeHours:1,alertsChecked:true,waveCoverage:()=>true,params:candidateParams,conditionsAt:at=>{const hours=(Date.parse(at)-Date.parse(`${day}T00:00:00Z`))/3600000;return {at,windMph:6,windGustMph:8,windDirectionDeg:(spot.windExposure?.facingDeg??90)+180,waterTempF,waveHeightM,rainPct:0,thunder:false,tideRateFtPerHr:0.25*Math.cos(2*Math.PI*hours/12.42),pressureChange6hHpa:-1,alerts:[]};}});
+   if(!scored)continue;if(scored.slots.length!==6||scored.slots.some((x,i)=>i>0&&Date.parse(x.at)-Date.parse(scored.slots[i-1].at)!==30*60000))throw new Error(`Non-contiguous 30-minute slot series: ${spot.id}/${mode}/${month}/${species.id}`);
+   if(scored.windows.some(w=>{const minutes=(Date.parse(w.end)-Date.parse(w.start))/60000;return minutes<60||minutes>150;}))throw new Error(`scoreSpecies returned an out-of-range window: ${spot.id}/${mode}/${month}/${species.id}`);
+   if(scored.eligibility==="realistic")anyRealistic=true;bestWindows.push(...scored.windows);
+ }
+ if(anyRealistic){s.realisticCells++;loc.realistic++;}if(bestWindows.length){s.windowCells++;loc.window++;}const go=bestWindows.filter(w=>w.verdict==="GO");if(go.length){s.goCells++;s.goWindows+=go.length;loc.go++;}
+}
+console.log("V5 end-to-end synthetic coverage (scoreSpecies through caps, eligibility, confidence, gates, 60–150 minute windows, final verdict; not hindcast/frequency/acceptance)");
+console.log("Candidate-only parameters: GO threshold 70, realistic floor .05, tide rate scale .5 ft/hr. These remain provisional. Each cell uses six contiguous 30-minute slots, checked forecast/alerts, tide-rate sinusoid with 12.42-hour semidiurnal period and 0.25 ft/hr amplitude, ideal temperature, species-matched plausible waves, safe wind, dry conditions, and falling pressure.");
+for(const mode of modes){const s=e2e[mode],active=ACTIVE_SPOTS.filter(x=>x.modes.includes(mode)).length;console.log(`${mode}: GO ${s.goCells}/${s.denominator} active location×mode×month cells; GO windows ${s.goWindows}; cells with a qualifying window ${s.windowCells}; cells with realistic candidates ${s.realisticCells}; denominator ${active} active locations × 12 months = ${s.denominator}.`);for(const [id,v] of Object.entries(s.bySpot))console.log(`  ${id}: denominator ${v.denominator}, GO ${v.go}, window ${v.window}, realistic ${v.realistic}`);}

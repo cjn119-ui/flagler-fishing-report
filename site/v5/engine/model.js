@@ -19,8 +19,9 @@ export function generateSlots({now,horizon="today",params=MODEL_PARAMS}){
   const target=horizon==="tomorrow"?tomorrowKey:key;
   let start=horizon==="tomorrow"?localInstant(target,params.windows.tomorrowStartLocalHour):+new Date(now);
   const end=localInstant(target,horizon==="tomorrow"?params.windows.tomorrowEndLocalHour:params.windows.todayEndLocalHour);
-  start=Math.ceil(start/(MODEL_PARAMS.windows.slotMinutes*60000))*(MODEL_PARAMS.windows.slotMinutes*60000);
-  const slots=[];for(let t=start;t<end;t+=MODEL_PARAMS.windows.slotMinutes*60000)if(localKey(t)===target)slots.push(utc(t));
+  const slotMs=params.windows.slotMinutes*60000;
+  start=Math.ceil(start/slotMs)*slotMs;
+  const slots=[];for(let t=start;t<end;t+=slotMs)if(localKey(t)===target)slots.push(utc(t));
   return slots;
 }
 export function historyBand(rate){if(!has(rate))return null;const b=MODEL_PARAMS.history.bands;return rate>=b.commonMin?"Common":rate>=b.occasionalMin?"Occasional":"Rare";}
@@ -64,7 +65,7 @@ export function verdictFor({suitability,confidence,eligibility,conditionsReady=t
   if(decent&&eligibility==="realistic"&&conditionsReady&&has(params.thresholds.goSuitabilityMin)&&suitability>=params.thresholds.goSuitabilityMin&&confidence>=params.thresholds.goConfidenceMin)return "GO";
   return decent?"MAYBE":"SKIP";
 }
-const slotScore=x=>x?.suitability;
+const slotScore=x=>has(x?.rawSuitability)?x.rawSuitability:x?.suitability;
 function duration(a,b){return (Date.parse(b)-Date.parse(a))/60000;}
 const inclusiveDuration=(a,b,slotMinutes)=>((b-a+1)*slotMinutes);
 function partOfDay(start,end,spot,params){
@@ -86,23 +87,25 @@ function localPeakIndices(rows,slotMinutes){
 }
 export function findSpeciesWindows(rows,{params=MODEL_PARAMS,locationId,mode,speciesId,spot=null,now=rows[0]?.at}={}){
   const ordered=[...rows].sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)),slotMs=params.windows.slotMinutes*60000,contiguous=(a,b)=>Date.parse(ordered[b].at)-Date.parse(ordered[a].at)===slotMs,peaks=localPeakIndices(ordered,params.windows.slotMinutes), candidates=[];
-  for(const pi of peaks){const peak=ordered[pi], floor=peak.suitability-params.windows.peakTolerancePoints;let lo=pi,hi=pi;
-    while(lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)&&has(ordered[lo-1].suitability)&&ordered[lo-1].suitability>=floor&&inclusiveDuration(lo-1,hi,params.windows.slotMinutes)<=params.windows.maximumMinutes)lo--;
-    while(hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)&&has(ordered[hi+1].suitability)&&ordered[hi+1].suitability>=floor&&inclusiveDuration(lo,hi+1,params.windows.slotMinutes)<=params.windows.maximumMinutes)hi++;
-    while(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes){const left=lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)?ordered[lo-1]:null,right=hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)?ordered[hi+1]:null;if(!left&&!right)break;if(right&&(!left||right.suitability>=left.suitability))hi++;else lo--;}
+  for(const pi of peaks){const peak=ordered[pi], floor=slotScore(peak)-params.windows.peakTolerancePoints;let lo=pi,hi=pi;
+    while(lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)&&has(slotScore(ordered[lo-1]))&&slotScore(ordered[lo-1])>=floor&&inclusiveDuration(lo-1,hi,params.windows.slotMinutes)<=params.windows.maximumMinutes)lo--;
+    while(hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)&&has(slotScore(ordered[hi+1]))&&slotScore(ordered[hi+1])>=floor&&inclusiveDuration(lo,hi+1,params.windows.slotMinutes)<=params.windows.maximumMinutes)hi++;
+    while(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes){const left=lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)?ordered[lo-1]:null,right=hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)?ordered[hi+1]:null;if(!left&&!right)break;if(right&&(!left||slotScore(right)>=slotScore(left)))hi++;else lo--;}
     if(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;
     // Select best mean slice <=150 minutes containing peak.
-    let best=null;for(let a=lo;a<=pi;a++){for(let b=pi;b<=hi;b++){if(inclusiveDuration(a,b,params.windows.slotMinutes)>params.windows.maximumMinutes)break;if(inclusiveDuration(a,b,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;const part=ordered.slice(a,b+1);if(part.some((x,i)=>i>0&&!contiguous(a+i-1,a+i)))continue;const mean=part.reduce((s,x)=>s+x.suitability,0)/part.length;if(!best||mean>best.mean||mean===best.mean&&Date.parse(part[0].at)<Date.parse(best.part[0].at))best={part,mean};}}
+    let best=null;for(let a=lo;a<=pi;a++){for(let b=pi;b<=hi;b++){if(inclusiveDuration(a,b,params.windows.slotMinutes)>params.windows.maximumMinutes)break;if(inclusiveDuration(a,b,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;const part=ordered.slice(a,b+1);if(part.some((x,i)=>i>0&&!contiguous(a+i-1,a+i)))continue;const mean=part.reduce((s,x)=>s+slotScore(x),0)/part.length;if(!best||mean>best.mean||mean===best.mean&&Date.parse(part[0].at)<Date.parse(best.part[0].at))best={part,mean};}}
     if(!best)continue;const part=best.part, start=part[0].at,end=utc(Date.parse(part.at(-1).at)+params.windows.slotMinutes*60000),gates=[...new Map(part.flatMap(x=>x.gates??[]).map(x=>[x.code,x])).values()];
     const reasons=[...new Map(part.flatMap(x=>x.confidenceReasons??[]).map(x=>[x.code,x])).values()],confidence=clamp(params.confidence.start-reasons.reduce((sum,x)=>sum+(x.penalty??0),0),params.confidence.minimum,100),nowMs=Date.parse(now??start),startMs=Date.parse(start),endMs=Date.parse(end);
-    candidates.push({id:`${locationId}:${mode}:${speciesId}:${start}`,speciesId,locationId,mode,start,end,partOfDay:partOfDay(start,end,spot,params),peak:peak.at,peakSuitability:peak.suitability,mean:best.mean,suitability:Math.round(best.mean),confidence,confidenceReasons:reasons,gates,slots:part,isOpenAtGenerated:nowMs>=startMs&&nowMs<endMs,startsInMinAtGenerated:Math.max(0,Math.ceil((startMs-nowMs)/60000)),endsInMinAtGenerated:Math.max(0,Math.ceil((endMs-nowMs)/60000))});
+    candidates.push({id:`${locationId}:${mode}:${speciesId}:${start}`,speciesId,locationId,mode,start,end,partOfDay:partOfDay(start,end,spot,params),peak:peak.at,peakSuitability:Math.round(slotScore(peak)),peakRaw:slotScore(peak),mean:best.mean,suitability:Math.round(best.mean),confidence,confidenceReasons:reasons,gates,slots:part,isOpenAtGenerated:nowMs>=startMs&&nowMs<endMs,startsInMinAtGenerated:Math.max(0,Math.ceil((startMs-nowMs)/60000)),endsInMinAtGenerated:Math.max(0,Math.ceil((endMs-nowMs)/60000))});
   }
-  candidates.sort((a,b)=>b.peakSuitability-a.peakSuitability||b.mean-a.mean||Date.parse(a.start)-Date.parse(b.start));
+  candidates.sort((a,b)=>b.peakRaw-a.peakRaw||b.mean-a.mean||Date.parse(a.start)-Date.parse(b.start));
+  for(const candidate of candidates)delete candidate.peakRaw;
   const chosen=[];for(const w of candidates){if(chosen.some(x=>Date.parse(w.start)<Date.parse(x.end)&&Date.parse(x.start)<Date.parse(w.end)))continue;chosen.push(w);if(chosen.length>=params.windows.maximumPerSpecies)break;}
   return chosen.sort((a,b)=>Date.parse(a.start)-Date.parse(b.start));
 }
 export function haversineMiles(a,b){const R=3958.7613,r=Math.PI/180,dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r,aa=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(aa));}
 export function tieCandidates(candidates,{previous=null,preferences={},params=MODEL_PARAMS,preferenceKey="default"}={}){
+  candidates=candidates.filter(x=>x.eligibility!=="bycatch");
   if(!candidates.length)return {selected:null,tiedWith:[],selection:{reason:"switched",heldFromRunId:null,priorRecommendationId:null,preferenceKey}};
   const tier={GO:2,MAYBE:1,SKIP:0};const sorted=[...candidates].sort((a,b)=>tier[b.verdict]-tier[a.verdict]||b.suitability-a.suitability);
   const best=sorted[0], tied=sorted.filter(x=>x.verdict===best.verdict&&best.suitability-x.suitability<=params.selection.similarSuitabilityDelta);
@@ -115,15 +118,16 @@ function waterOutside(species,temp){return has(temp)&&Array.isArray(species.wate
 export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,horizon="today",forecastAgeHours=null,alertsChecked=false,waveCoverage=()=>false,params=MODEL_PARAMS}){
   if(!species?.modes?.includes(mode))return null;
   const timing=history?getHistoricalTiming(history,{speciesId:species.id,mripAliases:species.mrip,mode,start:slots[0]??now,end:utc(Date.parse(slots[0]??now)+1),waterF:species.waterF}):null;
-  const histRate=timing?.historicalRate?.rate??null, astronomyByDate=new Map(), eligibility=classifyEligibility({species,spot,mode,rate:histRate,historyAvailable:!!timing?.seasonAvailable,params});
+  const histRate=timing?.historicalRate?.rate??null, currentHistoryAvailable=timing?.historyAvailable===true, astronomyByDate=new Map(), eligibility=classifyEligibility({species,spot,mode,rate:histRate,historyAvailable:currentHistoryAvailable,params});
   const scored=(slots??[]).map(at=>{const sourceConditions=conditionsAt(at),wavesOk=mode==="inshore"||waveCoverage(at,horizon,{mode,spot})===true,c=mode!=="inshore"&&!wavesOk?{...sourceConditions,waveHeightM:null}:sourceConditions,ht=timing?{...timing,waterFit:getWaterFit(species,c.waterTempF)}:null,astroDate=localKey(at);let astronomy=astronomyByDate.get(astroDate);if(!astronomy&&has(spot.lat)&&has(spot.lon)){astronomy=getAstronomy(astroDate,spot.lat,spot.lon);astronomyByDate.set(astroDate,astronomy);}const f=calculateFactors({species,mode,conditions:c,at,historyTiming:ht,spot,astronomy,params});
     const cap=[];if(waterOutside(species,c.waterTempF))cap.push({code:"waterOutsideRange",params:{waterTempF:c.waterTempF,range:species.waterF}});if(ht?.seasonAvailable&&ht.seasonScore<params.history.seasonCapBelow)cap.push({code:"outOfSeason",params:{relativeSeason:ht.seasonScore}});if(eligibility.eligibility!=="realistic")cap.push({code:"notRealistic",params:{eligibility:eligibility.eligibility,reason:eligibility.eligibilityReason.code}});
-    let suitability=f.suitability;if(cap.some(x=>x.code==="waterOutsideRange"||x.code==="outOfSeason"))suitability=Math.min(suitability??0,params.history.seasonCapSuitability);
-    const conf=calculateConfidence({conditions:c,mode,spot,historyN:ht?.historicalRate?.n,historyAvailable:!!ht?.seasonAvailable,forecastAgeHours,alertsChecked,wavesAvailable:wavesOk,tideAvailable:f.factors.find(x=>x.key==="tide")?.available===true,params}),gates=safetyGates(c,{mode,params});
+    let rawSuitability=f.rawSuitability;if(cap.some(x=>x.code==="waterOutsideRange"||x.code==="outOfSeason"))rawSuitability=Math.min(rawSuitability??0,params.history.seasonCapSuitability);
+    const suitability=has(rawSuitability)?Math.round(rawSuitability):null;
+    const conf=calculateConfidence({conditions:c,mode,spot,historyN:ht?.historicalRate?.n,historyAvailable:ht?.historyAvailable===true,forecastAgeHours,alertsChecked,wavesAvailable:wavesOk,tideAvailable:f.factors.find(x=>x.key==="tide")?.available===true,params}),gates=safetyGates(c,{mode,params});
     const safetyInputsReady=has(c.windMph)&&has(c.windGustMph)&&typeof c.thunder==="boolean";
     const conditionsReady=has(f.suitability)&&safetyInputsReady&&forecastAgeHours!=null&&forecastAgeHours<=params.freshness.forecastMaxAgeHours&&alertsChecked&&(mode==="inshore"||wavesOk);
     const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,params});
-    return {at,conditionsReady,suitability,rawSuitability:f.rawSuitability,factors:f.factors,waterFit:f.waterFit,historyTiming:ht,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,caps:cap,confidence:conf.confidence,confidenceLevel:conf.confidenceLevel,confidenceReasons:conf.confidenceReasons,amberQualifier:conf.amberQualifier,gates,verdict,conditions:c};});
+    return {at,conditionsReady,suitability,rawSuitability,factors:f.factors,waterFit:f.waterFit,historyTiming:ht,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,caps:cap,confidence:conf.confidence,confidenceLevel:conf.confidenceLevel,confidenceReasons:conf.confidenceReasons,amberQualifier:conf.amberQualifier,gates,verdict,conditions:c};});
   const windows=findSpeciesWindows(scored,{params,locationId:spot.id,mode,speciesId:species.id,spot,now}).map(w=>{
     const gates=[...new Map(w.slots.flatMap(x=>x.gates??[]).map(x=>[x.code,x])).values()];
     const ready=w.slots.every(x=>x.conditionsReady===true);
@@ -158,6 +162,7 @@ export function chooseBackup(primary,candidates,{focusSpeciesId=null,params=MODE
 }
 /** Keep driver first; rank the remaining target candidates by suitability. */
 export function orderTargets(driver,targets,{limit=MODEL_PARAMS.selection.maxTargets}={}){
-  const rest=targets.filter(x=>x.speciesId!==driver.speciesId&&x.eligibility!=="bycatch").sort((a,b)=>(b.suitability??0)-(a.suitability??0));
-  return [driver,...rest].slice(0,Math.max(limit,1)).map(x=>({...x,rareTag:x.historicalRate?.band==="Rare"}));
+  const pool=[driver,...targets].filter(x=>x&&x.eligibility!=="bycatch"),safeDriver=pool.includes(driver)?driver:null;
+  const ordered=safeDriver?[safeDriver,...pool.filter(x=>x!==safeDriver&&x.speciesId!==safeDriver.speciesId).sort((a,b)=>(b.suitability??0)-(a.suitability??0))]:pool.sort((a,b)=>(b.suitability??0)-(a.suitability??0));
+  return ordered.slice(0,Math.max(limit,1)).map(x=>({...x,rareTag:x.historicalRate?.band==="Rare"}));
 }

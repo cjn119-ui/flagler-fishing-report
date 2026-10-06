@@ -33,7 +33,18 @@ function solarEvent(date,lat,lon,kind,zenith=90.833){
   const guess=+date+normalized*3600000;
   return iso(guess);
 }
-function sunTransit(date,lon){ return iso(+date+((12-lon/15+24)%24)*3600000); }
+function sunTransit(date,lon){
+  const n=Math.floor((+date-Date.UTC(date.getUTCFullYear(),0,0))/DAY),gamma=2*Math.PI/365*(n-1);
+  const eot=229.18*(0.000075+0.001868*Math.cos(gamma)-0.032077*Math.sin(gamma)-0.014615*Math.cos(2*gamma)-0.040849*Math.sin(2*gamma));
+  return iso(+date+(720-4*lon-eot)*60000);
+}
+
+const localParts = ms => Object.fromEntries(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date(ms)).map(x=>[x.type,x.value]));
+function localMidnight(day){
+  const [y,m,d]=day.toISOString().slice(0,10).split("-").map(Number),wall=Date.UTC(y,m-1,d);
+  const offset=ms=>{const p=localParts(ms);return Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute,+p.second)-ms;};
+  let guess=wall-offset(wall);for(let i=0;i<3;i++)guess=wall-offset(guess);return guess;
+}
 
 // Low-precision geocentric lunar coordinates (Schlyter orbital elements); ample for solunar windows.
 function moonEquatorial(ms){
@@ -58,12 +69,22 @@ function moonAltitude(ms,lat,lon){
   return deg(Math.asin(Math.sin(rad(lat))*Math.sin(rad(dec))+Math.cos(rad(lat))*Math.cos(rad(dec))*Math.cos(H)));
 }
 function findMoonEvents(date,lat,lon){
-  const start=+date, end=start+DAY, step=5*60000, events=[]; let prev=moonAltitude(start,lat,lon)-(-0.125);
-  for(let t=start+step;t<=end;t+=step){const v=moonAltitude(t,lat,lon)-(-0.125);if((prev<0&&v>=0)||(prev>=0&&v<0)){let lo=t-step,hi=t;for(let j=0;j<20;j++){const m=(lo+hi)/2, a=moonAltitude(m,lat,lon)+0.125;if((prev<0)===(a<0))lo=m;else hi=m;}events.push({type:v>prev?"rise":"set",time:iso((lo+hi)/2)});}prev=v;}
-  // Transit is the highest altitude in each local-day sample, refined by a parabola.
-  let best=start, alt=-90;for(let t=start;t<=end;t+=step){const a=moonAltitude(t,lat,lon);if(a>alt){alt=a;best=t;}}
-  for(let j=0;j<8;j++){const a=moonAltitude(best-step/5,lat,lon),b=moonAltitude(best,lat,lon),c=moonAltitude(best+step/5,lat,lon);const delta=(a-c)/(2*(a-2*b+c));best+=delta*step/5;}
-  events.push({type:"transit",time:iso(best)}); return events.sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
+  const start=localMidnight(date),end=localMidnight(new Date(+date+DAY)),step=5*60000,events=[];
+  let previousTime=start,prev=moonAltitude(start,lat,lon)+0.125;
+  for(let t=Math.min(start+step,end);t<=end;t=Math.min(t+step,end)){
+    const v=moonAltitude(t,lat,lon)+0.125;
+    if((prev<0&&v>=0)||(prev>=0&&v<0)){let lo=previousTime,hi=t;for(let j=0;j<24;j++){const m=(lo+hi)/2,a=moonAltitude(m,lat,lon)+0.125;if((prev<0)===(a<0))lo=m;else hi=m;}const eventTime=(lo+hi)/2;if(eventTime>=start&&eventTime<end)events.push({type:v>prev?"rise":"set",time:iso(eventTime)});}
+    previousTime=t;prev=v;if(t===end)break;
+  }
+  const refine=(maximize)=>{const times=[];for(let t=start;t<end;t+=step)times.push(t);times.push(end);const values=times.map(t=>moonAltitude(t,lat,lon)*(maximize?1:-1));let index=0;for(let i=1;i<values.length;i++)if(values[i]>values[index])index=i;
+    if(index===0||index===times.length-1)return null;
+    const a=values[index-1],b=values[index],c=values[index+1],den=a-2*b+c;if(!(b>=a&&b>=c)||den===0)return null;
+    const delta=(a-c)/(2*den),bounded=Math.max(-1,Math.min(1,delta)),best=times[index]+bounded*step;
+    return best>=start&&best<end?best:null;};
+  const transit=refine(true),underfoot=refine(false);
+  if(transit!==null)events.push({type:"transit",time:iso(transit)});
+  if(underfoot!==null)events.push({type:"underfoot",time:iso(underfoot)});
+  return events.sort((a,b)=>Date.parse(a.time)-Date.parse(b.time));
 }
 function phaseAt(ms){
   const age=((ms-Date.UTC(2000,0,6,18,14))/DAY%SYNODIC+SYNODIC)%SYNODIC;
@@ -71,18 +92,17 @@ function phaseAt(ms){
   const name=phase<0.03||phase>=0.97?"new":phase<0.22?"waxing-crescent":phase<0.28?"first-quarter":phase<0.47?"waxing-gibbous":phase<0.53?"full":phase<0.72?"waning-gibbous":phase<0.78?"last-quarter":"waning-crescent";
   return {phase,illumination,name,ageDays:age};
 }
-function eventPeriod(event, minutes=60){const t=Date.parse(event.time);return {start:iso(t-minutes*60000),end:iso(t+minutes*60000),event:event.type};}
+function eventPeriod(event, minutes=60, bounds=null){const t=Date.parse(event.time),start=Math.max(bounds?.start??-Infinity,t-minutes*60000),end=Math.min(bounds?.end??Infinity,t+minutes*60000);return {start:iso(start),end:iso(end),event:event.type};}
 
 /** Pure ephemeris for a UTC date key and coordinates. Display/time-zone conversion belongs to callers. */
 export function getAstronomy(date,lat,lon){
   const day=dateValue(date); if(!day||!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)throw new TypeError("Expected a date and valid latitude/longitude");
   const sunrise=solarEvent(day,lat,lon,"rise"), sunset=solarEvent(day,lat,lon,"set");
   const civilDawn=solarEvent(day,lat,lon,"rise",96), civilDusk=solarEvent(day,lat,lon,"set",96);
-  const moon=phaseAt(+day+12*3600000), moonEvents=findMoonEvents(day,lat,lon);
-  const transit=moonEvents.find(x=>x.type==="transit");
-  const underfoot=transit?{type:"underfoot",time:iso(Date.parse(transit.time)+12*3600000)}:null;
-  const major=[transit&&eventPeriod(transit,60),underfoot&&eventPeriod(underfoot,60)].filter(Boolean);
-  const minor=moonEvents.filter(x=>x.type==="rise"||x.type==="set").map(x=>eventPeriod(x,30));
+  const interval={start:localMidnight(day),end:localMidnight(new Date(+day+DAY))},moon=phaseAt((interval.start+interval.end)/2), moonEvents=findMoonEvents(day,lat,lon);
+  const transit=moonEvents.find(x=>x.type==="transit"),underfoot=moonEvents.find(x=>x.type==="underfoot");
+  const major=[transit&&eventPeriod(transit,60,interval),underfoot&&eventPeriod(underfoot,60,interval)].filter(Boolean);
+  const minor=moonEvents.filter(x=>x.type==="rise"||x.type==="set").map(x=>eventPeriod(x,30,interval));
   return {date:day.toISOString().slice(0,10),sun:{sunrise,sunset,civilDawn,civilDusk,transit:sunTransit(day,lon)},moon:{...moon,events:moonEvents,transit:transit?.time??null,underfoot:underfoot?.time??null},solunar:{major,minor}};
 }
 export const moonPhase = date => phaseAt(+dateValue(date)+12*3600000);

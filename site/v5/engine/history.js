@@ -90,5 +90,5 @@ export function getHistoricalTiming(history, { start, end, mode, speciesId, mrip
   const seasonScore=complete ? peak===0?0:Math.max(0,Math.min(1,historyRate.rate/peak)) : null;
   const currentF=waterTempF;
   const waterFit=Array.isArray(waterF)&&waterF.length===4?{state:!finite(currentF)?null:currentF<waterF[0]?"cold":currentF>waterF[3]?"hot":currentF>=waterF[1]&&currentF<=waterF[2]?"ideal":"ok",currentF:finite(currentF)?currentF:null,minF:waterF[0],maxF:waterF[3],idealLowF:waterF[1],idealHighF:waterF[2]}:null;
-  return { historicalRate:{...historyRate,month,monthName:monthNames[month-1]}, seasonCurve:curve, seasonScore, seasonAvailable:seasonScore!==null, waterFit };
+  return { historicalRate:{...historyRate,month,monthName:monthNames[month-1]}, historyAvailable:historyRate.available===true, seasonCurve:curve, seasonScore, seasonAvailable:seasonScore!==null, waterFit };
 }

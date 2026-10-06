@@ -20,9 +20,9 @@ function tideScore(species,c,params){
   const moving=clamp(Math.abs(c.tideRateFtPerHr)/scale);
   if(species.tide==="any")return params.factors.tide.anyDirectionScore;
   if(species.tide==="moving")return moving;
+  if(moving===0)return 0.35;
   const direction=c.tideDirection ?? (c.tidePhase==="incoming"?"incoming":c.tidePhase==="outgoing"?"outgoing":c.tideRateFtPerHr>0?"incoming":c.tideRateFtPerHr<0?"outgoing":null);
   if(!direction)return null;
-  if(moving===0)return 0.35;
   return direction===species.tide?moving:Math.max(params.factors.tide.oppositeDirectionFloor,moving*params.factors.tide.oppositeDirectionFloor);
 }
 function getLightScore(species,c,at,astro,params){
