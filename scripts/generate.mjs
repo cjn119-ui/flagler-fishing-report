@@ -10,8 +10,10 @@ const FORCE = process.env.FORCE_REFRESH === "true";
 const REFRESH_MS = FORCE ? 0 : 3 * 60 * 60 * 1000; // regenerate a report once it is 3h old (always when forced)
 const OUT = fileURLToPath(new URL("../site/api/", import.meta.url));
 const TZ = "America/New_York";
+const LIVE_FRESHNESS_MIN = { weather: 90, marine: 90, tides: 90 };
 
 const store = new Map();
+const deployedLive = new Map();
 const env = {
   REPORTS: {
     get: async (key) => store.get(key) ?? null,
@@ -36,6 +38,31 @@ function scheduledAt(hour) {
   throw new Error("could not resolve scheduled time");
 }
 
+function liveIsFresh(key, payload) {
+  if (!payload || typeof payload !== "object" || payload.ok !== true) return false;
+  const now = Date.now();
+  if (key === "weather") {
+    const observed = Date.parse(payload.observed_at ?? "");
+    if (!Number.isFinite(observed)) return false;
+    const ageMin = (now - observed) / 60_000;
+    if (ageMin > LIVE_FRESHNESS_MIN.weather) return false;
+    return Number.isFinite(payload.values?.temperature_c);
+  }
+  if (key === "marine") {
+    const observed = Date.parse(payload.observed_at ?? "");
+    if (!Number.isFinite(observed)) return false;
+    const ageMin = (now - observed) / 60_000;
+    if (ageMin > LIVE_FRESHNESS_MIN.marine) return false;
+    return Number.isFinite(payload.values?.wave_height_m) || Number.isFinite(payload.values?.dominant_period_s);
+  }
+  if (key === "tides") {
+    if (!Array.isArray(payload.events) || payload.events.length < 4) return false;
+    const future = payload.events.filter((event) => Number.isFinite(Date.parse(event?.time)) && Date.parse(event.time) >= now);
+    return future.length >= 4;
+  }
+  return true;
+}
+
 async function seedFromDeployed() {
   if (!SITE_URL) return;
   try {
@@ -49,6 +76,17 @@ async function seedFromDeployed() {
     }
   } catch (e) {
     console.warn("no previous state:", e.message);
+  }
+
+  try {
+    for (const [path, key] of [["/api/live/weather", "weather"], ["/api/live/marine", "marine"], ["/api/live/tides", "tides"]]) {
+      const res = await fetch(`${SITE_URL}${path}`, { signal: AbortSignal.timeout(15000) });
+      if (!res.ok) continue;
+      const payload = await res.json();
+      if (liveIsFresh(key, payload)) deployedLive.set(key, payload);
+    }
+  } catch (e) {
+    console.warn("no previous live data:", e.message);
   }
 }
 
@@ -74,13 +112,25 @@ const get = async (path) => {
   return { status: res.status, body: await res.text() };
 };
 let wrote = 0;
-for (const [path, file] of [
-  ["/api/report", "report.json"], ["/api/next-day-report", "next-day-report.json"],
-  ["/api/live/weather", "live/weather.json"], ["/api/live/marine", "live/marine.json"], ["/api/live/tides", "live/tides.json"],
+for (const [path, file, key] of [
+  ["/api/report", "report.json", null], ["/api/next-day-report", "next-day-report.json", null],
+  ["/api/live/weather", "live/weather.json", "weather"], ["/api/live/marine", "live/marine.json", "marine"], ["/api/live/tides", "live/tides.json", "tides"],
 ]) {
-  const { status, body } = await get(path);
+  let { status, body } = await get(path);
   if (status !== 200) console.error(`${path} -> ${status} ${body.slice(0, 200)}`);
-  else wrote++;
+  else {
+    try {
+      const payload = JSON.parse(body);
+      const fallback = key ? deployedLive.get(key) : null;
+      if (key && !liveIsFresh(key, payload) && fallback && liveIsFresh(key, fallback)) {
+        console.warn(`Using deployed ${key} fallback because the freshly generated live feed was stale or incomplete.`);
+        body = JSON.stringify(fallback);
+      }
+    } catch {
+      // Ignore parse failures here; the worker/API response is already non-JSON for an error.
+    }
+    wrote++;
+  }
   // Always write a body: the client checks payload.ok, and static hosting can't return 503.
   await writeFile(`${OUT}${file}`, body);
 }
@@ -90,3 +140,4 @@ await writeFile(`${OUT}state.json`, JSON.stringify({
 }));
 console.log(`wrote ${wrote}/5 endpoints`);
 if (!store.has("current-report") && !store.has("next-day-report")) process.exit(1);
+
