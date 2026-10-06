@@ -1,0 +1,19 @@
+{
+  "features": [
+    {
+      "id": "https://api.weather.gov/alerts/urn:oid:2.49.0.1.840.0.40ea4933e2ffa63b31c03e5d7eb2ad5feb988cf9.003.1",
+      "properties": {
+        "event": "Small Craft Advisory",
+        "severity": "Minor",
+        "urgency": "Expected",
+        "certainty": "Likely",
+        "effective": "2026-10-05T12:37:00-04:00",
+        "expires": "2026-10-06T06:00:00-04:00",
+        "onset": "2026-10-06T17:00:00-04:00",
+        "ends": "2026-10-08T05:00:00-04:00",
+        "headline": "Small Craft Advisory issued October 5 at 12:37PM EDT until October 8 at 5:00AM EDT by NWS Jacksonville FL",
+        "description": "* WHAT...Northeast winds 15 to 25 kt with gusts up to 30 kt and\nseas 5 to 8 ft expected.\n\n* WHERE...Northeast Florida coastal waters from St Augustine to\nFlagler Beach out to 60 NM.\n\n* WHEN...From 5 PM Tuesday to 5 AM EDT Thursday.\n\n* IMPACTS...Conditions will be hazardous to small craft."
+      }
+    }
+  ]
+}

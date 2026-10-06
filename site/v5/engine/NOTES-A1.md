@@ -1,0 +1,5 @@
+# A1 implementation notes
+
+- The threshold sheet has not been approved into launch parameters. `history.realisticFloor` and `thresholds.goSuitabilityMin` are explicit `null` provisional placeholders. The tide rate normalization scale is also `null` until A3's reviewed parameter record defines it; factors must not silently substitute a literal.
+- Copy authority in ADR Revision 2 says low-sample cells (`n < 80`) use the qualitative `Common / Occasional / Rare in {Month} surveys — low sample` line, while numeric trip rates are reserved for `n >= 80`. This is more conservative than an inferred numeric range such as “about 3–5 in 10”; A1 follows the approved qualitative wording. Numeric rates use trips and the per-mode regional survey label, never anglers or suitability language.
+- Current artifact field names were confirmed with `jq`: `n`, `imputed_proxy_n`, `p_any_fish`, and `species[...].p/hitTrips/nTrips`; mode buckets are `ocean` and `inland`. A3 should consume the repaired non-proxy fields and preserve missing-vs-zero distinctions.

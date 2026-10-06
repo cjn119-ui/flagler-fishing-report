@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "forecastHourly": "https://api.weather.gov/gridpoints/JAX/89,29/forecast/hourly",
+    "forecastGridData": "https://api.weather.gov/gridpoints/JAX/89,29",
+    "observationStations": "https://api.weather.gov/gridpoints/JAX/89,29/stations",
+    "gridId": "JAX",
+    "gridX": 89,
+    "gridY": 29,
+    "forecastZone": "https://api.weather.gov/zones/forecast/FLZ138",
+    "county": "https://api.weather.gov/zones/county/FLC035"
+  }
+}
