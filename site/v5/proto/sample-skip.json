@@ -1,0 +1,1177 @@
+{
+ "_proto": {
+  "illustrative": true,
+  "note": "Hand-built, contract-shaped PROTOTYPE data. Every number, spot, species, time and sentence is an illustrative copy shape, never model output. light/tideEvents/factors/dayWindows are proto-only extras standing in for engine outputs not yet emitted.",
+  "light": {
+   "sunrise": [
+    "2026-10-05T11:08:00.000Z",
+    "2026-10-06T11:09:00.000Z"
+   ],
+   "sunset": [
+    "2026-10-05T22:56:00.000Z",
+    "2026-10-06T22:55:00.000Z"
+   ]
+  },
+  "factors": [
+   {
+    "key": "thunder",
+    "label": "Thunderstorms",
+    "group": "safety",
+    "effect": "hurts",
+    "humanLabel": {
+     "code": "factor.thunder",
+     "params": {},
+     "text": "Thunderstorms 2–6 PM"
+    },
+    "summary": {
+     "code": "factor.thunder",
+     "params": {},
+     "text": "Thunderstorms 2–6 PM"
+    },
+    "detail": {
+     "code": "factor.thunder",
+     "params": {},
+     "text": "Thunder is forecast in the afternoon. Safety rule: no fishing windows are offered while it is active."
+    },
+    "source": {
+     "code": "source.thunder",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 1,
+    "unit": "",
+    "score": 0,
+    "weight": 0.5,
+    "contribution": 0,
+    "available": true,
+    "limiting": true
+   },
+   {
+    "key": "tide",
+    "label": "Tide",
+    "group": "tide",
+    "effect": "neutral",
+    "humanLabel": {
+     "code": "factor.tide",
+     "params": {},
+     "text": "Falling tide in the afternoon"
+    },
+    "summary": {
+     "code": "factor.tide",
+     "params": {},
+     "text": "Falling tide in the afternoon"
+    },
+    "detail": {
+     "code": "factor.tide",
+     "params": {},
+     "text": "Tide would be fine without the storms."
+    },
+    "source": {
+     "code": "source.tide",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 1.4,
+    "unit": "ft",
+    "score": 0.6,
+    "weight": 0.2,
+    "contribution": 0.12,
+    "available": true,
+    "limiting": false
+   },
+   {
+    "key": "wind",
+    "label": "Wind",
+    "group": "wind",
+    "effect": "neutral",
+    "humanLabel": {
+     "code": "factor.wind",
+     "params": {},
+     "text": "Breezy, gusty near storms"
+    },
+    "summary": {
+     "code": "factor.wind",
+     "params": {},
+     "text": "Breezy, gusty near storms"
+    },
+    "detail": {
+     "code": "factor.wind",
+     "params": {},
+     "text": "Winds pick up near the storm line."
+    },
+    "source": {
+     "code": "source.wind",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 14,
+    "unit": "mph",
+    "score": 0.4,
+    "weight": 0.16,
+    "contribution": 0.064,
+    "available": true,
+    "limiting": false
+   },
+   {
+    "key": "waterTemp",
+    "label": "Water temperature",
+    "group": "water",
+    "effect": "helps",
+    "humanLabel": {
+     "code": "factor.waterTemp",
+     "params": {},
+     "text": "Comfortable"
+    },
+    "summary": {
+     "code": "factor.waterTemp",
+     "params": {},
+     "text": "Comfortable"
+    },
+    "detail": {
+     "code": "factor.waterTemp",
+     "params": {},
+     "text": "Water temperature is not the problem today."
+    },
+    "source": {
+     "code": "source.waterTemp",
+     "params": {},
+     "text": "Proto sample"
+    },
+    "value": 76.1,
+    "unit": "°F",
+    "score": 0.88,
+    "weight": 0.12,
+    "contribution": 0.106,
+    "available": true,
+    "limiting": false
+   }
+  ]
+ },
+ "schemaVersion": {
+  "major": 1,
+  "minor": 0
+ },
+ "id": "proto-skip-proto",
+ "modelVersion": "v5.0.0-a1",
+ "paramsHash": "proto",
+ "historyHash": "proto",
+ "catalogHash": "proto",
+ "codeRevision": "proto",
+ "horizon": "today",
+ "targetDate": "2026-10-05",
+ "region": "First Coast",
+ "generatedAt": "2026-10-05T10:30:00.000Z",
+ "validFrom": "2026-10-05T10:30:00.000Z",
+ "validTo": "2026-10-06T01:00:00.000Z",
+ "status": "ok",
+ "carriedForward": false,
+ "missingInputs": [],
+ "recommendation": {
+  "id": "proto-skip:best:all:none:flagler-pier:pier:pompano:2026-10-05T18:00:00.000Z",
+  "scope": {
+   "kind": "best"
+  },
+  "focus": null,
+  "horizon": "today",
+  "locationId": "flagler-pier",
+  "mode": "pier",
+  "modeLabel": {
+   "code": "mode.label",
+   "params": {},
+   "text": "pier"
+  },
+  "displayName": "Flagler Beach Pier",
+  "driverSpeciesId": "pompano",
+  "partOfDay": "afternoon",
+  "window": {
+   "id": "flagler-pier:pier:pompano:2026-10-05T18:00:00.000Z",
+   "locationId": "flagler-pier",
+   "mode": "pier",
+   "partOfDay": "afternoon",
+   "start": "2026-10-05T18:00:00.000Z",
+   "end": "2026-10-05T19:30:00.000Z",
+   "suitability": 58,
+   "confidence": 80,
+   "isOpenAtGenerated": false,
+   "startsInMinAtGenerated": 450,
+   "endsInMinAtGenerated": 540,
+   "gates": [
+    {
+     "code": "thunder",
+     "text": {
+      "code": "thunder",
+      "params": {},
+      "text": "Thunderstorms forecast 2–6 PM"
+     },
+     "startsAt": "2026-10-05T18:00:00.000Z",
+     "endsAt": "2026-10-05T22:00:00.000Z",
+     "severity": "safety"
+    }
+   ]
+  },
+  "verdict": "SKIP",
+  "suitability": 58,
+  "headline": {
+   "code": "recommendation.headline",
+   "params": {},
+   "text": "Thunderstorms forecast 2–6 PM"
+  },
+  "whenLabel": {
+   "code": "recommendation.when",
+   "params": {},
+   "text": "Today afternoon"
+  },
+  "useLine": {
+   "code": "recommendation.use",
+   "params": {},
+   "text": "Sand fleas or Fishbites on a pompano rig"
+  },
+  "reason": {
+   "code": "thunder",
+   "text": {
+    "code": "thunder",
+    "params": {},
+    "text": "Skip today — storms 2–6 PM. Tomorrow morning looks better."
+   }
+  },
+  "gates": [
+   {
+    "code": "thunder",
+    "text": {
+     "code": "thunder",
+     "params": {},
+     "text": "Thunderstorms forecast 2–6 PM"
+    },
+    "startsAt": "2026-10-05T18:00:00.000Z",
+    "endsAt": "2026-10-05T22:00:00.000Z",
+    "severity": "safety"
+   }
+  ],
+  "caps": [],
+  "targets": [
+   {
+    "band": "Great fit",
+    "eligibility": "realistic",
+    "eligibilityReason": {
+     "code": "realistic"
+    },
+    "historicalRate": {
+     "available": true,
+     "band": "Occasional",
+     "hitTrips": 44,
+     "lowSample": false,
+     "month": 10,
+     "monthName": "October",
+     "n": 212,
+     "rate": 0.21,
+     "shrunk": true,
+     "sourceLabel": "pier and beach surveys",
+     "unit": "trips"
+    },
+    "name": "Pompano",
+    "setup": {
+     "where": "Troughs and cuts near the shore break, especially where sand fleas are thick.",
+     "bait": [
+      "Sand fleas (best — dig them at the waterline)",
+      "Fresh shrimp",
+      "Fishbites — Sand Flea or Crab, orange/pink"
+     ],
+     "lures": [
+      "Pompano jig (yellow, pink or chartreuse), bounced along the bottom"
+     ],
+     "rig": "Pompano rig with two floats and #1–1/0 circle hooks, 3–4 oz pyramid sinker; 20–30 lb fluoro leader."
+    },
+    "speciesId": "pompano",
+    "suitability": 86,
+    "tags": []
+   },
+   {
+    "band": "Great fit",
+    "eligibility": "realistic",
+    "eligibilityReason": {
+     "code": "realistic"
+    },
+    "historicalRate": {
+     "available": true,
+     "band": "Common",
+     "hitTrips": 71,
+     "lowSample": false,
+     "month": 10,
+     "monthName": "October",
+     "n": 212,
+     "rate": 0.34,
+     "shrunk": true,
+     "sourceLabel": "pier and beach surveys",
+     "unit": "trips"
+    },
+    "name": "Whiting",
+    "setup": {
+     "where": "Along the pier pilings and the trough just off the surf line.",
+     "bait": [
+      "Fresh shrimp",
+      "Sand fleas",
+      "Fishbites"
+     ],
+     "lures": [],
+     "rig": "Two-hook bottom rig, #2 circle hooks, 2–3 oz pyramid sinker."
+    },
+    "speciesId": "whiting",
+    "suitability": 78,
+    "tags": []
+   },
+   {
+    "band": "Decent fit",
+    "eligibility": "realistic",
+    "eligibilityReason": {
+     "code": "realistic"
+    },
+    "historicalRate": {
+     "available": true,
+     "band": "Rare",
+     "hitTrips": 2,
+     "lowSample": true,
+     "month": 10,
+     "monthName": "October",
+     "n": 46,
+     "rate": 0.04,
+     "shrunk": true,
+     "sourceLabel": "pier and beach surveys",
+     "unit": "trips"
+    },
+    "name": "Bluefish",
+    "setup": {
+     "where": "Around bait schools near the end of the pier and the outer bar.",
+     "bait": [
+      "Cut mullet or finger mullet",
+      "Cut sardine"
+     ],
+     "lures": [
+      "Silver spoon or 1 oz metal jig"
+     ],
+     "rig": "Wire or 40 lb fluoro leader, 3/0 circle hook, fish-finder rig."
+    },
+    "speciesId": "bluefish",
+    "suitability": 54,
+    "tags": [
+     "Rare in surveys"
+    ]
+   }
+  ],
+  "setup": {
+   "where": "Troughs and cuts near the shore break, especially where sand fleas are thick.",
+   "bait": [
+    "Sand fleas (best — dig them at the waterline)",
+    "Fresh shrimp",
+    "Fishbites — Sand Flea or Crab, orange/pink"
+   ],
+   "lures": [
+    "Pompano jig (yellow, pink or chartreuse), bounced along the bottom"
+   ],
+   "rig": "Pompano rig with two floats and #1–1/0 circle hooks, 3–4 oz pyramid sinker; 20–30 lb fluoro leader."
+  },
+  "why": [
+   {
+    "code": "rain",
+    "text": "Thunderstorms forecast 2–6 PM",
+    "effect": "hurts"
+   },
+   {
+    "code": "tide",
+    "text": "Tide is fine for fishing, but the storms are the problem",
+    "effect": "neutral"
+   }
+  ],
+  "limitingFactor": "thunder",
+  "confidence": 80,
+  "confidenceLevel": "High",
+  "confidenceReasons": [
+   {
+    "code": "historyThin",
+    "kind": "structural",
+    "params": {},
+    "penalty": 3,
+    "text": {
+     "code": "historyThin",
+     "params": {},
+     "text": "Survey history is a little thin for this month"
+    }
+   }
+  ],
+  "confidenceSummary": {
+   "code": "confidence.summary",
+   "params": {},
+   "text": "forecast, tides and waves are current"
+  },
+  "amberQualifier": null,
+  "backup": {
+   "kind": "later-window",
+   "id": "b2",
+   "locationId": "flagler-icw",
+   "mode": "inshore",
+   "speciesId": "redfish",
+   "verdict": "MAYBE",
+   "distanceMi": 0.7,
+   "area": "Flagler Beach",
+   "reason": "Backup: Flagler Beach ICW redfish before 1 PM — the storms hold off until the afternoon.",
+   "window": {
+    "start": "2026-10-05T11:45:00.000Z",
+    "end": "2026-10-05T16:45:00.000Z"
+   }
+  },
+  "nextOption": {
+   "kind": "tomorrow",
+   "locationId": "flagler-pier",
+   "mode": "pier",
+   "displayName": "Flagler Beach Pier",
+   "verdict": "MAYBE",
+   "window": {
+    "start": "2026-10-06T11:20:00.000Z",
+    "end": "2026-10-06T12:50:00.000Z"
+   },
+   "label": {
+    "code": "next.tomorrow",
+    "params": {},
+    "text": "Tomorrow morning looks better"
+   }
+  },
+  "comparison": {
+   "horizon": "tomorrow",
+   "kind": "better"
+  },
+  "tiedWith": [],
+  "rank": 1,
+  "selection": {
+   "heldFromRunId": null,
+   "preferenceKey": "default",
+   "priorRecommendationId": null,
+   "reason": "tie"
+  },
+  "freshness": {
+   "affects": "hourlyForecast",
+   "ageMinutes": 122,
+   "available": true,
+   "fetchedAt": "2026-10-05T10:12:00.000Z",
+   "issuedAt": "2026-10-05T10:00:00.000Z",
+   "kind": "hourlyForecast",
+   "label": "forecast",
+   "observedAt": null,
+   "stale": false,
+   "status": "current",
+   "usedFallback": false
+  }
+ },
+ "bySpecies": {},
+ "scopeViews": {
+  "best": {
+   "recommendationId": "proto-skip:best:all:none:flagler-pier:pier:pompano:2026-10-05T18:00:00.000Z"
+  }
+ },
+ "locations": [
+  {
+   "id": "vilano-beach",
+   "name": "Vilano Beach",
+   "area": "St. Augustine",
+   "modes": [
+    "surf"
+   ],
+   "lat": 29.92,
+   "lon": -81.295,
+   "county": "St. Johns",
+   "structure": "beach",
+   "active": true
+  },
+  {
+   "id": "vilano-bridge",
+   "name": "Vilano Bridge fishing piers",
+   "area": "St. Augustine",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.914,
+   "lon": -81.302,
+   "county": "St. Johns",
+   "structure": "bridge",
+   "active": true
+  },
+  {
+   "id": "bridge-of-lions",
+   "name": "Bridge of Lions & bayfront seawall",
+   "area": "St. Augustine",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.8925,
+   "lon": -81.309,
+   "county": "St. Johns",
+   "structure": "seawall",
+   "active": true
+  },
+  {
+   "id": "salt-run",
+   "name": "Salt Run (Anastasia State Park)",
+   "area": "St. Augustine",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.879,
+   "lon": -81.279,
+   "county": "St. Johns",
+   "structure": "creek",
+   "active": true
+  },
+  {
+   "id": "staug-pier",
+   "name": "St. Augustine Beach Pier",
+   "area": "St. Augustine Beach",
+   "modes": [
+    "pier",
+    "surf"
+   ],
+   "lat": 29.857,
+   "lon": -81.264,
+   "county": "St. Johns",
+   "structure": "pier",
+   "active": true
+  },
+  {
+   "id": "matanzas-inlet",
+   "name": "Matanzas Inlet",
+   "area": "Crescent Beach",
+   "modes": [
+    "inshore",
+    "surf"
+   ],
+   "lat": 29.707,
+   "lon": -81.229,
+   "county": "St. Johns",
+   "structure": "inlet",
+   "active": true
+  },
+  {
+   "id": "marineland",
+   "name": "Marineland / Washington Oaks",
+   "area": "Palm Coast",
+   "modes": [
+    "surf"
+   ],
+   "lat": 29.63,
+   "lon": -81.205,
+   "county": "Flagler",
+   "structure": "rocks",
+   "active": true
+  },
+  {
+   "id": "bings-landing",
+   "name": "Bings Landing",
+   "area": "Palm Coast",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.615,
+   "lon": -81.205,
+   "county": "Flagler",
+   "structure": "dock",
+   "active": true
+  },
+  {
+   "id": "beverly-beach",
+   "name": "Beverly Beach",
+   "area": "Flagler Beach",
+   "modes": [
+    "surf"
+   ],
+   "lat": 29.517,
+   "lon": -81.145,
+   "county": "Flagler",
+   "structure": "beach",
+   "active": true
+  },
+  {
+   "id": "flagler-pier",
+   "name": "Flagler Beach Pier",
+   "area": "Flagler Beach",
+   "modes": [
+    "pier",
+    "surf"
+   ],
+   "lat": 29.481,
+   "lon": -81.127,
+   "county": "Flagler",
+   "structure": "pier",
+   "active": true
+  },
+  {
+   "id": "flagler-icw",
+   "name": "Flagler Beach ICW (Veterans Park)",
+   "area": "Flagler Beach",
+   "modes": [
+    "inshore"
+   ],
+   "lat": 29.477,
+   "lon": -81.1335,
+   "county": "Flagler",
+   "structure": "dock",
+   "active": true
+  }
+ ],
+ "slots": [
+  {
+   "locationId": "flagler-pier",
+   "mode": "pier",
+   "slots": [
+    {
+     "at": "2026-10-05T10:00:00.000Z",
+     "suitability": 33,
+     "tide": {
+      "heightFt": 2.6,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T11:00:00.000Z",
+     "suitability": 54,
+     "tide": {
+      "heightFt": 3.7,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T12:00:00.000Z",
+     "suitability": 54,
+     "tide": {
+      "heightFt": 4.5,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T13:00:00.000Z",
+     "suitability": 33,
+     "tide": {
+      "heightFt": 4.8,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T14:00:00.000Z",
+     "suitability": 20,
+     "tide": {
+      "heightFt": 4.6,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T15:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 3.8,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T16:00:00.000Z",
+     "suitability": 19,
+     "tide": {
+      "heightFt": 2.8,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T17:00:00.000Z",
+     "suitability": 22,
+     "tide": {
+      "heightFt": 1.7,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T18:00:00.000Z",
+     "suitability": 30,
+     "tide": {
+      "heightFt": 0.9,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T19:00:00.000Z",
+     "suitability": 36,
+     "tide": {
+      "heightFt": 0.4,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T20:00:00.000Z",
+     "suitability": 30,
+     "tide": {
+      "heightFt": 0.5,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T21:00:00.000Z",
+     "suitability": 22,
+     "tide": {
+      "heightFt": 1.2,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T22:00:00.000Z",
+     "suitability": 19,
+     "tide": {
+      "heightFt": 2.2,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-05T23:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 3.3,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T00:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 4.2,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T01:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 4.7,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T02:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 4.7,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T03:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 4.2,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T04:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 3.3,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T05:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 2.2,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T06:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 1.2,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T07:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 0.5,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T08:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 0.4,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T09:00:00.000Z",
+     "suitability": 20,
+     "tide": {
+      "heightFt": 0.8,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T10:00:00.000Z",
+     "suitability": 33,
+     "tide": {
+      "heightFt": 1.7,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T11:00:00.000Z",
+     "suitability": 63,
+     "tide": {
+      "heightFt": 2.8,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T12:00:00.000Z",
+     "suitability": 74,
+     "tide": {
+      "heightFt": 3.8,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T13:00:00.000Z",
+     "suitability": 47,
+     "tide": {
+      "heightFt": 4.6,
+      "direction": "incoming",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T14:00:00.000Z",
+     "suitability": 24,
+     "tide": {
+      "heightFt": 4.8,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T15:00:00.000Z",
+     "suitability": 19,
+     "tide": {
+      "heightFt": 4.5,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    },
+    {
+     "at": "2026-10-06T16:00:00.000Z",
+     "suitability": 18,
+     "tide": {
+      "heightFt": 3.7,
+      "direction": "outgoing",
+      "rateFtPerHr": null
+     },
+     "lightPhase": null
+    }
+   ],
+   "tideEvents": [
+    {
+     "at": "2026-10-05T13:05:00.000Z",
+     "type": "high",
+     "heightFt": 4.8
+    },
+    {
+     "at": "2026-10-05T19:17:36.000Z",
+     "type": "low",
+     "heightFt": 0.4
+    },
+    {
+     "at": "2026-10-06T01:30:12.000Z",
+     "type": "high",
+     "heightFt": 4.8
+    },
+    {
+     "at": "2026-10-06T07:42:48.000Z",
+     "type": "low",
+     "heightFt": 0.4
+    },
+    {
+     "at": "2026-10-06T13:55:24.000Z",
+     "type": "high",
+     "heightFt": 4.8
+    }
+   ]
+  }
+ ],
+ "days": [
+  {
+   "confidence": 80,
+   "date": "2026-10-05",
+   "kind": "forecast",
+   "reason": {
+    "code": "planner.forecast",
+    "params": {},
+    "text": "Thunderstorms are expected during the afternoon."
+   },
+   "topSpecies": [],
+   "verdict": "SKIP",
+   "windows": []
+  },
+  {
+   "confidence": 74,
+   "date": "2026-10-06",
+   "kind": "forecast",
+   "reason": {
+    "code": "planner.forecast",
+    "params": {},
+    "text": "Tomorrow's forecast conditions and safety gates determine this day."
+   },
+   "topSpecies": [
+    {
+     "name": "Whiting",
+     "speciesId": "whiting",
+     "suitability": 71
+    }
+   ],
+   "verdict": "MAYBE",
+   "windows": [
+    {
+     "start": "2026-10-06T11:20:00.000Z",
+     "end": "2026-10-06T12:50:00.000Z",
+     "locationId": "flagler-pier",
+     "mode": "pier",
+     "displayName": "Flagler Beach Pier",
+     "partOfDay": "morning"
+    }
+   ]
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "morning",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-07",
+   "kind": "outlook",
+   "outlookLabel": "Promising",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "evening",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-08",
+   "kind": "outlook",
+   "outlookLabel": "Mixed",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "morning",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-09",
+   "kind": "outlook",
+   "outlookLabel": "Tough",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "morning",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-10",
+   "kind": "outlook",
+   "outlookLabel": "Mixed",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  },
+  {
+   "bestWindow": {
+    "partOfDay": "evening",
+    "tidePhase": null
+   },
+   "confidence": 55,
+   "date": "2026-10-11",
+   "kind": "outlook",
+   "outlookLabel": "Promising",
+   "reason": {
+    "code": "planner.outlook",
+    "params": {},
+    "text": "Proto outlook."
+   }
+  }
+ ],
+ "inputs": {
+  "sourceStatus": [
+   {
+    "affects": "alerts",
+    "ageMinutes": 25,
+    "available": true,
+    "fetchedAt": "2026-10-05T10:30:00.000Z",
+    "issuedAt": null,
+    "kind": "alerts",
+    "label": "Weather alerts",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "hourlyForecast",
+    "ageMinutes": 25,
+    "available": true,
+    "fetchedAt": "2026-10-05T10:30:00.000Z",
+    "issuedAt": "2026-10-05T10:05:00.000Z",
+    "kind": "hourlyForecast",
+    "label": "Hourly forecast",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "tidePredictions",
+    "ageMinutes": 25,
+    "available": true,
+    "fetchedAt": "2026-10-05T10:30:00.000Z",
+    "issuedAt": "2026-10-05T10:05:00.000Z",
+    "kind": "tidePredictions",
+    "label": "Tide predictions",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "waterTemperature",
+    "ageMinutes": 25,
+    "available": true,
+    "fetchedAt": "2026-10-05T10:30:00.000Z",
+    "issuedAt": "2026-10-05T10:05:00.000Z",
+    "kind": "waterTemperature",
+    "label": "Water temperature",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "waveForecast",
+    "ageMinutes": 25,
+    "available": true,
+    "fetchedAt": "2026-10-05T10:30:00.000Z",
+    "issuedAt": "2026-10-05T10:05:00.000Z",
+    "kind": "waveForecast",
+    "label": "Wave forecast",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "waves",
+    "ageMinutes": 25,
+    "available": true,
+    "fetchedAt": "2026-10-05T10:30:00.000Z",
+    "issuedAt": "2026-10-05T10:05:00.000Z",
+    "kind": "waves",
+    "label": "Wave reading",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   },
+   {
+    "affects": "pressureObservations",
+    "ageMinutes": 25,
+    "available": true,
+    "fetchedAt": "2026-10-05T10:30:00.000Z",
+    "issuedAt": "2026-10-05T10:05:00.000Z",
+    "kind": "pressureObservations",
+    "label": "Pressure reading",
+    "observedAt": null,
+    "stale": false,
+    "status": "current",
+    "usedFallback": false
+   }
+  ]
+ },
+ "notes": [],
+ "detailsRefs": []
+}
