@@ -1,6 +1,6 @@
 /** Versioned parameters. `null` values are deliberate gates for later evidence. */
 export const MODEL_PARAMS = Object.freeze({
-  paramsVersion: "v5-params-a1",
+  paramsVersion: "v5-params-a3",
   weightsByMode: Object.freeze({
     surf: Object.freeze({ season: 0.24, water: 0.18, tide: 0.14, light: 0.10, wind: 0.10, waves: 0.10, pressure: 0.05, solunar: 0.05, rain: 0.04 }),
     pier: Object.freeze({ season: 0.24, water: 0.18, tide: 0.14, light: 0.10, wind: 0.10, waves: 0.10, pressure: 0.05, solunar: 0.05, rain: 0.04 }),
@@ -56,11 +56,14 @@ export const MODEL_PARAMS = Object.freeze({
     effectNeutralMin: 0.34,
     tideSensitivityMultipliers: Object.freeze({ high: 1.3, medium: 1, low: 0.6 }),
     tide: Object.freeze({ oppositeDirectionFloor: 0.35, anyDirectionScore: 0.7, rateNormalizationScale: null, rateNormalizationScaleProvisional: true }),
-    wind: Object.freeze({ fullScoreMaxMph: 10, zeroScoreMph: 25, gustZeroMph: 30 }),
-    waves: Object.freeze({ calmMaxM: 0.6, moderateMaxM: 1.2, zeroScoreAboveM: 2, safetySkipAboveM: 2.5 }),
+    light: Object.freeze({ lowlightMinutes: 60, middayScore: 0.4, nightScore: 0.25, dayScore: 1, nightDaySpeciesScore: 0.3, anyScore: 0.8 }),
+    solunar: Object.freeze({ majorMinutes: 60, minorMinutes: 30, majorScore: 1, minorScore: 0.75, neutralScore: 0.45, phaseBoost: 0.1, phaseDays: 3, synodicDays: 29.530588853 }),
+    wind: Object.freeze({ fullScoreMaxMph: 10, zeroScoreMph: 25, gustZeroMph: 30, onshoreCalmPenalty: 0.15, onshoreRoughBonus: 0.05, offshoreCalmBonus: 0.1, inshoreOnshorePenalty: 0.1, onshoreSectorHalfWidthDeg: 90 }),
+    waves: Object.freeze({ calmMaxM: 0.6, moderateMaxM: 1.2, zeroScoreAboveM: 2, adjacentClassScore: 0.6, oppositeClassScore: 0.2, noPreferenceScore: 0.7, safetySkipAboveM: 2.5 }),
+    pressure: Object.freeze({ fallingMinHpa: -3, fallingMaxHpa: -0.5, neutralAbsMaxHpa: 0.5, risingMaxHpa: 3, fallingScore: 1, neutralScore: 0.8, risingScore: 0.6, rapidChangeScore: 0.4 }),
     safety: Object.freeze({ windSkipMph: 25, gustSkipMph: 35 }),
   }),
-  windows: Object.freeze({ slotMinutes: 30, todayEndLocalHour: 21, tomorrowStartLocalHour: 5, tomorrowEndLocalHour: 21, peakTolerancePoints: 8, minimumMinutes: 60, maximumMinutes: 150, maximumPerSpecies: 4, maxContiguousSafetyGapMinutes: 0 }),
+  windows: Object.freeze({ slotMinutes: 30, todayEndLocalHour: 21, tomorrowStartLocalHour: 5, tomorrowEndLocalHour: 21, middayStartLocalHour: 12, afternoonStartLocalHour: 15, eveningStartLocalHour: 19, peakTolerancePoints: 8, minimumMinutes: 60, maximumMinutes: 150, maximumPerSpecies: 4, maxContiguousSafetyGapMinutes: 0 }),
   selection: Object.freeze({ backupNearbyMiles: 7, similarSuitabilityDelta: 5, heldSelectionDelta: 5, maxTargets: 3, recommendedHorizonCutoffLocalHour: 15 }),
 });
 

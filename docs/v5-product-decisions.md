@@ -1,6 +1,6 @@
 # V5 hard product decisions
 
-**Owner-approved 2026-10-05 (Chris): all six decisions and flag B approved; flags A and C go to the architecture owner (GPT-6.1 Sol) to set thresholds, with a 60+ day GO-frequency replay as an acceptance test.** Originally proposed as recommendations from the hard-product-decisions review (Claude Opus 5.5, High), 2026-10-05. Where this file and the Product spec in `docs/v5-spec.md` disagree, this file wins until the spec is reconciled.
+**Owner-approved 2026-10-05 (Chris): all six decisions and flag B approved; flags A and C go to the architecture owner (GPT-6.1 Sol) to set thresholds, with a 60+ day GO-frequency replay as an acceptance test.** Originally proposed as recommendations from the hard-product-decisions review (Claude Opus 5.5, High), 2026-10-05. The Product spec in `docs/v5-spec.md` was reconciled to this file on 2026-10-05 (M11); if they still disagree, this file wins.
 
 Inputs: `docs/v5-spec.md` (Decisions, Product spec, Product requirements for the technical architecture, Open product questions), `site/v5/spots.js`, `site/v5/species.js`. This review does not rely on the data-QA pass that is still running.
 

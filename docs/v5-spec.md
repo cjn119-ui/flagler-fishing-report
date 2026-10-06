@@ -22,14 +22,14 @@ Two report concepts, one engine: **Morning** = current-day report (`horizon: tod
 
 ## Decisions (owner-approved 2026-10-05)
 
-Product decisions on navigation, backups, GO at Moderate confidence, default scope, species focus and outlook labels: see `docs/v5-product-decisions.md` (owner-approved; wins over the Product spec below where they differ).
+Product decisions on navigation, backups, GO at Moderate confidence, default scope, species focus and outlook labels: see `docs/v5-product-decisions.md` (owner-approved). Technical thresholds, history wording and wire contracts: `docs/v5-architecture-decisions.md` Revision 2 and §10 (owner-approved; supersedes the older thresholds in the product-decisions file). The product text below was conformed to both on 2026-10-05 (M11). **Every example score, species, spot, time and count in this document is an illustrative copy shape, never model output; `<n>` and `<species>` mark values the engine supplies.**
 
 | Topic | Decision |
 |---|---|
 | Path | `site/v5/` alongside the current app; root `/`, v1–v3 untouched. |
 | Launch region | St. Augustine → Flagler (11 active locations in `site/v5/spots.js`). Jax/Nassau rows stay cataloged with `active: false`. Volusia excluded for now. |
 | Modes | surf, pier, inshore (ICW/river/inlet). |
-| Headline | GO / MAYBE / SKIP. Species show a 0–100 **suitability** (labelled as such, never "chance"). Historical catch rate shown separately, counted as trips: "4 in 10 local shore trips caught one in October" when the month has ≥ 80 trips, otherwise a band ("about 3–5 in 10 trips"). (Amended 2026-10-05.) |
+| Headline | GO / MAYBE / SKIP. Species show a 0–100 **suitability** (labelled as such, never "chance"). Historical catch rate shown separately, counted as **trips** across Northeast Florida (no county adjustment): "About <n> in 10 Northeast Florida shore fishing trips caught one in October (2015–2025 surveys)" when the month has ≥ 80 trips; below 80 trips a band instead: Common / Occasional / Rare "in October surveys — low sample". Never "0 in 10" (say "Fewer than 1 in 10"). Source label per mode: surf/pier "pier and beach surveys", inshore "river, bridge and bank surveys". (Amended 2026-10-05.) |
 | Persistence | Supabase schema as versioned SQL migrations in the repo only. Do not create or write to a live project. |
 | Buoys in browser | SECOORA ERDDAP CDIP mirror (CORS OK) via `buoyUrls()` in `spots.js`; NDBC copy in `api/live/marine.json` is the fallback. |
 | Look | Main report (`site/style.css`) app shell — compact dark-slate cards, score ring, hourly strip, stat tiles, ranked list, 7-day bars — plus the v1/v3 sunset hero and cyan pill buttons (`site/v3/theme.css`) for the location header. Light and dark. |
@@ -46,21 +46,21 @@ Product decisions on navigation, backups, GO at Moderate confidence, default sco
 |---|---|
 | Verdict | GO / MAYBE / SKIP for one recommendation (a location + mode + window, or a day in the planner). |
 | Suitability | 0–100 per species: how well conditions fit that fish *in that mode*. Shown as "Suitability". Never "chance", "odds", "probability". |
-| Historical rate | Share of surveyed local shore anglers who caught the species in that month, shown as "N in 10". Independent of today's conditions. |
+| Historical rate | Share of surveyed Northeast Florida shore fishing **trips** that caught the species in that month (all surveyed shore trips, not only trips targeting the fish; not measured at this spot), shown as "About N in 10", or as a Common / Occasional / Rare band when the month has fewer than 80 trips. Independent of today's conditions. |
 | Confidence | 0–100, High / Moderate / Low: how complete and fresh the data behind this answer is. It is not how sure the fish are. |
 | Window | A 60–150 min stretch where conditions peak for a location + mode. |
-| Scope | What Today is answering for: **Best anywhere** (default), or one **Spot**. A **Species focus** can be layered on top. |
-| Backup | The next-best alternative that differs in location, mode, window or species. |
-| Outlook | Days 3–7 in the planner: season-and-forecast-based, labelled as such. |
+| Scope | What Today is answering for: **Best anywhere** (default until the user picks a spot in the spot picker, after which Today reopens on that spot), or one **Spot**. A session-only **Species focus** can be layered on top. |
+| Backup | The next-best alternative, always MAYBE or better, even when the primary is SKIP. Order: (1) the opposite water type (ocean = surf/pier vs inshore; surf and pier are not each other's backup) at a nearby spot; (2) a later window at the same spot and mode; (3) the same water type at another nearby spot; (4) only if none reaches MAYBE, the best option anywhere with its area named. "Nearby" = within 7 miles straight-line. A different species only when a species focus is set. |
+| Outlook | Days 3–7 in the planner: season-and-forecast-based, labelled as such; names no spot and no minute-precise window. |
 
 ### User journeys
 
 | Journey | Steps | Must be true |
 |---|---|---|
 | **First open** | Open `/v5/` → Today renders instantly from `api/v5/<horizon>.json` with scope *Best anywhere* → one dismissible line under the verdict: "Suitability = how well conditions fit each fish. It is not a catch chance." | No onboarding screens, no sign-in, no permission prompts. Geolocation and install are requested only when the user taps "Near me" / "Install". Answer visible without scrolling at 375 px. |
-| **Returning user** | Open → last-known run renders at once with "Updating…" in the freshness chip → fresher run swaps in without layout jump. Remembers scope, favourites, species focus (session only), last mode, horizon override (session only). | Never a blank or spinner-only screen when a cached run exists. If the new verdict differs from the cached one, the verdict cross-fades (no flashing); aria-live announces it. |
+| **Returning user** | Open → last-known run renders at once with "Updating…" in the freshness chip → fresher run swaps in without layout jump. Remembers the last spot chosen in the spot picker (other scope changes — tapping Best bet, Backup, "Best for this fish", or opening a shared link — last for the session only), favourites, last mode, species focus (session only), horizon override (session only). | Never a blank or spinner-only screen when a cached run exists. If the new verdict differs from the cached one, the verdict cross-fades (no flashing); aria-live announces it. |
 | **"Where should I go right now?"** | Today, scope *Best anywhere*, horizon *Today* → Best bet card names spot · mode · window; if the window is open: "Fish now — until 8:25 AM". Tap *Spots* for the full ranking. | Windows already ended are never presented as the best bet; the next window is. Between windows: "Next window 5:40 PM". |
-| **"I want pompano"** | Species tab → tap Pompano → species sheet (suitability now, best place/window, setup, history) → **Target this** → Today re-ranks for pompano and shows a removable "Targeting: Pompano ✕" chip. | The verdict is relative to the focus ("GO for pompano"), labelled as such. If the species is a poor fit everywhere: SKIP for that species plus a pointer to what *is* working ("Whiting is the better bet today"). Removing the chip restores *Best anywhere*. |
+| **"I want pompano"** | Species tab → tap Pompano → species sheet (suitability now, best place/window, setup, history) → **Target this** → Today re-ranks for pompano and shows a removable "Targeting: Pompano ✕" chip. | The headline verdict is for the focus species and always carries it: ring caption "for pompano", headline, aria label and any shared link with `species=`. When the overall verdict is at least one step better, one line sits under the headline ("Overall today: GO — whiting at Flagler Beach Pier"). Safety SKIPs ignore the focus. A focused species that is not a realistic target (for example rarely caught on local shore trips that month) is capped at MAYBE with the specific reason ("Conditions fit, but few local shore fishing trips catch pompano in December"). If the species is a poor fit everywhere: SKIP for that species plus a pointer to what *is* working ("Whiting is the better bet today"). Bycatch species get no "Target this" button. Removing the chip restores the picker-chosen scope, else *Best anywhere*. |
 | **Evening: "Should I go tomorrow?"** | After the evening cutoff (default 3:00 PM local, one exported constant) Today opens on **Tomorrow**. A *Today · Tomorrow* segmented control is always visible. | Tomorrow header reads "Tomorrow morning" / "Tomorrow evening" from the window. A "vs today" line states better / similar / worse. If today still has an open window, a one-line pointer remains ("Today's window: 5:40–7:10 PM"). |
 
 ### Above the fold — Today on a 375 × 667 phone
@@ -70,11 +70,11 @@ Budget ≈ 560 px of content height (667 minus status bar and the 56 px tab bar)
 | # | Block | Content | Approx. height |
 |---|---|---|---|
 | 1 | Header (sunset hero, compact) | Spot pill (tap ⇒ spot sheet; shows "Best anywhere" or the spot name) · *Today / Tomorrow* segmented control · freshness chip ("Updated 6:12 AM") | 88 |
-| 2 | **Verdict + headline** | Ring/badge with **GO / MAYBE / SKIP** (word + icon, not number) · one-line headline ("Pompano & whiting on the incoming tide") · when-line ("Tomorrow morning · 6:40–8:25 AM") | 150 |
+| 2 | **Verdict + headline** | Ring/badge with **GO / MAYBE / SKIP** (word + icon, not number) · one-line headline ("<species> & <species> on the incoming tide") · when-line ("Tomorrow morning · <window>") | 150 |
 | 3 | **Best bet** | Spot name · mode chip (Surf / Pier / Inshore) · window · "Fish now — until …" if open | 64 |
-| 4 | **Targets** | Top 3 species, one line each: name · suitability bar · number. Label "Suitability" once in the card header | 112 |
+| 4 | **Targets** | Top 3 species, one line each: name · suitability bar · number. Label "Suitability" once in the card header. The GO driver is listed first (the focus species first when a focus is set); a target with a Rare history band carries a "Rare in surveys" tag | 112 |
 | 5 | **Use** | One line: "Sand fleas or Fishbites on a pompano rig" | 48 |
-| 6 | Confidence | One line: "Confidence: High · 78" + stale/partial chip when relevant | 40 |
+| 6 | Confidence | One line: "Confidence: <level> · <n>" + stale/partial chip when relevant | 40 |
 | — | *Below the fold* | **Backup** (first card below the fold; keep it within one scroll) → Why → Best times timeline → Conditions → Today vs Tomorrow → Other spots teaser → Data & sources | |
 
 Ordering rules: verdict is always the largest element; no raw units above the fold; no more than 3 targets; no tables; nothing above the fold requires a tap to make sense.
@@ -85,9 +85,9 @@ Ordering rules: verdict is always the largest element; no raw units above the fo
 |---|---|---|
 | Verdict hero | Glance | Tap ⇒ scrolls to Why. |
 | Best bet | Glance | Tap ⇒ spot detail sheet (access, parking, tips from catalog). |
-| Targets | Glance → Card | Tap a species ⇒ species sheet. "Local history" toggle reveals the "N in 10" line per species. |
+| Targets | Glance → Card | Tap a species ⇒ species sheet. "Local history" toggle reveals the history line per species ("About N in 10 trips" or a band). |
 | Use | Glance → Card | Tap ⇒ full setup (where to fish, bait, lures, rig, tip) for the #1 target. |
-| Backup | Card | One line + reason ("Backup: ICW redfish after 9:30 AM — wind drops and the tide turns"). Tap ⇒ makes it the scope. |
+| Backup | Card | One line + reason ("Backup: ICW redfish after 9:30 AM — wind drops and the tide turns"). Tap ⇒ makes it the scope for the session only. A backup outside the nearby radius names its area. |
 | Why | Card → Expanded | Up to 3 "helps" rows and the worst "hurts" row, each with an icon and plain words. "See all factors" expands the rest. |
 | Best times (timeline) | Card → Expanded | 24–36 h strip with the best window highlighted, light band, tide curve. Scrubber (drag/tap) is Expanded level and updates Conditions and Targets for that time. |
 | Conditions | Card | 4–6 tiles in plain words with a helps/neutral/hurts indicator (see below); numeric value is secondary text. |
@@ -119,19 +119,19 @@ Bottom tab bar, four tabs, always visible: **Today · Spots · Species · Plan**
 | Header pill | Scope control | Spot pill (opens spot sheet) and, when set, the removable species chip. Mode switcher appears under the hero only when the scoped spot offers more than one mode. |
 | URL hash | Shareable state | `#spot=<id>&mode=<mode>&species=<id>&h=<today\|tomorrow>&t=<iso>`; opening a hash restores scope exactly. Invalid ids fall back to *Best anywhere* silently. |
 
-Primary navigation dimension: **answer first, then scope** — Today is the answer for *Best anywhere*; Spot and Species are optional scopes layered on it; Mode is a secondary control inside a spot. (See open question 1.)
+Primary navigation dimension: **answer first, then scope** — Today is the answer for *Best anywhere*; Spot and Species are optional scopes layered on it; Mode is a secondary control inside a spot. Spot is the only scope that persists (see Spot picker); species focus is session-only. Mode is never a tab, a header pill outside a spot scope, or a default filter.
 
 #### Spot picker (sheet, also the Spots tab body)
 
 | Behaviour | Rule |
 |---|---|
-| Default sort | By current-horizon recommendation (best first); ties by distance if location is known, else catalog order. |
-| Row | Spot name · area · mode icons · verdict chip · best window · top species ("Pompano 84"). One tap selects; star toggles favourite. |
+| Default sort | By verdict tier first (best first); within a tier by Near me distance when enabled, then favourite, then catalog order. Candidates in the same tier within 5 suitability points count as tied; a sub-5-point difference never changes an order or a headline. |
+| Row | Spot name · area · mode icons · verdict chip · best window · top species ("<species> <n>"). One tap selects; star toggles favourite. |
 | First row | "Best anywhere" (the default scope) — never hidden, always selectable. |
 | Favourites | Pinned above the ranked list (localStorage); star is a 44 px target. |
 | Mode filter | Segmented *All · Surf · Pier · Inshore*; filters rows, does not change scope. |
 | Near me | Button asks for geolocation only on tap; on success re-sorts by distance *within* verdict tiers; on denial/timeout, shows "Location is off — showing best first" and stays sorted by verdict. Coordinates are never stored or sent. |
-| Selecting a spot | Sets scope, closes the sheet, returns to Today. If the scoped spot is not the overall best, Today shows a line under the verdict: "Best overall today: Flagler Beach Pier (GO)". The better option is never hidden. |
+| Selecting a spot | Sets scope, closes the sheet, returns to Today. Only a pick made here persists; Today reopens on that spot next time. If the overall best is at least one verdict step better than the scoped spot (for example GO vs MAYBE), Today shows a line under the verdict: "Best overall today: <spot> (GO)". A better option at least one step up is never hidden. |
 | Compare (P1) | Check up to 3 rows ⇒ comparison sheet, one column per spot: verdict, window, top 2 species, wind comfort, surf comfort. |
 | Inactive spots | `active: false` catalog rows never appear. |
 
@@ -141,13 +141,13 @@ Primary navigation dimension: **answer first, then scope** — Today is the answ
 |---|---|
 | Source of truth | Verdict comes from the engine; the UI never recomputes, upgrades or softens it. |
 | Colour + shape + word | GO = `--go`, check icon; MAYBE = `--mid`, dash/wave icon; SKIP = `--skip`, x icon. The word is always shown; colour is never the only signal. |
-| Ring | Ring arc is decorative (top suitability); centre text is the verdict word. Numbers are never shown in the ring. |
-| aria | Verdict container is `aria-live="polite"`; label reads "Go. Flagler Beach Pier, surf, 6:40 to 8:25 AM." |
-| GO | Headline names the fish and the cause ("Pompano & whiting on the incoming tide"). If confidence is Moderate (50–74), a visible amber qualifier sits directly under the headline: "Moderate confidence — one input is missing." Never buried in a card. |
+| Ring | Ring arc is decorative (top suitability); centre text is the verdict word. Numbers are never shown in the ring. With a species focus the ring caption reads "for <species>". |
+| aria | Verdict container is `aria-live="polite"`; label reads "Go. <spot>, <mode>, <window>." With a species focus it also names the species ("for pompano"). |
+| GO | Headline names the fish and the cause ("<species> & <species> on the incoming tide"). GO requires every safety-gate input: forecast no more than 6 h old, alerts checked and, for ocean modes, a current wave reading (today) or wave forecast (tomorrow); otherwise the verdict is capped at MAYBE ("Can't confirm the surf right now" / "No surf forecast for tomorrow yet"). If confidence is Moderate (50–74) **because of a gap in today's live data**, a visible amber qualifier sits directly under the headline and names the missing input in plain words, e.g. "Moderate confidence — pressure reading unavailable"; never the generic "one input is missing". Built-in limits of a spot (distant tide station, inshore water temperature from the ocean buoy, thin history for the month) appear only in the Confidence line and "Why this confidence?", never as the headline qualifier. The ring does not distinguish a Moderate GO from a High one. Never buried in a card. |
 | MAYBE | Headline names the main drag: "Decent fish fit, but wind picks up after 8 AM." Always show the best window anyway. |
 | SKIP | Reason first, in plain words ("Thunderstorms forecast 2–6 PM"). A SKIP is never a dead end: always show **Next best option** (backup, next window, or tomorrow's verdict). Safety-gated SKIPs (thunder, wind, warnings, surf) use the safety icon and cannot be overridden or hidden. |
 | High suitability, low confidence | Engine returns MAYBE; UI copy: "Looks good on paper, but our data is thin right now." |
-| Per-species vs overall | The verdict is for the scope + focus; each target has its own suitability only, never its own verdict chip (except in species sheets, where "Best for this fish" shows the verdict for that species). |
+| Per-species vs overall | The verdict is for the scope + focus (with a focus, the species is always named next to it); each target has its own suitability only, never its own verdict chip (except in species sheets, where "Best for this fish" shows the verdict for that species). Safety gates are never species-relative. |
 | Tomorrow vs today | Show both verdicts; delta line is "Better tomorrow", "About the same" or "Rougher tomorrow". |
 | Windows | Always local time (America/New_York), 12-hour with AM/PM, en dash ("6:40–8:25 AM"). Windows that crossed midnight are not produced. |
 
@@ -170,26 +170,26 @@ Rules: no level requires a lower level to be understood; expansion is in place (
 
 | Block | Content |
 |---|---|
-| Header | Name (+ alt name) · suitability now for the current scope with band label · "Target this" button (primary, cyan pill) |
+| Header | Name (+ alt name) · suitability now for the current scope with band label · "Target this" button (primary, cyan pill; absent for bycatch species) |
 | Best for this fish | Best spot · mode · window · verdict across the horizon; tap ⇒ sets scope |
 | Why now | Top 2 helps and the worst hurts, plain words |
 | Use | Where in the water, bait, lures, rig, one tip (from `species.js` `setupFor(species, mode)`); mode toggle if several modes apply |
-| Local history | 12-month bar chart of the shrunk historical rate, current month highlighted, sentence "4 in 10 local shore anglers caught one in October", sample-size note when low, source line (see copy rules) |
+| Local history | 12-month bar chart of the shrunk historical rate, current month highlighted; sentence per the copy rules ("About <n> in 10 Northeast Florida shore fishing trips caught one in October (2015–2025 surveys)", or a Common / Occasional / Rare band with a low-sample note when the month has fewer than 80 trips); per-mode source label ("pier and beach surveys" / "river, bridge and bank surveys"); "Counts all surveyed shore trips, not only trips targeting this fish; not measured at this spot"; "Rare in surveys" tag when the band is Rare |
 | Water-temperature fit | Strip from min to max with the comfortable band shaded and today's water temp marked; one sentence ("71 °F — comfortable for pompano") |
 | Rules link | "Check current FWC rules" link; the app never states size or bag limits |
 
-Suitability bands (labels shown beside the number in sheets and L1; matches verdict thresholds): **70–100 Great fit · 50–69 Decent fit · 30–49 Poor fit · 0–29 Not a fit.**
+Suitability bands (labels shown beside the number in sheets and L1; independent of the GO threshold, which the engine sets): **70–100 Great fit · 50–69 Decent fit · 30–49 Poor fit · 0–29 Not a fit.**
 
 ### 7-day planner (Plan tab)
 
 | Element | Rule |
 |---|---|
-| Rows | One per day: weekday + date · verdict chip · best window · top species (name only) · one-line reason ("Falling tide at sunrise, light wind"). |
+| Rows | One per day: weekday + date · verdict chip · best window · top species (name only) · one-line reason ("Falling tide at sunrise, light wind"). Days 3–7 show part of day + tide phase instead of a window ("Morning · incoming tide"), with no spot. |
 | Days 1–2 (today, tomorrow) | Real predictions: GO/MAYBE/SKIP, solid chips. |
-| Days 3–7 | **Outlook**: outline-style chips labelled **Promising / Mixed / Tough** (never GO), "Outlook" tag on each row, no suitability numbers. Copy at top: "Outlook for days 3–7 uses season, tides, moon and the daily forecast. It updates daily." |
+| Days 3–7 | **Outlook**: outline-style chips labelled **Promising / Mixed / Tough** (GO / MAYBE / SKIP never appear after day 2), "Outlook" tag on each row, no suitability numbers, no spot and no minute-precise window (part of day + tide phase only). Copy at top: "Outlook for days 3–7 uses season, tides, moon and the daily forecast. It updates daily." |
 | Scope | Follows the current scope and species focus; scope chip shown at top. |
-| Tap a day | Day sheet: best 2 windows (spot · mode · window · top species), a "Why" row, and for days 1–2 a "Use" row. |
-| Best day | The best day in the 7 gets a subtle "Best day this week" marker. |
+| Tap a day | Days 1–2: day sheet with best 2 windows (spot · mode · window · top species), a "Why" row and a "Use" row. Days 3–7: species likely in season plus the tide/light reason only; no Use row and no windows. |
+| Best day | The best day in the 7 gets a subtle "Best day this week" marker. It can land on an outlook day only if both day 1 and day 2 are SKIP; then it reads "Most promising outlook". |
 | Empty week | If every day is Tough/SKIP: "Rough week ahead — [best day] is the least bad." |
 
 ### States and example copy
@@ -205,7 +205,7 @@ Every state keeps the tab bar and the last-known content where it exists. States
 | **Stale** | Over 6 h, or past `validTo` | Amber banner above the hero; verdict ring desaturated and labelled; windows already past are struck through and the next one is promoted | Banner: "This report is from yesterday evening. Pull to refresh." Ring caption: "Last known" |
 | **Offline** | No network (navigator or fetch failure) and cached run | Banner with the cached run's time; refresh button disabled with explanation; everything else works | "Offline — showing the report from 6:12 AM." |
 | **Offline, no cache** | No network and nothing cached | Full-screen friendly empty with retry | "No report saved yet. Connect once to download today's report." |
-| **Partial data** | One or more sources missing/stale but run succeeded (`confidence` lowered) | Verdict stays; Moderate/Low confidence qualifier under the headline; amber "partial" chip; Data & sources lists exactly what's missing | "Wave data is 5 hours old, so confidence is lower." |
+| **Partial data** | One or more sources missing/stale but run succeeded (`confidence` lowered) | Verdict stays unless a required safety-gate input is missing (then capped at MAYBE); a qualifier naming the missing live input sits under the headline; amber "partial" chip; Data & sources lists exactly what's missing | "Pressure reading unavailable, so confidence is lower." |
 | **Source down at build** | Whole run carried forward from a previous build | Treated as Stale; banner explains | "Live data is unavailable. Showing the last report from 4:40 AM." |
 | **Error (cannot render)** | Contract validation fails or JSON corrupt | Never white-screen; show last valid run if any, else the error empty state | "Something went wrong reading the report. Try again, or check back in a few minutes." (button: Try again) |
 | **No window** | No slot meets bounds in the horizon | Verdict SKIP with no Best bet; Next best option still shown | "No good window today. Tomorrow morning looks better." |
@@ -221,21 +221,21 @@ Every state keeps the tab bar and the last-known content where it exists. States
 | Topic | Rule | Do | Don't |
 |---|---|---|---|
 | Voice | Plain, local, calm, short; second person; verbs first; no hype. | "Fish the incoming tide at sunrise." | "Epic bite window!!" |
-| Suitability | Always labelled "Suitability" (or "fit"); first-use hint explains it; never as a catch percentage. | "Pompano — suitability 84" · "Great fit" | "84 % chance", "odds", "likely to catch" |
-| Historical rate | Separate line, "N in 10", month, who, source; rounded to the nearest tenth; never merged with suitability. | "4 in 10 local shore anglers caught one in October." | "40 % success", "you'll catch…" |
-| Low sample | Say it is thin; don't hide it. | "Fewer surveys for this month, so treat this as a rough guide." | Showing a precise rate from tiny n |
-| Confidence | Word + number, describes *data*, with a reason. | "Confidence: High · 78 — forecast, tides and waves are current." | "78 % sure", "guaranteed" |
+| Suitability | Always labelled "Suitability" (or "fit"); first-use hint explains it; never as a catch percentage. | "<species> — suitability <n>" · "Great fit" | "84 % chance", "odds", "likely to catch" |
+| Historical rate | Separate line: "About N in 10", counted in **trips** (never anglers), Northeast Florida shore, month, years, per-mode source label ("pier and beach surveys" for surf and pier; "river, bridge and bank surveys" for inshore); N is a whole number; never "0 in 10" (say "Fewer than 1 in 10"); never merged with suitability. | "About <n> in 10 Northeast Florida shore fishing trips caught one in October (2015–2025 surveys)." | "<n> in 10 local shore anglers…", "40 % success", "you'll catch…" |
+| Low sample | Below 80 trips for the month, replace the number with a band; say it is thin; don't hide it. | "Occasional in October surveys — low sample." (band: Common / Occasional / Rare) | Showing a precise rate from tiny n |
+| Confidence | Word + number, describes *data*, with a reason. | "Confidence: <level> · <n> — forecast, tides and waves are current." | "78 % sure", "guaranteed" |
 | Certainty words | Hedge forecasts, not facts. | "Looks good", "should", "favours" | "guaranteed", "sure thing", "can't miss", "will bite" |
 | Words to avoid in UI | chance, probability, odds, guarantee(d), epic, hotspot, "limits", any size/bag limit, raw jargon (hPa, Hs, MLLW, "solunar" — say "moon timing"), "unlikely" for suitability bands | | |
 | Numbers | Raw units only at L1 secondary and L3; times 12-hour local; "mph", "ft", "°F". | "Light wind, 8 mph" | "NW 7.2 kt gust 11.4" |
-| Backup | Always state the reason. | "Backup: ICW redfish after 9:30 AM — the wind drops and the tide turns." | "Backup: ICW" |
+| Backup | Always state the reason; a backup outside the nearby radius also names its area. | "Backup: <spot> <species> after <time> — the wind drops and the tide turns." | "Backup: ICW" |
 | Regulations | Link, never state. | "Check current FWC rules." | "Pompano limit is …" |
-| Headline | ≤ ~60 characters, species + cause. | "Pompano & whiting on the incoming tide" | "Optimal conditions detected" |
+| Headline | ≤ ~60 characters, species + cause. | "<species> & <species> on the incoming tide" | "Optimal conditions detected" |
 | Tone for SKIP | Honest, helpful, never shaming. | "Skip today — storms 2–6 PM. Tomorrow morning looks better." | "Bad day." |
 
-**Reference output (the hero example the UI must be able to render exactly):**
+**Reference output (hero shape and fields the UI must be able to render; values are placeholders, not model output):**
 
-> **Tomorrow morning: GO** · Best bet: Flagler Beach surf · 6:40–8:25 AM · Targets: Pompano 84, Whiting 79, Bluefish 65 · Use: sand fleas or Fishbites on a pompano rig · Why: incoming tide + sunrise overlap + manageable surf + favorable wind · Backup: ICW redfish after 9:30 AM · Confidence: High · 78
+> **<Today|Tomorrow> <morning|evening>: <GO|MAYBE|SKIP>** · Best bet: <spot> <mode> · <window> · Targets: <species> <n>, <species> <n>, <species> <n> · Use: <bait> on a <species> rig · Why: <up to three helps, one hurts> · Backup: <spot> <species> after <time> · Confidence: <level> · <n>
 
 ### Other UI requirements (carried over)
 
@@ -245,40 +245,42 @@ Every state keeps the tab bar and the last-known content where it exists. States
 
 ## Product requirements for the technical architecture
 
-> For the architecture owner to reconcile. The UI renders `PredictionRun` objects only; it must not compute scores, labels or rankings. Anything below the UI would have to derive should be an engine output.
+> Reconciled with `docs/v5-architecture-decisions.md` Revision 2 (§1 contracts, §6 wire contracts) and `docs/v5-product-decisions.md` on 2026-10-05 (M11); the ADR governs exact field shapes. The UI renders `PredictionRun` objects only; it must not compute scores, labels or rankings. Anything below the UI would have to derive should be an engine output.
 
 | # | Requirement | Needed for |
 |---|---|---|
-| 1 | `Recommendation.headline` (≤ ~60 chars, species + cause), `Recommendation.whenLabel` ("Tomorrow morning · 6:40–8:25 AM"), and `Recommendation.useLine` ("Sand fleas or Fishbites on a pompano rig"). | Above-the-fold copy; consistent widgets/notifications. |
-| 2 | Human reason for every non-GO: `Recommendation.reason {code, text}` and `gates[] {code, text, startsAt, endsAt, severity}` with plain-language text including time range. | SKIP/MAYBE headline, safety states. |
+| 1 | `Recommendation.headline` (≤ ~60 chars, species + cause), `Recommendation.whenLabel` ("Tomorrow morning · <window>"), and `Recommendation.useLine` ("<bait> on a <species> rig"), each a `CopyMessage {code, params, text}` with a fallback `text`; time-relative wording is rendered by shared `copy.js` `(run, now)` formatters. | Above-the-fold copy; consistent widgets/notifications. |
+| 2 | Human reason for every non-GO: `Recommendation.reason` and `gates[]` as `CopyMessage {code, params, text}` (gates add `startsAt`, `endsAt`, `severity`) with plain-language text including time range. | SKIP/MAYBE headline, safety states. |
 | 3 | Per-factor human output on `PredictionFactor`: `effect` ("helps"/"neutral"/"hurts"), `group` (tide, light, wind, surf, water, season, moon, weather, pressure), `humanLabel`/`summary` in plain words, `limiting: boolean`. Keep `value/score/weight` for L3. | Why card, condition tiles, indicators. |
 | 4 | `Conditions` plain-word labels: `wind.label`, `waves.label`, `tide.label`, `waterTemp.label` ("comfortable for pompano"), `sky.label`. | Condition tiles. |
-| 5 | `backup.reason` (string), `backup.kind` ("other-mode" / "other-spot" / "later-window" / "other-species"), and backup `verdict` + `suitability`; backup verdict never exceeds primary. | Backup card. |
-| 6 | Per-species target entries carry `name`, `suitability`, `band` ("great"/"decent"/"poor"/"none"), and `historicalRate` object `{rate, n, month, lowSample, sourceLabel}` (shrunk rate; never raw). | Targets card, species sheet, copy rule on low sample. |
-| 7 | `seasonCurve[12]` per species and mode: shrunk historical rate by month (engine's shrinkage, not raw monthly n). | Species 12-month chart; avoids the UI showing tiny-n rates. |
-| 8 | `waterFit` per species and location: `{state: "ideal"/"ok"/"cold"/"hot", text, minF, idealLowF, idealHighF, maxF, currentF}`. | Water-temperature strip. |
-| 9 | Per-location recommendation: `locations[].recommendation` (best mode, window, verdict, top species, `rank`) so Spots needs no client scoring; verdict per location × mode × window. | Spot picker, Spots tab, compare. |
-| 10 | Species index: `bySpecies[speciesId] → {best: {locationId, mode, window, suitability, verdict}, fitNow}` and a species-focused recommendation (precomputed per species, or a `focusSpecies` argument to `buildPredictionRun`). | Species tab, "Target this", "GO for pompano". |
+| 5 | `backup.reason`, `backup.kind` ("other-mode" = opposite water type, ocean vs inshore, never surf↔pier / "other-spot" / "later-window" / "other-species", the last only with a species focus and no safety gate), `backup.distanceMi`, and the backup's own actual `verdict` + `suitability`. A backup is never below MAYBE and is not clamped to the primary (it can be MAYBE when the primary is SKIP). Order and "nearby" (`NEARBY_MILES = 7`) as in Vocabulary. If none qualifies, `nextOption` (next window or tomorrow) is emitted instead. | Backup card. |
+| 6 | Per-species target entries carry `name`, `suitability`, `band` ("great"/"decent"/"poor"/"none"), `eligibility` + reason, `tags[]` (e.g. "Rare in surveys"), and `historicalRate` object `{rate, n, month, lowSample, band, unit: "trips", sourceLabel}` (regional shrunk rate, no county adjustment; never raw; `lowSample` = n < 80 unique trips; `band` Common/Occasional/Rare, null when history is unavailable). | Targets card, species sheet, copy rule on low sample. |
+| 7 | `seasonCurve[12]` per species and mode: regional shrunk historical rate by month (engine's shrinkage, no county adjustment, not raw monthly n). | Species 12-month chart; avoids the UI showing tiny-n rates. |
+| 8 | `waterFit` per species and location: `{state: "ideal"/"ok"/"cold"/"hot", text, minF, idealLowF, idealHighF, maxF, currentF}`; `state` and `currentF` are null with explicit copy when water temperature is unavailable. | Water-temperature strip. |
+| 9 | Per-location recommendation: `locations[].recommendation` (best mode, window, verdict, top species, `rank` per verdict tier, `tiedWith[]`) so Spots needs no client scoring; verdict per location × mode × window. | Spot picker, Spots tab, compare. |
+| 10 | Species index: `bySpecies[speciesId] → {best: {locationId, mode, window, suitability, verdict}, fitNow}` and a species-focused recommendation that also returns `overall.verdict` and a `focusCapped` reason (regional focus precomputed; local focus materialized by the shared `selectRecommendation` selector over stored predictions). | Species tab, "Target this", "GO for pompano". |
 | 11 | Slot series for the timeline per location × mode: 30-min slots with `suitability`, tide height/rate/phase, light phase, moon-timing marks, per-slot top-3 species and condition labels, so the scrubber needs no engine call. | Timeline, scrubber, tiles at selected time. |
-| 12 | Planner `days[7]`: `{date, kind: "forecast"/"outlook", verdict (days 1–2) or outlookLabel ("promising"/"mixed"/"tough", days 3–7), bestWindow, topSpecies[], reason, confidence}`; outlook confidence capped (never GO). | Plan tab. |
+| 12 | Planner `days[7]`: `{date, kind: "forecast"/"outlook", reason, confidence}` plus, for days 1–2, `verdict`, windows and `topSpecies[]`; for days 3–7, `outlookLabel` ("promising"/"mixed"/"tough") and `bestWindow {partOfDay, tidePhase}` with no `locationId`, no minute-precise window, no suitability number and never GO. | Plan tab. |
 | 13 | Freshness model: `run.generatedAt`, `validTo`, `carriedForward: boolean` (+ original `generatedAt`), `status` ("ok"/"partial"/"degraded"), `missingInputs[]` in plain words. Per source: `ageMinutes`, `stale`, `usedFallback`, `affects[]` (which factors/labels it feeds). | Stale/partial/offline states, Data & sources. |
-| 14 | `confidenceReasons[]` as `{code, text, penalty}` (human text), plus a one-line `confidenceSummary` ("Forecast, tides and waves are current"). | Confidence line, "Why this confidence?". |
-| 15 | `comparison.delta` ("better"/"similar"/"worse") with the rule documented (suggest: ≥ one verdict step or ≥ 10 suitability points), plus `recommendedHorizon` and reason (replaces a UI-only cutoff; the UI cutoff is only a fallback). | Today vs Tomorrow, evening mode default. |
+| 14 | `confidenceReasons[]` as `{code, params, text, penalty, kind: "live" | "structural"}` (human text), a one-line `confidenceSummary` ("Forecast, tides and waves are current"), and a nullable `amberQualifier` built only from live, non-blocking reasons. | Confidence line, "Why this confidence?". |
+| 15 | `comparison.delta` ("better"/"similar"/"worse") with the rule "better/worse for a verdict-tier change or more than 5 suitability points, otherwise similar", plus `recommendedHorizon` and reason (the engine applies one exported 15:00 cutoff; the UI keeps no cutoff of its own). Comparison wording is rendered by `copy.js` `(run, now)`. | Today vs Tomorrow, evening mode default. |
 | 16 | Display names: `displayName` for location+mode ("Flagler Beach Pier · surf" only when a location has several modes), `modeLabel`, window `partOfDay` ("dawn", "morning", "midday", "afternoon", "dusk", "evening"). | Best bet card, headlines. |
 | 17 | Setup output per mode: structured `{where, bait[], lures[], rig, tip}` plus one-line `useLine`; `tip` from `species.js`. | Use card, species sheet. |
-| 18 | Window flags the UI cannot cheaply know: `isOpenNow`, `endsInMin` or `startsInMin` relative to `generatedAt`; windows never cross midnight. | "Fish now — until…", struck-through past windows. |
-| 19 | Contracts must validate with unknown optional fields ignored, so the UI degrades instead of failing on a newer run. | Error state. |
+| 18 | Window fields `isOpenAtGenerated`, `startsInMinAtGenerated`, `endsInMinAtGenerated` (relative to `generatedAt`); open/ended/countdown wording is computed at render time by the shared `copy.js` `(run, now)` formatters, never frozen at generation. Windows never cross midnight; today never extends into tomorrow. | "Fish now — until…", struck-through past windows. |
+| 19 | Contracts validate required fields; unknown optional fields are ignored and an unfamiliar `modelVersion` or `paramsHash` is never a reason to reject a run; only an unsupported `schemaVersion` major is rejected, so the UI degrades instead of failing on a newer run. | Error state. |
 
 ## Open product questions for Opus
 
-Genuinely ambiguous, product-defining. Recommendations are not final.
+All six were answered and owner-approved on 2026-10-05; the answers live in `docs/v5-product-decisions.md` (the spec text above is already conformed to them).
 
-1. **Primary navigation dimension — location, mode or species?** *Recommend:* answer-first (Best anywhere), with spot and species as optional scopes and mode secondary inside a spot. *Trade-off:* simplest for new users and the 10-second test, but anglers with a fixed spot or fixed target must set scope once; remembered scope mitigates it.
-2. **How are cross-mode backups chosen?** *Recommend:* prefer a different mode at the same or a nearby spot (survives wind/surf failure), then a different spot in the same mode, then a later window at the same spot. *Trade-off:* different-mode backups may need different gear and travel; "nearby" needs a definition (distance or travel time) the owner has not given.
-3. **How to present GO when confidence is only Moderate (engine allows GO at ≥ 50)?** *Recommend:* keep GO with a visible qualifier line; High-confidence GO has none. *Trade-off:* honest and simple, but a Moderate-confidence GO and a High one look identical in the ring; alternative is a lighter GO style or capping GO at confidence ≥ 75.
-4. **Should the default scope be Best anywhere or the user's last/home spot?** *Recommend:* Best anywhere, with the user's favourite or last spot as a compact second row ("Your spot: …"). *Trade-off:* Best-anywhere shows the strongest answer but may point to a spot an hour away; home-spot-first is relevant but can hide a GO elsewhere.
-5. **Should a species focus change the headline verdict ("GO for pompano" when overall is SKIP)?** *Recommend:* yes, always labelled with the focus. *Trade-off:* matches how anglers think, but two verdicts for the same day can read as contradictory unless the UI is very clear.
-6. **Should the outlook (days 3–7) use different labels (Promising / Mixed / Tough) than GO/MAYBE/SKIP?** *Recommend:* yes, never GO beyond day 2, to avoid false precision. *Trade-off:* extra vocabulary vs. a risk of over-promising from forecasts that are less reliable that far out; it also departs from the owner's single three-word headline for the planner only.
+| # | Question | Status |
+|---|---|---|
+| 1 | Primary navigation dimension — location, mode or species? | **Answered** — product-decisions §1. |
+| 2 | How are cross-mode backups chosen? | **Answered** — product-decisions §2 (7-mile "nearby", opposite water type first, MAYBE or better). |
+| 3 | How to present GO when confidence is only Moderate? | **Answered** — product-decisions §3 (plus ADR §5 for the gate inputs). |
+| 4 | Default scope: Best anywhere or the user's last/home spot? | **Answered** — product-decisions §4. |
+| 5 | Should a species focus change the headline verdict? | **Answered** — product-decisions §5. |
+| 6 | Should the outlook (days 3–7) use different labels? | **Answered** — product-decisions §6. |
 
 ## Existing inputs (already in the repo — do not rewrite)
 
@@ -315,7 +317,7 @@ site/v5/engine/
 Reuse `site/shared/logic.js` tide helpers (`seriesFromHilo`, `heightAt`, `tideRate`) and unit conversions where their contracts fit; reuse the NWS response/failure patterns in `src/worker.mjs` and deployed-state seed pattern in `scripts/generate.mjs`. `weightedScore` in `site/shared/week.js` is a reference for missing-factor renormalization, not a reason to change the shared helper. Do not edit those shared files or change root-app behavior for V5.
 
 
-ADR Revision 2 governs the technical contract; protected product text above remains unchanged and its conflicts are logged in ADR §10. Section references below refer to the ADR. Native means a Capacitor JS runtime; other runtimes require parity-tested ports. Suitability is heuristic fit, confidence is input completeness/freshness, calibratedProbability is null.
+ADR Revision 2 governs the technical contract; the product text above was reconciled to the approved decisions on 2026-10-05 (M11, ADR §10); remaining open items are logged in ADR §10. Section references below refer to the ADR. Native means a Capacitor JS runtime; other runtimes require parity-tested ports. Suitability is heuristic fit, confidence is input completeness/freshness, calibratedProbability is null.
 
 ### Sources (`sources.js`)
 
