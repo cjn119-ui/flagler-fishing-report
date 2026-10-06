@@ -61,10 +61,17 @@ export function safetyGates(c,{mode="surf",params=MODEL_PARAMS}={}){
   if(mode!=="inshore"&&has(c.waveHeightM)&&c.waveHeightM>params.factors.waves.safetySkipAboveM)add("waves","Surf reaches unsafe levels during this window.");
   return out;
 }
-export function verdictFor({suitability,confidence,eligibility,conditionsReady=true,gates=[],params=MODEL_PARAMS}){
+export function seasonalBenchmarkFor({locationId,mode,date,params=MODEL_PARAMS}){
+  const day=typeof date==="string"&&/^\d{4}-\d\d-\d\d$/.test(date)?date.slice(5):has(Date.parse(date))?localParts(Date.parse(date)).month+"-"+localParts(Date.parse(date)).day:null;
+  if(!day)return null;
+  const key=`${locationId}:${mode}`,value=params.benchmarks?.goSeasonal?.[key]?.[day];
+  return has(value)?value:null;
+}
+export function verdictFor({suitability,confidence,eligibility,conditionsReady=true,gates=[],locationId,mode,date,params=MODEL_PARAMS}){
   if(gates.length)return "SKIP";
   const decent=has(suitability)&&suitability>=params.thresholds.maybeSuitabilityMin;
-  if(decent&&eligibility==="realistic"&&conditionsReady&&has(params.thresholds.goSuitabilityMin)&&suitability>=params.thresholds.goSuitabilityMin&&confidence>=params.thresholds.goConfidenceMin)return "GO";
+  const benchmark=seasonalBenchmarkFor({locationId,mode,date,params});
+  if(decent&&eligibility==="realistic"&&conditionsReady&&has(params.thresholds.goSuitabilityMin)&&has(params.thresholds.goBenchmarkMargin)&&has(benchmark)&&suitability>=params.thresholds.goSuitabilityMin&&suitability>=benchmark+params.thresholds.goBenchmarkMargin&&confidence>=params.thresholds.goConfidenceMin)return "GO";
   return decent?"MAYBE":"SKIP";
 }
 const slotScore=x=>has(x?.rawSuitability)?x.rawSuitability:x?.suitability;
@@ -136,16 +143,21 @@ export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,h
     const gates=safetyGates(c,{mode,params});
     const safetyInputsReady=has(c.windMph)&&has(c.windGustMph)&&typeof c.thunder==="boolean";
     const conditionsReady=has(f.suitability)&&!insufficientData&&safetyInputsReady&&forecastAgeHours!=null&&forecastAgeHours<=params.freshness.forecastMaxAgeHours&&alertsChecked&&(mode==="inshore"||wavesOk);
-    const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,params});
-    return {at,conditionsReady,suitability,rawSuitability,factors:f.factors,waterFit:f.waterFit,historyTiming:ht,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,caps:cap,confidence:conf.confidence,confidenceLevel:conf.confidenceLevel,confidenceReasons:conf.confidenceReasons,amberQualifier:conf.amberQualifier,gates,verdict,conditions:c};});
+    const date=localKey(at),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params});
+    if(benchmark===null&&!gates.length)cap.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});
+    const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,locationId:spot.id,mode,date,params});
+    return {at,conditionsReady,suitability,rawSuitability,benchmark,factors:f.factors,waterFit:f.waterFit,historyTiming:ht,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,caps:cap,confidence:conf.confidence,confidenceLevel:conf.confidenceLevel,confidenceReasons:conf.confidenceReasons,amberQualifier:conf.amberQualifier,gates,verdict,conditions:c};});
   const windows=findSpeciesWindows(scored,{params,locationId:spot.id,mode,speciesId:species.id,spot,now}).map(w=>{
     const gates=[...new Map(w.slots.flatMap(x=>x.gates??[]).map(x=>[x.code,x])).values()];
     const ready=w.slots.every(x=>x.conditionsReady===true);
-    const v=verdictFor({suitability:w.suitability,confidence:w.confidence,eligibility:eligibility.eligibility,conditionsReady:ready,gates,params});
+    const date=localKey(w.start),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params});
+    if(benchmark===null&&!gates.length&&!w.slots.some(x=>x.caps?.some(c=>c.code==="benchmarkUnavailable")))w.slots[0]?.caps?.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});
+    const v=verdictFor({suitability:w.suitability,confidence:w.confidence,eligibility:eligibility.eligibility,conditionsReady:ready,gates,locationId:spot.id,mode,date,params});
     const caps=[...new Map(w.slots.flatMap(x=>x.caps??[]).map(x=>[x.code,x])).values()];
     const confidenceLevel=w.confidence>=params.thresholds.highConfidenceMin?"High":w.confidence>=params.thresholds.moderateConfidenceMin?"Moderate":"Low";
     const amberQualifier=w.confidence>=params.thresholds.moderateConfidenceMin?w.confidenceReasons.find(x=>x.kind==="live")?.text??null:null;
-    return {...w,gates,verdict:v,caps,confidenceLevel,amberQualifier};
+    if(benchmark===null&&!gates.length&&!caps.some(x=>x.code==="benchmarkUnavailable"))caps.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});
+    return {...w,gates,benchmark,verdict:v,caps,confidenceLevel,amberQualifier};
   });
   return {speciesId:species.id,locationId:spot.id,mode,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,historicalRate:timing?.historicalRate??null,seasonCurve:timing?.seasonCurve??Array(12).fill(null),waterFit:scored[0]?.waterFit??null,seasonBasis:timing?.seasonBasis??null,seasonAbsoluteReference:timing?.seasonAbsoluteReference??null,seasonReferenceFallback:timing?.seasonReferenceFallback??true,historyNotes:timing?.historyNotes??[],slots:scored,windows};
 }

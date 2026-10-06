@@ -22,7 +22,7 @@ export const REPORT_LABEL = "perfect-observation sensitivity hindcast, not a for
 export const DATE_START = "2025-10-01";
 export const DATE_END = "2026-09-30";
 export const BUILD_HOURS = Object.freeze([6, 19]);
-export const GO_THRESHOLDS = Object.freeze([55, 60, 65, 70, 75, 80, 85]);
+export const GO_THRESHOLDS = Object.freeze([70]);
 export const TIDE_SCALES = Object.freeze([0.375, 0.5, 0.625]);
 // Off-list species cannot be eligible for selection at any active spot. Keep
 // every decision-relevant species while avoiding repeated ineligible scoring.
@@ -70,11 +70,12 @@ const DATE_KEYS = datesInWindow();
 export const DEFAULT_DATES = DATE_KEYS;
 const candidateParamsCache = new Map();
 
-export function candidateParams({ tideScale, goThreshold = GO_THRESHOLDS[0] }) {
+export function candidateParams({ tideScale, goThreshold = 70 }) {
+  if (goThreshold !== 70) throw new Error("GO threshold is fixed at the owner-approved 70; threshold sweeps are disabled.");
   const params = {
     ...MODEL_PARAMS,
     factors: { ...MODEL_PARAMS.factors, tide: { ...MODEL_PARAMS.factors.tide, rateNormalizationScale: tideScale, rateNormalizationScaleProvisional: false } },
-    thresholds: { ...MODEL_PARAMS.thresholds, goSuitabilityMin: goThreshold, goSuitabilityMinProvisional: false },
+    thresholds: { ...MODEL_PARAMS.thresholds, goSuitabilityMin: 70, goSuitabilityMinProvisional: false, goBenchmarkMargin: 4 },
   };
   validateParams(params);
   return params;
@@ -344,10 +345,13 @@ function enrichCandidates(run, horizon, details, observations, spots, params) {
   });
 }
 
-function candidateAtThreshold(candidate, params) {
+function candidateAtThreshold(candidate, params, { absoluteOnly = false } = {}) {
   const verdict = verdictFor({ suitability: candidate.suitability, confidence: candidate.confidence, eligibility: candidate.eligibility,
-    conditionsReady: candidate.conditionsReady, gates: candidate.gates, params });
-  return { ...candidate, verdict };
+    conditionsReady: candidate.conditionsReady, gates: candidate.gates, locationId: candidate.locationId, mode: candidate.mode, date: candidate.start, params });
+  const absoluteVerdict = candidate.gates.length ? "SKIP" : candidate.eligibility === "realistic" && candidate.conditionsReady
+    && candidate.suitability >= params.thresholds.goSuitabilityMin && candidate.confidence >= params.thresholds.goConfidenceMin ? "GO"
+      : candidate.suitability >= params.thresholds.maybeSuitabilityMin ? "MAYBE" : "SKIP";
+  return { ...candidate, verdict: absoluteOnly ? absoluteVerdict : verdict };
 }
 
 function pick(candidates, params) {
@@ -367,10 +371,12 @@ function scopeCoverage(candidates, spots) {
   const out = {};
   for (const spot of spots) for (const mode of spot.modes) {
     const key = `${spot.id}:${mode}`;
+    const scoped=candidates.filter(candidate=>candidate.locationId===spot.id&&candidate.mode===mode),completeRows=scoped.filter(candidate=>candidate.sourceComplete);
     out[key] = {
-      hasPrediction: candidates.some(candidate => candidate.locationId === spot.id && candidate.mode === mode),
-      complete: candidates.some(candidate => candidate.locationId === spot.id && candidate.mode === mode && candidate.sourceComplete),
-      candidateCount: candidates.filter(candidate => candidate.locationId === spot.id && candidate.mode === mode).length,
+      hasPrediction: scoped.length>0,
+      complete: completeRows.length>0,
+      safetyGated: completeRows.length>0&&completeRows.every(candidate=>(candidate.gates??[]).length>0),
+      candidateCount: scoped.length,
     };
   }
   return out;
@@ -387,7 +393,8 @@ function summarizeHorizon(run, horizon, details, observations, spots, paramsByTh
       const key = `${spot.id}:${mode}`;
       byLocation[key] = compactSelection(pick(rated.filter(candidate => candidate.locationId === spot.id && candidate.mode === mode), params));
     }
-    byThreshold[threshold] = { best: compactSelection(pick(rated, params)), byLocation };
+    const absoluteBest = pick(candidates.map(candidate => candidateAtThreshold(candidate, params, { absoluteOnly: true })), params);
+    byThreshold[threshold] = { best: compactSelection(pick(rated, params)), byLocation, absoluteOnlyBest: compactSelection(absoluteBest) };
   }
   return { targetDate: run.targetDate, id: run.id, scopeCoverage: scopeCoverage(candidates, spots), byThreshold };
 }
@@ -436,6 +443,7 @@ function summarizeScenarioRows(rows, spots, dates = DATE_KEYS) {
   const thresholds = {};
   for (const threshold of GO_THRESHOLDS) {
     const bestCounts = blankCounts();
+    const absoluteCounts = blankCounts();
     const monthKeys = [...new Set(dates.map(monthKey))];
     const modeCounts = new Map(["surf", "pier", "inshore"].map(mode => [mode, blankCounts()]));
     const spotModeCounts = new Map(spots.flatMap(spot => spot.modes.map(mode => [`${spot.id}:${mode}`, blankCounts()])));
@@ -455,22 +463,24 @@ function summarizeScenarioRows(rows, spots, dates = DATE_KEYS) {
         if (covered.complete) monthly.completeDays++;
         const selected70 = row.today.byThreshold[70].byLocation[key];
         if (selected70?.safetyGated) monthly.safetyGatedDays++;
-        if (selected70?.sourceComplete && selected70.safetyGated) monthly.sourceCompleteSafetyGatedDays++;
-        if (selected70?.sourceComplete && !selected70.safetyGated) monthly.ungatedCompleteRecommendationDays++;
+        if (covered.complete && selected70?.safetyGated) monthly.sourceCompleteSafetyGatedDays++;
+        if (covered.complete && !covered.safetyGated) monthly.ungatedCompleteRecommendationDays++;
+        const cellCounts=spotModeCounts.get(key), valid=covered.complete&&!covered.safetyGated;
+        cellCounts.observed++;
+        if(valid){cellCounts.sourceComplete++;cellCounts.ungated++;if(selected70){cellCounts.selected++;cellCounts[`all${selected70.verdict}`]++;if(selected70.verdict==="GO"&&selected70.sourceComplete)cellCounts.GO++;else if(selected70.verdict==="MAYBE")cellCounts.MAYBE++;else if(selected70.verdict==="SKIP")cellCounts.SKIP++;}}
       }
       const selection = row.today.byThreshold[threshold].best;
-      addSelection(bestCounts, selection);
+      addHeadlineSelection(bestCounts,row,selection);
+      addHeadlineSelection(absoluteCounts,row,row.today.byThreshold[threshold].absoluteOnlyBest);
       if (selection?.speciesId) leadSpecies[selection.speciesId] = (leadSpecies[selection.speciesId] ?? 0) + 1;
-      if (selection) addSelection(modeCounts.get(selection.mode), selection);
-      const scopes = row.today.byThreshold[threshold].byLocation;
-      for (const [key, selected] of Object.entries(scopes)) addSelection(spotModeCounts.get(key), selected);
+      for(const spot of spots)for(const mode of spot.modes){const key=`${spot.id}:${mode}`,selected=row.today.byThreshold[threshold].byLocation[key],covered=scope[key],counts=modeCounts.get(mode),valid=covered?.complete&&!covered.safetyGated;counts.observed++;if(valid){counts.sourceComplete++;counts.ungated++;if(selected?.verdict==="GO"&&selected.sourceComplete)counts.GO++;}}
     }
 
     const monthlyStats = monthKeys.map(month => {
       const perMonthRows = rows.filter(row => monthKey(row.day) === month);
-      const counts = blankCounts();
-      for (const row of perMonthRows) addSelection(counts, row.today.byThreshold[threshold].best);
-      return { month, days: perMonthRows.length, ...freezeCounts(counts) };
+      const counts = blankCounts(), absolute=blankCounts();
+      for (const row of perMonthRows){addHeadlineSelection(counts,row,row.today.byThreshold[threshold].best);addHeadlineSelection(absolute,row,row.today.byThreshold[threshold].absoluteOnlyBest);}
+      return { month, days: perMonthRows.length, ...freezeCounts(counts), absoluteOnly:freezeCounts(absolute) };
     });
     const coverageRows = [...monthlyCoverage.values()].map(row => ({ ...row, coverage: pct(row.completeDays, row.totalDays) }));
     const scopeRows = [...spotModeCounts.entries()].map(([key, counts]) => {
@@ -482,11 +492,20 @@ function summarizeScenarioRows(rows, spots, dates = DATE_KEYS) {
     const gate = evaluateFrequencyGates({ coverageRows, overall: bestCounts, monthly: monthlyGateRows, spotModes: scopeRows });
     const leadDistribution = Object.entries(leadSpecies).map(([speciesId, count]) => ({ speciesId, count, shareOfBestSelections: pct(count, rows.length) })).sort((a, b) => b.count - a.count || a.speciesId.localeCompare(b.speciesId));
     thresholds[threshold] = {
-      overall: freezeCounts(bestCounts), byMode: modeStats, monthly: monthlyStats, spotModes: scopeRows,
+      overall: freezeCounts(bestCounts), absoluteOnly:freezeCounts(absoluteCounts), byMode: modeStats, monthly: monthlyStats, spotModes: scopeRows,
       sourceCoverage: coverageRows, leadDistribution, gates: gate,
     };
   }
   return thresholds;
+}
+
+function addHeadlineSelection(counts,row,selection,horizon="today"){
+  const complete=Object.values(row[horizon]?.scopeCoverage??{}).some(value=>value.complete),safe=selection?.safetyGated!==true&&Object.values(row[horizon]?.scopeCoverage??{}).some(value=>value.complete&&!value.safetyGated);
+  counts.observed++;
+  if(!complete||!safe)return;
+  counts.sourceComplete++;counts.ungated++;
+  if(selection){counts.selected++;counts[`all${selection.verdict}`]++;if(selection.sourceComplete)counts[selection.verdict]++;if(selection.safetyGated)counts.safetyGated++;}
+  else counts.SKIP++;
 }
 
 export function secondarySummaries(allRows) {
@@ -495,9 +514,9 @@ export function secondarySummaries(allRows) {
     const rows = allRows.filter(row => row.hour === hour && row[horizon]);
     const byThreshold = {};
     for (const threshold of GO_THRESHOLDS) {
-      const counts = blankCounts();
-      for (const row of rows) addSelection(counts, row[horizon].byThreshold[threshold].best);
-      byThreshold[threshold] = freezeCounts(counts);
+      const counts = blankCounts(), absolute = blankCounts();
+      for (const row of rows){addHeadlineSelection(counts,row,row[horizon].byThreshold[threshold].best,horizon);addHeadlineSelection(absolute,row,row[horizon].byThreshold[threshold].absoluteOnlyBest??null,horizon);}
+      byThreshold[threshold] = { ...freezeCounts(counts), absoluteOnly:freezeCounts(absolute) };
     }
     result[label] = { rows: rows.length, byThreshold };
   }
@@ -548,76 +567,36 @@ function sharesLine(counts) { return `GO ${percentageOrDash(counts.goShare)} · 
 function esc(value) { return String(value).replaceAll("|", "\\|"); }
 
 export function renderReport(summary) {
-  const base = summary.scenarios.find(scenario => scenario.tideScale === 0.5);
-  const base70 = base.thresholds[70];
-  const failingCoverage = base70.sourceCoverage.filter(row => row.coverage === null || row.coverage < 0.8);
+  const base = summary.scenarios.find(row => row.tideScale === 0.5);
+  const stats = base?.thresholds?.[70];
+  if (!stats) throw new Error("Report requires the fixed 70/+4 seasonal GO summary at tide scale 0.50.");
+  const pctText = value => value === null || value === undefined ? "—" : `${(value * 100).toFixed(1)}%`;
+  const countLine = counts => `GO ${pctText(counts?.goShare)} (GO ${counts?.GO ?? 0}/${counts?.ungated ?? 0})`;
   const lines = [
-    `# V5 A5 ${summary.dateKeys.length}-date hindcast and GO-frequency gate`, "", `**Every result is a ${REPORT_LABEL}.**`, "",
-    `Window: ${summary.window.start} through ${summary.window.endInclusive} (local build dates). ${summary.primaryOnly ? "All scenarios use primary 06:00 builds only." : "The 0.50 ft/hr baseline uses 06:00 and 19:00 America/New_York builds; ±25% tide sensitivity uses the primary 06:00 build."} ${summary.buildCount} real model builds were run. The primary independent daily statistic is the 06:00 today Best-anywhere recommendation (${summary.dateKeys.length} dates); tomorrow and 19:00 baseline outputs are separate diagnostics.`, "",
-    "## Headline (proposal baseline: tide scale 0.50 ft/hr, GO threshold 70)", "",
+    `# V5 A5 ${summary.dateKeys.length}-date GO-definition hindcast`, "",
+    `**${REPORT_LABEL}.** Window ${summary.window.start} through ${summary.window.endInclusive} local; ${summary.buildCount} builds. This report applies the fixed suitability floor 70 and seasonal margin +4; no GO parameter sweep was run.`, "",
+    "## Primary result: 06:00 today, tide scale 0.50", "",
     "| Measure | Result | Gate |", "|---|---:|---|",
-    `| 06:00 Best-anywhere verdict shares among source-complete, ungated days | ${sharesLine(base70.overall)} | GO target 15–40% |`,
-    `| Diagnostic verdict mix across all selected 06:00 Best-anywhere recommendations | GO ${percentageOrDash(base70.overall.allGoShare)} · MAYBE ${percentageOrDash(base70.overall.allMaybeShare)} · SKIP ${percentageOrDash(base70.overall.allSkipShare)} (n=${base70.overall.selected}; includes incomplete/gated days) | diagnostic only |`,
-    `| Source-complete date coverage, weakest spot×mode×month | ${percentageOrDash(summary.weakestCoverage.coverage)} (${summary.weakestCoverage.locationId} · ${summary.weakestCoverage.mode} · ${summary.weakestCoverage.month}) | ≥80% every month |`,
-    `| Highest monthly Best-anywhere GO share | ${summary.highestMonth.share === null ? "—" : `${percentageOrDash(summary.highestMonth.share)} (${summary.highestMonth.month})`} | ≤70% each month |`,
-    `| Weakest active location×mode GO share | ${summary.weakestSpotMode.share === null ? "—" : `${percentageOrDash(summary.weakestSpotMode.share)} (${summary.weakestSpotMode.locationId} · ${summary.weakestSpotMode.mode})`} | ≥3% each |`,
-    "",
-    "## Gate status at threshold 70", "",
-    "| Gate | Result | Details |", "|---|---|---|",
-    `| Monthly source coverage | **${base70.gates.sourceCoveragePass ? "PASS" : "FAIL"}** | ${base70.gates.sourceCoverageFailures.length} spot×mode×month rows below 80% |`,
-    `| Best-anywhere GO share | **${base70.gates.overallFrequencyPass ? "PASS" : "FAIL"}** | ${percentageOrDash(base70.gates.overallShare)} of source-complete ungated daily recommendations |`,
-    `| No month over 70% GO | **${base70.gates.monthFrequencyPass ? "PASS" : "FAIL"}** | ${base70.gates.monthFailures.length} zero-denominator or >70% months |`,
-    `| Every active spot×mode at least 3% GO | **${base70.gates.spotModeFrequencyPass ? "PASS" : "FAIL"}** | ${base70.gates.spotModeFailures.length} zero-denominator or <3% spot×mode scopes |`,
-    `| Full launch-frequency gate | **${base70.gates.pass ? "PASS" : "FAIL — owner review / exception required"}** | A5 does not accept any provisional parameter |`,
-    "",
-    "## Monthly source-complete denominators", "",
-    "A source-complete spot×mode×date is one where the real model emitted at least one candidate window whose every 30-minute slot had wind, gust, direction, rain proxy, observed thunder state, pressure trend, CO-OPS tide height/rate, and CDIP water temperature; ocean modes also require a CDIP wave observation/interpolation for every slot. This strict source-coverage measure is independent of safety gates; a complete-but-safety-gated date is reported separately. The fixed MRIP artifact and computed astro are not counted as live source channels.", "",
-    `All 12 months × active spot×mode denominators follow; FAIL rows are the coverage-gate exceptions (${failingCoverage.length} rows). Safety-gated counts are for each spot×mode's selected recommendation at threshold 70; source-complete safety gates are shown separately.`, "",
-    ];
-  lines.push("| Month | Spot | Mode | Candidate days | Source-complete / dates | Incomplete dates | Safety-gated selected recs | Source-complete safety-gated | Ungated complete recs | Coverage | Gate |", "|---|---|---|---:|---:|---:|---:|---:|---:|---:|---|");
-  for (const row of base70.sourceCoverage) lines.push(`| ${row.month} | ${row.locationId} | ${row.mode} | ${row.candidateDays} | ${row.completeDays}/${row.totalDays} | ${row.totalDays - row.completeDays} | ${row.safetyGatedDays} | ${row.sourceCompleteSafetyGatedDays} | ${row.ungatedCompleteRecommendationDays} | ${percentageOrDash(row.coverage)} | ${row.coverage !== null && row.coverage >= 0.8 ? "PASS" : "FAIL"} |`);
-  lines.push("");
-  lines.push("## GO threshold sweep at tide scale 0.50 ft/hr", "", "Threshold values are review candidates only. Best-anywhere shares use source-complete, ungated 06:00 today recommendations; each spot×mode row uses its own selected daily recommendation on source-complete, ungated dates.", "", "| goSuitabilityMin candidate | Best GO share | Best denominator | Gate result | Surf GO share | Pier GO share | Inshore GO share |", "|---:|---:|---:|---|---:|---:|---:|");
-  for (const threshold of GO_THRESHOLDS) {
-    const result = base.thresholds[threshold], mode = new Map(result.byMode.map(row => [row.mode, row]));
-    lines.push(`| ${threshold} | ${percentageOrDash(result.overall.goShare)} | ${result.overall.GO}/${result.overall.ungated} | ${result.gates.pass ? "PASS" : "FAIL"} | ${percentageOrDash(mode.get("surf")?.goShare ?? null)} | ${percentageOrDash(mode.get("pier")?.goShare ?? null)} | ${percentageOrDash(mode.get("inshore")?.goShare ?? null)} |`);
-  }
-  lines.push("", "### Per spot×mode GO share by threshold", "", "Each cell is GO / source-complete ungated days. An em dash means no valid denominator; zero denominators fail the gate.", "", `| Spot | Mode | ${GO_THRESHOLDS.join(" | ")} |`, `|---|---|${GO_THRESHOLDS.map(() => "---:").join("|")}|`);
-  const scopeKeys = base.thresholds[70].spotModes.map(row => `${row.locationId}:${row.mode}`);
-  for (const key of scopeKeys) {
-    const [locationId, mode] = key.split(":");
-    const vals = GO_THRESHOLDS.map(threshold => {
-      const row = base.thresholds[threshold].spotModes.find(item => `${item.locationId}:${item.mode}` === key);
-      return row ? `${row.GO}/${row.ungated} (${percentageOrDash(row.goShare)})` : "—";
-    });
-    lines.push(`| ${locationId} | ${mode} | ${vals.join(" | ")} |`);
-  }
-  lines.push("", "## Mode recommendation verdict mix at threshold 70", "", "Mode rows include dates where Best-anywhere selected that mode; all-run mix includes incomplete or safety-gated recommendations. The source-complete, ungated gate mix remains in the threshold table.", "", "| Selected mode | GO / n | GO share | MAYBE share | SKIP share | Complete ungated GO / n |", "|---|---:|---:|---:|---:|---:|");
-  for (const row of base70.byMode) lines.push(`| ${row.mode} | ${row.allGO}/${row.selected} | ${percentageOrDash(row.allGoShare)} | ${percentageOrDash(row.allMaybeShare)} | ${percentageOrDash(row.allSkipShare)} | ${row.GO}/${row.ungated} |`);
-  const inshore = base70.byMode.find(row => row.mode === "inshore");
-  lines.push("", "### Inshore gate detail", "", `Across selected inshore daily recommendations: GO ${inshore?.allGO ?? 0}/${inshore?.selected ?? 0} (${percentageOrDash(inshore?.allGoShare ?? null)}), MAYBE ${inshore?.allMAYBE ?? 0}, SKIP ${inshore?.allSKIP ?? 0}; source-complete ungated GO ${inshore?.GO ?? 0}/${inshore?.ungated ?? 0} (${percentageOrDash(inshore?.goShare ?? null)}). Each active inshore spot is listed in the location×mode sweep; monthly inshore denominators appear in the source table above.`, "");
-  lines.push("", "## Month-by-month Best-anywhere frequency at threshold 70", "", "| Month | GO / denominator | GO share | MAYBE share | SKIP share | Safety-gated selected recs |", "|---|---:|---:|---:|---:|---:|");
-  for (const row of base70.monthly) lines.push(`| ${row.month} | ${row.GO}/${row.ungated} | ${percentageOrDash(row.goShare)} | ${percentageOrDash(row.maybeShare)} | ${percentageOrDash(row.skipShare)} | ${row.allSafetyGated} |`);
-  lines.push("", "## Best-anywhere leads", "", "06:00 today selected driver species across all dates (including incomplete/gated days):", "", `| Species | Leads / ${summary.dateKeys.length} | Share |`, "|---|---:|---:|");
-  for (const row of base70.leadDistribution) lines.push(`| ${row.speciesId} | ${row.count}/${summary.dateKeys.length} | ${percentageOrDash(row.shareOfBestSelections)} |`);
-  lines.push("", "## Tide-scale sensitivity", "", "The code kept `params.js` unchanged and ran full engine builds with copied parameter objects at the documented 0.50 ft/hr proposal and ±25% (0.375, 0.625). Each scale is crossed with every threshold candidate.", "", "| Tide scale ft/hr | GO threshold | Best GO share | Denominator | Inshore GO share | Inshore denominator | Mean Best suitability | Gate result |", "|---:|---:|---:|---:|---:|---:|---:|---|");
-  for (const scenario of summary.scenarios) for (const threshold of GO_THRESHOLDS) {
-    const result = scenario.thresholds[threshold], inshore = result.byMode.find(row => row.mode === "inshore");
-    lines.push(`| ${scenario.tideScale.toFixed(3)} | ${threshold} | ${percentageOrDash(result.overall.goShare)} | ${result.overall.GO}/${result.overall.ungated} | ${percentageOrDash(inshore?.goShare ?? null)} | ${inshore?.GO ?? 0}/${inshore?.ungated ?? 0} | ${scenario.meanBestSuitability.toFixed(1)} | ${result.gates.pass ? "PASS" : "FAIL"} |`);
-  }
-  lines.push("", "## Morning, evening, and tomorrow", "", "| Output | GO / MAYBE / SKIP shares on source-complete ungated recommendations (threshold 70, tide 0.50) |", "|---|---|", `| 06:00 tomorrow | ${sharesLine(base.secondary.morningTomorrow.byThreshold[70])} |`, `| 19:00 today/evening | ${sharesLine(base.secondary.eveningToday.byThreshold[70])} |`, `| 19:00 tomorrow | ${sharesLine(base.secondary.eveningTomorrow.byThreshold[70])} |`, "", "## Alerts and confidence", "", "Historical NWS alerts were unavailable. Every run used the ADR scenario assumption `unverified/checked-none`, with an empty alert list and `alertsChecked=true`. This avoids the engine's unchecked-alert confidence penalty (20 points) and removes historical warning safety gates; it can therefore increase GO eligibility and confidence relative to unknown real alert history. Those alerts are not recovered facts. No counterfactual alert history is inferred.", "", "## Fixed parameter iteration record", "", "| Iteration | Input | Measured use | Outcome / decision status |", "|---|---|---|---|", "| 0 | Committed `MODEL_PARAMS`: GO threshold null, realistic floor 0.05 marked provisional, tide normalization null with proposal 0.50 | Read only; no baseline GO threshold or tide factor is active in the committed parameters | Kept untouched; not accepted by A5 |", "| 1 | Tide scale 0.500 ft/hr; GO threshold candidates 55, 60, 65, 70, 75, 80, 85 | Full-year daily recommendation sweep | See threshold table; candidate status only |", "| 2 | Tide scales 0.375 and 0.625 ft/hr; same seven thresholds | Full-year sensitivity to −25% / +25% around 0.500 | See tide table; candidate status only |", `| 3 | Source completeness required as defined above; alerts fixed to ${summary.alertAssumption} | All 12 months × active spot×mode scopes evaluated | No score/floor/tide edits were made to force a pass |`, "| 4 | METAR absent-gust / absent-weather semantics fix: gust null + wind present → gust 0 mph; weather-codes null + observation present → \"\" (observed-none) | Data semantics correctness fix applied to all runs | Improves source-complete slot coverage; GO threshold and tide scale unchanged |", "", "## Proposals and unresolved gate", "");
-  const passing = summary.scenarios.flatMap(scenario => GO_THRESHOLDS.filter(threshold => scenario.thresholds[threshold].gates.pass).map(threshold => ({ tideScale: scenario.tideScale, threshold })));
-  if (passing.length) lines.push(`Measured passing candidates: ${passing.map(item => `${item.threshold} at ${item.tideScale.toFixed(3)} ft/hr`).join(", ")}. These remain proposals requiring Chris's acceptance; this report did not promote them to params.js.`, "");
-  else lines.push("No tested threshold/tide-scale pair passes every source-coverage and GO-frequency gate. No `goSuitabilityMin` proposal can be recommended from this archive alone. Keep the GO threshold pending; keep the 0.05 realistic floor provisional and keep tide normalization at null in `params.js`. The source-coverage shortfall needs an owner decision on a documented data source/coverage exception or additional archived measurements before frequency acceptance.", "");
-  lines.push("## Method and caveats", "", `- ${REPORT_LABEL}; observed target-slot data are a perfect-information stand-in and not a forecast-accuracy test.`,
-    "- Runs use real `buildPredictionRun` and the current V5 model for every active spot×mode, with deterministic local 06:00 and 19:00 build instants. No random components or network fetches are used.",
-    `- The engine receives ${ACTIVE_TARGET_SPECIES.length} species targetable at at least one active spot×mode; catalog species outside every active target list are off-list everywhere and cannot win a recommendation.`,
-    "- KFIN ASOS uses actual `reportTime` for interpolation and point availability. Wind and pressure are converted from knots/inHg; rain occurrence is mapped to a labelled 0/100 proxy. Gust absent with wind present is interpreted as no gust reported (0 mph); weather-codes absent with observation present is interpreted as no significant weather (\"\"). Interpolation requires bracketing valid values no more than three hours apart; weather code/rain use the nearest report only within 90 minutes.",
-    "- CDIP 194 is a single offshore station, used at all spot coordinates without spatial correction. Wave values use bracketing observations within three hours as perfect target-slot stand-ins. Water temperature uses the latest CDIP observation at or before build time, never a later temperature.",
-    "- CO-OPS rows are date-calculated harmonic high/low predictions in GMT/MLLW, not measurements or archived prediction issuance. Tide scale is tested only as a proposed model parameter.",
-    "- Model GO requires gust and a boolean thunder observation in every slot. ASOS gust field coverage is sparse, but METAR semantics (null gust = 0 mph when wind is present, null weather-codes = no significant weather) ensure source-complete windows when an observation exists.",
-    "- MRIP inputs are the frozen regional survey artifact. Suitability is not probability or catch accuracy. This hindcast does not establish station-level representativeness, real forecast skill, operational safety, or recovered historical alerts.",
-    `- Source/cache hashes, build count, and exact summaries are in the gitignored .cache/hindcast-out/hindcast-results.json. Source manifest SHA-256: ${summary.manifestSha256}.`, "");
+    `| Best-anywhere GO share, source-complete ungated days | ${countLine(stats.overall)} | 15–40% |`,
+    `| Absolute-only GO share (70 floor, no benchmark) | ${pctText(stats.absoluteOnly?.goShare)} (GO ${stats.absoluteOnly?.GO ?? 0}/${stats.absoluteOnly?.ungated ?? 0}) | information only |`,
+    `| Monthly Best-anywhere GO range | ${pctText(summary.lowestMonth?.share)} (${summary.lowestMonth?.month ?? "—"}) to ${pctText(summary.highestMonth?.share)} (${summary.highestMonth?.month ?? "—"}) | maximum ≤70%; 0% is reported |`, "",
+    "## GO share by mode", "", "Shares pool the eligible, source-complete ungated cell-days within each mode.", "",
+    "| Mode | GO / denominator | Share |", "|---|---:|---:|",
+    ...stats.byMode.map(row => `| ${row.mode} | ${row.GO}/${row.ungated} | ${pctText(row.goShare)} |`), "",
+    "## GO share by location × mode", "", "| Location | Mode | GO / denominator | Share |", "|---|---|---:|---:|",
+    ...stats.spotModes.map(row => `| ${row.locationId} | ${row.mode} | ${row.GO}/${row.ungated} | ${pctText(row.goShare)} |`), "",
+    "## Benchmark coverage", "", "The seasonal baseline is the median own-cell daily-best suitability within ±15 calendar days. Safety-gated and non-source-complete rows are excluded. Fewer than 10 eligible rows yields a null benchmark, recorded as `no eligible candidates in this window`; null benchmarks cap verdicts at MAYBE with `benchmarkUnavailable`.", "",
+    "| Location | Mode | Finite benchmark range | Null benchmark windows |", "|---|---|---:|---:|",
+    ...Object.entries(summary.benchmarkRanges ?? {}).sort(([a],[b])=>a.localeCompare(b)).map(([cell, value]) => { const [locationId, mode] = cell.split(":"); return `| ${locationId} | ${mode} | ${value.min}–${value.max} | ${value.nullWindows} |`; }), "",
+    "## Secondary horizons", "", "| Build | GO share | Absolute-only GO share |", "|---|---:|---:|",
+    ...[["06:00 tomorrow",base.secondary?.morningTomorrow], ["19:00 today",base.secondary?.eveningToday], ["19:00 tomorrow",base.secondary?.eveningTomorrow]].map(([label,row]) => `| ${label} | ${pctText(row?.byThreshold?.[70]?.goShare)} | ${pctText(row?.byThreshold?.[70]?.absoluteOnly?.goShare)} |`), "",
+    "## Gate status", "", `Source coverage: ${stats.gates.sourceCoveragePass ? "PASS" : "FAIL"} (${stats.gates.sourceCoverageFailures.length} month×cell rows below 80%). Headline frequency: ${stats.gates.overallFrequencyPass ? "PASS" : "FAIL"}. Monthly maximum: ${stats.gates.monthFrequencyPass ? "PASS" : "FAIL"}. Every cell at least 3%: ${stats.gates.spotModeFrequencyPass ? "PASS" : "FAIL"}. Zero denominators fail; all per-cell denominators are printed above.`, "",
+    "## Caveats", "",
+    "- Benchmarks are in-sample on one year. This is a frequency sensitivity scenario, not accuracy evidence.",
+    "- Hindcast slots use perfect-observation inputs and historical alerts are assumed clear/unverified. This does not establish forecast skill, calibrated catch probability, or operational safety.",
+    "- Shared sources make spot×mode GO shares dependent. Suitability is a fit score, not a probability.",
+    `- Source manifest SHA-256: ${summary.manifestSha256}. Source/cache hashes are recorded in hindcast-results.json.`, "",
+  ];
   return `${lines.join("\n")}\n`;
 }
 
@@ -658,17 +637,19 @@ export function summarizeRecords(records, dates, { primaryOnly = false, manifest
   const weakestCoverage = at70.sourceCoverage.reduce((weakest, row) => row.coverage === null || row.coverage < weakest.coverage ? row : weakest, at70.sourceCoverage[0]);
   const validMonthShares = at70.monthly.filter(row => row.goShare !== null);
   const highestMonth = validMonthShares.reduce((best, row) => !best || row.goShare > best.share ? { month: row.month, share: row.goShare } : best, null) ?? { month: null, share: null };
+  const lowestMonth = validMonthShares.reduce((best, row) => !best || row.goShare < best.share ? { month: row.month, share: row.goShare } : best, null) ?? { month: null, share: null };
   const validSpotShares = at70.spotModes.filter(row => row.goShare !== null);
   const weakestSpotMode = validSpotShares.reduce((best, row) => !best || row.goShare < best.share ? { locationId: row.locationId, mode: row.mode, share: row.goShare } : best, null) ?? { locationId: null, mode: null, share: null };
+  const benchmarkRanges=Object.fromEntries(Object.entries(MODEL_PARAMS.benchmarks.goSeasonal).map(([cell,values])=>{const finite=Object.values(values).filter(has);return [cell,{min:Math.min(...finite),max:Math.max(...finite),nullWindows:Object.values(values).filter(x=>x===null).length}];}));
   const summary = {
     label: REPORT_LABEL, window: { start: dates[0], endInclusive: dates.at(-1), timezone: TZ }, dateKeys: dates,
     mode: primaryOnly ? "primary" : "full", primaryOnly, buildHoursLocal: primaryOnly ? [6] : BUILD_HOURS,
     modeledSpeciesIds: ACTIVE_TARGET_SPECIES.map(species => species.id),
     independentPrimaryDailyBuilds: dates.length, buildCount, candidateThresholds: GO_THRESHOLDS, candidateTideScalesFtPerHr: TIDE_SCALES,
-    randomSeed: "not-used; deterministic engine and fixed iteration grid", workerCount, alertAssumption: "unverified/checked-none", sourceHashes, manifestSha256,
+    randomSeed: "not-used; deterministic fixed parameters", workerCount, alertAssumption: "unverified/checked-none", sourceHashes, manifestSha256,
     activeLocationModes: ACTIVE_SPOTS.flatMap(spot => spot.modes.map(mode => ({ locationId: spot.id, mode }))), scenarios,
     weakestCoverage: { coverage: weakestCoverage?.coverage ?? null, locationId: weakestCoverage?.locationId ?? null, mode: weakestCoverage?.mode ?? null, month: weakestCoverage?.month ?? null, failingRows: failingCoverage.length },
-    highestMonth, weakestSpotMode,
+    lowestMonth, highestMonth, weakestSpotMode, benchmarkNullWindows:Object.fromEntries(Object.entries(benchmarkRanges).map(([cell,row])=>[cell,row.nullWindows])), benchmarkRanges,
   };
   return summary;
 }

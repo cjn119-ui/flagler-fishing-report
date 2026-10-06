@@ -6,6 +6,8 @@ import { ACTIVE_SPOTS } from "../site/v5/spots.js";
 import { SPECIES } from "../site/v5/species.js";
 import { buildPredictionRun } from "../site/v5/engine/run.js";
 import { validateNormalizedObservation } from "../site/v5/engine/contracts.js";
+import { MODEL_PARAMS } from "../site/v5/engine/params.js";
+import { buildGoBenchmarks } from "./hindcast/build-go-benchmarks.mjs";
 import {
   CACHE_DIR, DEFAULT_DATES, GO_THRESHOLDS, buildNormalizedObservations, candidateParams, evaluateFrequencyGates, loadCachedInputs, localInstant, mergeChunks, pct, renderReport, runHindcast, secondarySummaries,
 } from "./hindcast/run-hindcast.mjs";
@@ -25,7 +27,7 @@ const canonical = value => Array.isArray(value)
 
 const cached = await loadCachedInputs();
 const now = localInstant("2026-01-15", 6);
-const params = candidateParams({ tideScale: 0.5, goThreshold: 55 });
+const params = candidateParams({ tideScale: 0.5, goThreshold: 70 });
 const fullSpot = ACTIVE_SPOTS.find(spot => spot.id === "vilano-beach");
 const miniSpot = { ...fullSpot, modes: ["surf"] };
 const miniSpecies = SPECIES.filter(species => ["whiting", "pompano"].includes(species.id));
@@ -76,6 +78,31 @@ await check("percentage arithmetic keeps a zero denominator unavailable", () => 
   assert.equal(pct(0, 0), null);
 });
 
+await check("hindcast keeps the approved GO threshold fixed and report separates absolute-only share", () => {
+  assert.deepEqual(GO_THRESHOLDS, [70]);
+  assert.throws(() => candidateParams({ tideScale: 0.5, goThreshold: 75 }), /fixed at.*70/i);
+  const report = renderReport({ dateKeys:["2026-01-01"], window:{start:"2026-01-01",endInclusive:"2026-01-01"}, primaryOnly:true, buildCount:1, manifestSha256:"test",
+    scenarios:[{tideScale:0.5,thresholds:{70:{overall:{GO:1,ungated:1,goShare:1},absoluteOnly:{GO:1,ungated:1,goShare:1},monthly:[],byMode:[],spotModes:[],gates:{pass:false,sourceCoveragePass:false,sourceCoverageFailures:[],overallFrequencyPass:false,monthFrequencyPass:false,spotModeFrequencyPass:false}}},secondary:{}}],
+    benchmarkNullWindows:{"spot:surf":1}, benchmarkRanges:{"spot:surf":{min:60,max:80,nullWindows:1}}, lowestMonth:{share:null}, highestMonth:{share:null} });
+  assert.match(report,/absolute-only/i); assert.match(report,/GO share by location × mode/i); assert.match(report,/null benchmark windows/i);
+});
+
+await check("seasonal benchmark generator reproduces params, records sparse windows, and preserves all cell keys", async () => {
+  const generated = await buildGoBenchmarks();
+  assert.equal(generated.sourceManifestSha256, MODEL_PARAMS.benchmarks.sourceManifestSha256);
+  assert.equal(canonical(generated), canonical(MODEL_PARAMS.benchmarks));
+  for (const [cell, windows] of Object.entries(generated.goSeasonal)) {
+    assert.equal(Object.keys(windows).length, 366, `${cell} calendar coverage`);
+    for (const [day, value] of Object.entries(windows)) {
+      const count = generated.sampleCounts[cell][day];
+      if (value === null) {
+        assert.ok(count < 10, `${cell} ${day} has ${count} samples but is null`);
+        assert.equal(generated.nullReasons[cell][day], "no eligible candidates in this window");
+      } else assert.ok(Number.isFinite(value) && count >= 10, `${cell} ${day} requires a finite median and 10 samples`);
+    }
+  }
+});
+
 await check("frequency gate evaluator passes exact boundaries and fails missing denominators", () => {
   const good = evaluateFrequencyGates({
     coverageRows: [{ month: "2026-01", locationId: "spot", mode: "surf", completeDays: 8, totalDays: 10 }],
@@ -97,8 +124,8 @@ await check("frequency gate evaluator passes exact boundaries and fails missing 
 });
 
 await check("secondary summaries keep morning tomorrow and evening horizons separate", () => {
-  const horizon = verdict => ({ byThreshold: Object.fromEntries(GO_THRESHOLDS.map(threshold => [threshold, {
-    best: { verdict, sourceComplete: true, safetyGated: false },
+  const horizon = verdict => ({ scopeCoverage:{cell:{complete:true}}, byThreshold: Object.fromEntries(GO_THRESHOLDS.map(threshold => [threshold, {
+    best: { verdict, sourceComplete: true, safetyGated: false }, absoluteOnlyBest:{verdict:"GO",sourceComplete:true,safetyGated:false},
   }])) });
   const summary = secondarySummaries([
     { hour: 6, today: horizon("SKIP"), tomorrow: horizon("GO") },
@@ -111,6 +138,7 @@ await check("secondary summaries keep morning tomorrow and evening horizons sepa
       assert.equal(counts[verdict], 1);
       assert.equal(counts.ungated, 1);
       assert.equal(counts.selected, 1);
+      assert.equal(counts.absoluteOnly.goShare, 1);
     }
   }
   const empty = secondarySummaries([]);

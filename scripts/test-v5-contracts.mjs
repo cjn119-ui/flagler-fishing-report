@@ -22,6 +22,12 @@ await test('constructors and nested validators accept valid domain contracts',()
   assert.equal(validateFishingWindow(windowFixture()),true);assert.equal(validateRecommendation(recFixture()),true);
 });
 
+await test('recommendation benchmark context is an additive validated copy field',()=>{
+  const rec={...recFixture(),benchmarkLine:message("Fit 82 - above this spot's normal for October")};
+  assert.equal(validateRecommendation(rec),true);
+  assert.throws(()=>validateRecommendation({...rec,benchmarkLine:42}),/recommendation\.benchmarkLine/);
+});
+
 await test('species prediction additively validates season basis and coded history notes',()=>{
   const prediction=createSpeciesPrediction({id:'sp1',speciesId:'redfish',locationId:'vilano-bridge',mode:'inshore',window:windowFixture(),suitability:61,band:'Decent fit',calibratedProbability:null,confidence:70,confidenceReasons:[],eligibility:'realistic',eligibilityReason:{code:'history'},caps:[],setup:{},useLine:message(),historicalRate:{rate:.08,n:45,lowSample:true,band:'Occasional',month:10,unit:'trips',sourceLabel:'river, bridge and bank surveys'},seasonCurve:Array(12).fill(.2),waterFit:{state:'ideal'},seasonBasis:'absoluteOnly',seasonAbsoluteReference:.1407,seasonReferenceFallback:false,historyNotes:[message('Inshore catches are spread over many species.'),{code:'season.thinPeak',params:{species:'Redfish',month:'October'},text:'Too few survey catches to pick Redfish\'s best month; season uses its overall October survey rate.'}],detailsRef:null});
   assert.equal(validateSpeciesPrediction(prediction),true);
@@ -56,14 +62,19 @@ await test('validates source freshness and strict UTC timestamps',()=>{
 });
 
 await test('versioned A4 parameters include the provisional floor and hash canonically',async()=>{
-  assert.equal(validateParams(),true);assert.equal(MODEL_PARAMS.history.realisticFloor,.05);assert.equal(MODEL_PARAMS.history.realisticFloorProvisional,true);assert.equal(MODEL_PARAMS.thresholds.goSuitabilityMin,null);
+  assert.equal(validateParams(),true);assert.equal(MODEL_PARAMS.history.realisticFloor,.05);assert.equal(MODEL_PARAMS.history.realisticFloorProvisional,true);assert.equal(MODEL_PARAMS.thresholds.goSuitabilityMin,70);assert.equal(MODEL_PARAMS.thresholds.goBenchmarkMargin,4);
   assert.equal(canonicalize({z:1,a:{y:2,x:3}}),'{"a":{"x":3,"y":2},"z":1}');
-  const [one,two]=await Promise.all([hashModelParams(),hashModelParams(JSON.parse(JSON.stringify(MODEL_PARAMS)))]);assert.match(one,/^[a-f0-9]{64}$/);assert.equal(one,two);assert.equal(one,'e59d66d0d8b6d7b47336f00ceb11e3e87f6c87b93c47a1b14146e57756c4ef5d'); // A4 inshore season parameters add the versioned bucket-scaled absolute reference.
+  const [one,two]=await Promise.all([hashModelParams(),hashModelParams(JSON.parse(JSON.stringify(MODEL_PARAMS)))]);assert.match(one,/^[a-f0-9]{64}$/);assert.equal(one,two);
   const bad=JSON.parse(JSON.stringify(MODEL_PARAMS));bad.weightsByMode.surf.season=.23;assert.throws(()=>validateParams(bad),/active weights must sum to 1/);
+  const incomplete=JSON.parse(JSON.stringify(MODEL_PARAMS));delete incomplete.benchmarks.goSeasonal['vilano-bridge:inshore'];assert.throws(()=>validateParams(incomplete),/benchmark.*vilano-bridge:inshore/i);
+  const missingKey=JSON.parse(JSON.stringify(MODEL_PARAMS));delete missingKey.benchmarks.goSeasonal['vilano-bridge:inshore']['01-01'];assert.throws(()=>validateParams(missingKey),/benchmark.*01-01/i);
+  const invalidNull=JSON.parse(JSON.stringify(MODEL_PARAMS));invalidNull.benchmarks.goSeasonal['vilano-bridge:inshore']['01-01']=null;delete invalidNull.benchmarks.nullReasons['vilano-bridge:inshore']['01-01'];assert.throws(()=>validateParams(invalidNull),/benchmark.*01-01.*reason/i);
+  const nonfinite=JSON.parse(JSON.stringify(MODEL_PARAMS));nonfinite.benchmarks.goSeasonal['vilano-bridge:inshore']['01-01']=Infinity;assert.throws(()=>validateParams(nonfinite),/benchmark.*01-01/i);
+  const [marginHash,tableHash]=await Promise.all([hashModelParams({...MODEL_PARAMS,thresholds:{...MODEL_PARAMS.thresholds,goBenchmarkMargin:5}}),hashModelParams({...MODEL_PARAMS,benchmarks:{...MODEL_PARAMS.benchmarks,goSeasonal:{...MODEL_PARAMS.benchmarks.goSeasonal,'vilano-beach:surf':{...MODEL_PARAMS.benchmarks.goSeasonal['vilano-beach:surf'],'01-01':MODEL_PARAMS.benchmarks.goSeasonal['vilano-beach:surf']['01-01']+1}}}})]);assert.notEqual(marginHash,one);assert.notEqual(tableHash,one);
 });
 
 await test('canonical copy fixtures cover midnight countdown and elapsed window',async()=>{
-  const files=['midnight.json','elapsed-window.json'];
+  const files=['midnight.json','elapsed-window.json','seasonal-go.json'];
   for(const file of files){const fixture=JSON.parse(await readFile(new URL(`./fixtures/v5/copy/${file}`,import.meta.url),'utf8'));assert.deepEqual(formatRunCopy(fixture.run,fixture.now),fixture.expected,file);}
 });
 

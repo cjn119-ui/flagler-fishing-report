@@ -107,6 +107,7 @@ export function formatHistoryNotes(run) {
 export function formatRunCopy(run, now) {
   return {
     headline:formatHeadline(run,now), whenLabel:formatWhenLabel(run,now), useLine:formatUseLine(run,now),
+    ...(run.recommendation.benchmarkLine?{benchmarkLine:formatCopyMessage(run.recommendation.benchmarkLine)}:{}),
     reason:formatReason(run,now), gates:formatGates(run,now), confidence:formatConfidence(run,now),
     freshness:formatFreshness(run,now), windowStatus:formatWindowStatus(run,now), historicalRates:formatRates(run,now),historyNotes:formatHistoryNotes(run),
   };

@@ -7,6 +7,7 @@ import { ACTIVE_SPOTS } from "../site/v5/spots.js";
 import { SPECIES } from "../site/v5/species.js";
 import { loadFirstCoastHistory } from "../site/v5/engine/history.js";
 import { buildPredictionRun } from "../site/v5/engine/run.js";
+import { reasonFor } from "../site/v5/engine/run.js";
 import { validatePredictionRun, validateNormalizedObservation, validateSpeciesPrediction } from "../site/v5/engine/contracts.js";
 import { buildArchiveBundle, restoreArchiveBundle, uploadArchiveBundle } from "./archive-v5.mjs";
 
@@ -17,6 +18,7 @@ const miniLocations=[ACTIVE_SPOTS.find(x=>x.modes.includes("surf"))],miniSpecies
 let passed=0,failed=0;const check=async(name,fn)=>{try{await fn();passed++;console.log(`PASS ${name}`);}catch(e){failed++;console.log(`FAIL ${name}: ${e?.stack??e}`);}};
 let miniBaseline=null;
 const canonical=value=>Array.isArray(value)?`[${value.map(canonical).join(",")}]`:value&&typeof value==="object"?`{${Object.keys(value).sort().map(k=>`${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}`:JSON.stringify(value);
+await check("provisional GO copy cap remains only while either approved-rule parameter is null",()=>{const candidate={suitability:85,confidence:90,eligibility:"realistic",caps:[],gates:[]},base={thresholds:{goSuitabilityMin:70,goBenchmarkMargin:4,greatFit:70}};assert.notEqual(reasonFor(candidate,base).code,"provisionalGoThreshold");assert.equal(reasonFor(candidate,{thresholds:{...base.thresholds,goSuitabilityMin:null}}).code,"provisionalGoThreshold");assert.equal(reasonFor(candidate,{thresholds:{...base.thresholds,goBenchmarkMargin:null}}).code,"provisionalGoThreshold");});
 const build=async(extra={})=>buildPredictionRun({...params,...extra});
 const gzipSize=value=>gzipSync(canonical(value)).byteLength;
 

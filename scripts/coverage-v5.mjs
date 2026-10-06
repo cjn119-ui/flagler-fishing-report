@@ -30,13 +30,13 @@ for(const spot of ACTIVE_SPOTS)for(const mode of spot.modes)for(let month=1;mont
    const conditions={at,windMph:6,windGustMph:8,windDirectionDeg:(spot.windExposure?.facingDeg??90)+180,waterTempF,waveHeightM,rainPct:0,thunder:false,tideRateFtPerHr:null,pressureChange6hHpa:-1,alerts:[]};
    const factors=calculateFactors({species,mode,conditions,at:conditions.at,historyTiming:timing,spot,params:candidateParams});
    const conf=calculateConfidence({conditions,mode,spot,historyN:timing.historicalRate.n,historyAvailable:true,forecastAgeHours:1,alertsChecked:true,wavesAvailable:true,params:candidateParams});
-   const eligibility="realistic", verdict=verdictFor({suitability:factors.suitability,confidence:conf.confidence,eligibility,conditionsReady:true,params:candidateParams});
+   const eligibility="realistic", verdict=verdictFor({suitability:factors.suitability,confidence:conf.confidence,eligibility,conditionsReady:true,locationId:spot.id,mode,date:day,params:candidateParams});
    const item={species:species.id,score:factors.suitability,verdict};if(!best||item.score>best.score)best=item;
  }
  if(hasRealistic){s.realisticCells++;loc.realistic++;}if(best?.verdict==="GO"){s.goCells++;s.goLocations.add(spot.id);loc.go++;}else if(!best)noTarget.push(`${spot.id}/${mode}/${month}`);
 }
 console.log("V5 factor-level synthetic screen (one instant; not a recommendation, frequency estimate, or acceptance)");
-console.log("Method: checked forecast and alerts, favorable single-slot conditions. Model params remain provisional; screen candidates are GO threshold 70 and realistic floor .05. Tide input omitted in this legacy screen.");
+console.log("Method: checked forecast and alerts, favorable single-slot conditions. GO requires suitability >=70 and >= the frozen cell/season benchmark +4; realistic floor .05 remains provisional. Tide input omitted in this single-slot screen.");
 for(const mode of modes){const s=summary[mode];console.log(`${mode}: candidate factor-level GO ${s.goCells}/${s.cells} location-month cells across ${s.goLocations.size}/${ACTIVE_SPOTS.filter(x=>x.modes.includes(mode)).length} locations; realistic candidates ${s.realisticCells}/${s.cells}.`);}
 if(noTarget.length)console.log(`Factor screen cells without realistic targets: ${noTarget.length}`);
 
@@ -64,7 +64,7 @@ function runCoverage(historyInput,tideAmplitudeFtPerHr){
 }
 const e2e=runCoverage(history,0.25);
 console.log("V5 end-to-end synthetic coverage (scoreSpecies through caps, eligibility, confidence, gates, 60–150 minute windows, final verdict; not hindcast/frequency/acceptance)");
-console.log("Candidate-only parameters: GO threshold 70, realistic floor .05, tide rate scale .5 ft/hr. These remain provisional. Each cell uses six contiguous 30-minute slots, checked forecast/alerts, tide-rate sinusoid with 12.42-hour semidiurnal period and 0.25 ft/hr amplitude, ideal temperature, species-matched plausible waves, safe wind, dry conditions, and falling pressure.");
+console.log("Fixed GO parameters: suitability 70 and seasonal benchmark margin +4. The realistic floor .05 and tide rate scale .5 ft/hr remain provisional. Each cell uses six contiguous 30-minute slots, checked forecast/alerts, tide-rate sinusoid with 12.42-hour semidiurnal period and 0.25 ft/hr amplitude, ideal temperature, species-matched plausible waves, safe wind, dry conditions, and falling pressure.");
 for(const mode of modes){const summary=e2e[mode],active=ACTIVE_SPOTS.filter(x=>x.modes.includes(mode)).length;console.log(`${mode}: GO ${summary.goCells}/${summary.denominator} active location×mode×month cells; GO windows ${summary.goWindows}; cells with a qualifying window ${summary.windowCells}; cells with realistic candidates ${summary.realisticCells}; denominator ${active} active locations × 12 months = ${summary.denominator}.`);console.log(`  season basis (species × spot × month evaluations): relativeCapped ${summary.basis.relativeCapped}, absoluteOnly ${summary.basis.absoluteOnly}, unavailable ${summary.basis.unavailable}`);for(const [id,value] of Object.entries(summary.bySpot))console.log(`  ${id}: denominator ${value.denominator}, GO ${value.go}, window ${value.window}, realistic ${value.realistic}`);}
 
 // Force the conservative cap fallback in a cloned history to represent D1+D2 without R1.
