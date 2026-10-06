@@ -38,3 +38,29 @@ The archive command is a local deterministic bundle/restore scaffold. Its upload
 ## Verification notes
 
 `scripts/fixtures/v5/run-inputs.json` is a deterministic normalized-source recording for offline builder/generator checks. It is synthetic test data, not a live observation archive and not evidence for hindcast coverage or launch frequency.
+
+## Review fixes (F1–F18)
+
+### Report example: perfect fixture day, 2026-10-05 08:00 ET
+
+| | Before (adversarial review) | After (A4 review-fix parameters) |
+|---|---|---|
+| Recommendation | MAYBE · Sheepshead morning window · Vilano Bridge · 96 | MAYBE · Bluefish morning window · Vilano Beach · 84 |
+| Confidence / reason | High · 80 · tide unavailable; “survey history ... does not support a realistic target” beside “Great fit” | Moderate · 72 · “This is a strong GO candidate, but the GO threshold is provisional; recommendation stays MAYBE.” |
+| Targets | Sheepshead 96, mangrove 92, black drum 91, all tagged Rare | Bluefish 84, whiting 81, pompano 80; all realistic at this spot and mode |
+| Backup / outlook | Invalid other-mode sandy-beach sheepshead; Promising ×5 | Same-spot later window with similar fit; month-rate outlook is Promising for this synthetic fixture |
+
+### Report example: hazardous conditions
+
+Reproducing inputs: 24 mph onshore wind, 33 mph gusts, 2.4 m surf, 90% precipitation, and 45% thunder probability. Before, the review observed MAYBE scores from 69–93 across related rough-weather cases. After, the all-spot fixture replay returns **SKIP · 49** at Vilano Beach, with “Wind, surf or rain conditions limit this window,” no targets below the fit floor, and no backup. Outlook dates overlapping the rough forecast are labelled Tough.
+
+### Implemented
+
+- **F1:** Versioned event/severity policy in `MODEL_PARAMS`; it matches adapter-shaped NWS event text and severity Extreme/Severe during an intersecting alert interval. No `severity: "warning"` shortcut.
+- **F2/F14/F15:** Only realistic, fit-floor species may lead, appear in targets, or appear in focused recommendations. Backup candidates must be realistic, within five suitability points, and pass their own spot/mode eligibility; reasons describe the selected backup tier.
+- **F3/F5:** Realistic floor is **0.05 provisional**. Reason copy follows current-data/condition/season caps before gates and confidence. Season peaks require 10 unshrunk hits and the relative season score is capped by rate / 0.20.
+- **F4/F7:** Available factor share below 0.60 or absent critical conditions forces low confidence and suitability ≤49; wind, wave, rain, thunder, onshore exposure, and gust soft caps prevent high scores in hazardous conditions. The GO suitability threshold remains null/provisional.
+- **F6/F17/F18:** Late-evening runs emit a validated `closed` today state while building tomorrow; unzoned clocks are rejected and malformed locations are skipped with typed notes. `formatVerdictLine` supplies verdict, species, place, and time.
+- **F8–F13/F16:** Pressure is unavailable more than one hour after the latest sample; grid/hourly fallback uses the upper range bound; observation-array adapters and fixtures use contract-valid `{ rows }`; CO-OPS high/low tides produce cosine-interpolated height/rate; outlook considers monthly species rates and overlapping forecast intervals; freshness prefers issuance time and hides unavailable ages; water source and documented tide-distance disclosures are emitted.
+
+**Still provisional:** launch realistic floor 0.05, GO suitability threshold, and tide-rate normalization scale. The documented tide-scale proposal is 0.5 ft/hr, matching the coverage screen; the tide factor remains unavailable until that proposal is reviewed. Interpolated live tide is present in timelines. The October fixture outlook's Promising ×5 follows the monthly survey rates and should not be read as a five-day forecast endorsement.

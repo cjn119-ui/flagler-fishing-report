@@ -17,7 +17,7 @@ export async function fetchNwsObservations(location, { points, fetchImpl, now = 
       windGustMs: f.properties?.windGust?.value ?? null, textDescription: f.properties?.textDescription ?? null }))
       .sort((a, b) => Date.parse(b.time ?? "") - Date.parse(a.time ?? ""));
     return observation({ provider: "nws", kind: "pressureObservations", locationId, station: stationId, url: observationsUrl,
-      fetchedAt: new Date(now).toISOString(), observedAt: values[0]?.time ?? null, values, units: "pressure Pa; temperature °C; wind m/s",
+      fetchedAt: new Date(now).toISOString(), observedAt: values[0]?.time ?? null, values: { rows: values }, units: "pressure Pa; temperature °C; wind m/s",
       stale: isStale(values[0]?.time, 6 * 3600000, now) });
   } catch (error) { return failure({ provider: "nws", kind: "pressureObservations", locationId, station: stationId, url }, error); }
 }

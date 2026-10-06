@@ -14,7 +14,7 @@ export async function fetchCoopsWaterTemperature(location, { fetchImpl, now = Da
       .filter(x => x.time && Number.isFinite(x.temperatureC));
     return observation({ provider: "coops", kind: "waterTemperature", locationId, station, url, fetchedAt: new Date(now).toISOString(),
       observedAt: values.at(-1)?.time ?? null, validFrom: values[0]?.time ?? null, validTo: values.at(-1)?.time ?? null,
-      units: "°C", values, stale: isStale(values.at(-1)?.time, 3 * 3600000, now) });
+      units: "°C", values: { rows: values }, stale: isStale(values.at(-1)?.time, 3 * 3600000, now) });
   } catch (error) { return failure({ provider: "coops", kind: "waterTemperature", locationId, station, url }, error); }
 }
 function parseTime(value) { const m = /^(\d{4})-(\d\d)-(\d\d) (\d\d):(\d\d)$/.exec(value ?? ""); return m ? new Date(Date.UTC(+m[1], +m[2]-1, +m[3], +m[4], +m[5])).toISOString() : null; }

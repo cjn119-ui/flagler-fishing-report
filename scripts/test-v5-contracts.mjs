@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {SCHEMA_VERSION,MODEL_VERSION,createLocation,createConditions,createNormalizedObservation,createPredictionFactor,createFishingWindow,createSpeciesPrediction,createRecommendation,createPredictionRun,validateLocation,validateConditions,validateNormalizedObservation,validatePredictionFactor,validateFishingWindow,validateSpeciesPrediction,validateRecommendation,validatePredictionRun} from '../site/v5/engine/contracts.js';
 import {MODEL_PARAMS,validateParams,canonicalize,hashModelParams} from '../site/v5/engine/params.js';
-import {formatRunCopy} from '../site/v5/engine/copy.js';
+import {formatRunCopy,formatVerdictLine,formatFreshness} from '../site/v5/engine/copy.js';
 
 let passed=0;
 async function test(name,fn){try{await fn();passed++;console.log(`PASS ${name}`);}catch(error){console.error(`FAIL ${name}: ${error.stack??error}`);process.exitCode=1;}}
@@ -45,10 +45,10 @@ await test('validates source freshness and strict UTC timestamps',()=>{
   assert.throws(()=>validatePredictionRun(bad),/run\.inputs\.sourceStatus\[0\]\.fetchedAt: expected ISO-8601 UTC timestamp ending in Z/);
 });
 
-await test('parameters match approved values, placeholders, and hash canonically',async()=>{
-  assert.equal(validateParams(),true);assert.equal(MODEL_PARAMS.history.realisticFloor,null);assert.equal(MODEL_PARAMS.thresholds.goSuitabilityMin,null);
+await test('versioned A4 parameters include the provisional floor and hash canonically',async()=>{
+  assert.equal(validateParams(),true);assert.equal(MODEL_PARAMS.history.realisticFloor,.05);assert.equal(MODEL_PARAMS.history.realisticFloorProvisional,true);assert.equal(MODEL_PARAMS.thresholds.goSuitabilityMin,null);
   assert.equal(canonicalize({z:1,a:{y:2,x:3}}),'{"a":{"x":3,"y":2},"z":1}');
-  const [one,two]=await Promise.all([hashModelParams(),hashModelParams(JSON.parse(JSON.stringify(MODEL_PARAMS)))]);assert.match(one,/^[a-f0-9]{64}$/);assert.equal(one,two);
+  const [one,two]=await Promise.all([hashModelParams(),hashModelParams(JSON.parse(JSON.stringify(MODEL_PARAMS)))]);assert.match(one,/^[a-f0-9]{64}$/);assert.equal(one,two);assert.equal(one,'cbe64b9229435262b53b080b58cb08725c2ee4f432a26260613a46953878ac2b'); // Intentional A4 parameter change: alert policy, .05 provisional floor, season/safety caps, and documented tide-scale proposal.
   const bad=JSON.parse(JSON.stringify(MODEL_PARAMS));bad.weightsByMode.surf.season=.23;assert.throws(()=>validateParams(bad),/active weights must sum to 1/);
 });
 
@@ -61,6 +61,13 @@ await test('copy uses non-angling trip labels and qualitative low-sample bands',
   const run=runFixture();run.recommendation.mode='inshore';run.recommendation.targets=[{speciesId:'redfish',historicalRate:{rate:.08,n:45,lowSample:true,band:'Occasional',month:10,unit:'trips',sourceLabel:'river, bridge and bank surveys'}}];
   const text=formatRunCopy(run,'2026-10-06T11:00:00Z').historicalRates[0].text;
   assert.match(text,/Occasional in October surveys — low sample/);assert.match(text,/river, bridge and bank surveys/);assert.doesNotMatch(text,/angler|chance|probability/i);
+});
+
+await test('copy verdict line is complete and freshness uses issue time without unavailable ages',()=>{
+  const run=runFixture();run.recommendation.targets=[{speciesId:'whiting',name:'Whiting'}];
+  assert.match(formatVerdictLine(run),/^GO — Whiting at Flagler Beach Pier,/);
+  run.inputs.sourceStatus=[{kind:'gridForecast',label:'Forecast',status:'current',available:true,stale:false,usedFallback:false,fetchedAt:'2026-10-06T10:00:00Z',issuedAt:'2026-10-06T07:00:00Z'},{kind:'alerts',label:'Alerts',status:'unavailable',available:false,stale:false,usedFallback:false,fetchedAt:'2026-10-06T10:00:00Z'}];
+  const freshness=formatFreshness(run,'2026-10-06T10:30:00Z');assert.match(freshness,/210 min old/);assert.match(freshness,/Alerts: Data unavailable/);assert.doesNotMatch(freshness,/Alerts: Data unavailable ·/);
 });
 
 if(!process.exitCode)console.log(`PASS ${passed} contract test groups (${MODEL_VERSION}; schema ${SCHEMA_VERSION.major}.${SCHEMA_VERSION.minor})`);

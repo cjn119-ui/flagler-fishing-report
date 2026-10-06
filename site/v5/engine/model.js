@@ -33,7 +33,7 @@ export function classifyEligibility({species,spot,mode,rate,historyAvailable=tru
   if(params.history.realisticFloor==null||rate<params.history.realisticFloor)return {eligibility:"rare",eligibilityReason:{code:"belowRealisticFloor"}};
   return {eligibility:"realistic",eligibilityReason:{code:"realistic"}};
 }
-function cReason(code,penalty,kind="live",params={}){return {code,params,text:{code,params,text:({forecastMissing:"Forecast unavailable",forecastAging:"Forecast is aging",alertsUnchecked:"Weather alerts were not checked",tideUnavailable:"Tide timing is unavailable",distantTideStation:"Tide station is far from this spot",wavesUnavailable:"Fresh wave data is unavailable",waterTempUnavailable:"Water temperature is unavailable",inshoreBuoyTemp:"Inshore temperature uses an offshore buoy",pressureUnavailable:"Pressure trend is unavailable",historyUnavailable:"Survey history is unavailable",historyThin:"Survey history sample is thin"})[code]??code},penalty,kind};}
+function cReason(code,penalty,kind="live",params={}){return {code,params,text:{code,params,text:({forecastMissing:"Forecast unavailable",forecastAging:"Forecast is aging",alertsUnchecked:"Weather alerts were not checked",tideUnavailable:"Tide timing is unavailable",distantTideStation:"Tide station is far from this spot",wavesUnavailable:"Fresh wave data is unavailable",waterTempUnavailable:"Water temperature is unavailable",inshoreBuoyTemp:"Inshore temperature uses an offshore buoy",pressureUnavailable:"Pressure trend is unavailable",historyUnavailable:"Survey history is unavailable",historyThin:"Survey history sample is thin",notEnoughCurrentData:"Not enough current data is available",sourceUnavailable:"Some current data sources are unavailable."})[code]??code},penalty,kind};}
 export function calculateConfidence({conditions={},mode,spot={},historyN=null,historyAvailable=true,forecastAgeHours=null,alertsChecked=false,wavesAvailable=false,tideAvailable=null,params=MODEL_PARAMS}){
   const reasons=[];
   if(!has(forecastAgeHours)||forecastAgeHours>params.freshness.forecastMaxAgeHours)reasons.push(cReason("forecastMissing",params.confidence.forecastMissingOrStale));
@@ -55,7 +55,9 @@ export function safetyGates(c,{mode="surf",params=MODEL_PARAMS}={}){
   const out=[];const add=(code,text)=>out.push({code,text:{code,params:{},text},startsAt:c.validFrom??null,endsAt:c.validTo??null,severity:"safety"});
   if(c.thunder===true)add("thunder","Thunderstorms are expected during this window.");
   if((has(c.windMph)&&c.windMph>=params.factors.safety.windSkipMph)||(has(c.windGustMph)&&c.windGustMph>=params.factors.safety.gustSkipMph))add("wind","Wind reaches unsafe levels during this window.");
-  if(c.alerts?.some(a=>a.severity==="warning"||a.active===true&&a.level==="warning"))add("warning","An active weather warning covers this window.");
+  const rank={Minor:0,Moderate:1,Severe:2,Extreme:3}, from=Date.parse(c.validFrom??""), to=Date.parse(c.validTo??"");
+  const covers=a=>{const start=Date.parse(a.effective??a.onset??a.startsAt??""),end=Date.parse(a.ends??a.expires??a.validTo??"");return (!Number.isFinite(start)||!Number.isFinite(to)||start<to)&&(!Number.isFinite(end)||!Number.isFinite(from)||end>from);};
+  if(c.alerts?.some(a=>(params.factors.alertGates??[]).some(g=>g.events.includes(a.event)&&rank[a.severity]>=rank[g.minimumSeverity]&&covers(a))))add("warning","An active severe weather or marine alert covers this window.");
   if(mode!=="inshore"&&has(c.waveHeightM)&&c.waveHeightM>params.factors.waves.safetySkipAboveM)add("waves","Surf reaches unsafe levels during this window.");
   return out;
 }
@@ -105,7 +107,7 @@ export function findSpeciesWindows(rows,{params=MODEL_PARAMS,locationId,mode,spe
 }
 export function haversineMiles(a,b){const R=3958.7613,r=Math.PI/180,dLat=(b.lat-a.lat)*r,dLon=(b.lon-a.lon)*r,aa=Math.sin(dLat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(aa));}
 export function tieCandidates(candidates,{previous=null,preferences={},params=MODEL_PARAMS,preferenceKey="default"}={}){
-  candidates=candidates.filter(x=>x.eligibility!=="bycatch");
+  candidates=candidates.filter(x=>x.eligibility==="realistic");
   if(!candidates.length)return {selected:null,tiedWith:[],selection:{reason:"switched",heldFromRunId:null,priorRecommendationId:null,preferenceKey}};
   const tier={GO:2,MAYBE:1,SKIP:0};const sorted=[...candidates].sort((a,b)=>tier[b.verdict]-tier[a.verdict]||b.suitability-a.suitability);
   const best=sorted[0], tied=sorted.filter(x=>x.verdict===best.verdict&&best.suitability-x.suitability<=params.selection.similarSuitabilityDelta);
@@ -122,10 +124,18 @@ export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,h
   const scored=(slots??[]).map(at=>{const sourceConditions=conditionsAt(at),wavesOk=mode==="inshore"||waveCoverage(at,horizon,{mode,spot})===true,c=mode!=="inshore"&&!wavesOk?{...sourceConditions,waveHeightM:null}:sourceConditions,ht=timing?{...timing,waterFit:getWaterFit(species,c.waterTempF)}:null,astroDate=localKey(at);let astronomy=astronomyByDate.get(astroDate);if(!astronomy&&has(spot.lat)&&has(spot.lon)){astronomy=getAstronomy(astroDate,spot.lat,spot.lon);astronomyByDate.set(astroDate,astronomy);}const f=calculateFactors({species,mode,conditions:c,at,historyTiming:ht,spot,astronomy,params});
     const cap=[];if(waterOutside(species,c.waterTempF))cap.push({code:"waterOutsideRange",params:{waterTempF:c.waterTempF,range:species.waterF}});if(ht?.seasonAvailable&&ht.seasonScore<params.history.seasonCapBelow)cap.push({code:"outOfSeason",params:{relativeSeason:ht.seasonScore}});if(eligibility.eligibility!=="realistic")cap.push({code:"notRealistic",params:{eligibility:eligibility.eligibility,reason:eligibility.eligibilityReason.code}});
     let rawSuitability=f.rawSuitability;if(cap.some(x=>x.code==="waterOutsideRange"||x.code==="outOfSeason"))rawSuitability=Math.min(rawSuitability??0,params.history.seasonCapSuitability);
+    const availableShare=f.factors.reduce((sum,x)=>sum+(x.available?(params.weightsByMode[mode][x.key]??0):0),0),critical=mode==="inshore"?["wind","rain"]:["wind","rain","waves"],allCriticalMissing=critical.every(key=>!f.factors.find(x=>x.key===key)?.available),cp=params.factors.conditionCaps,score=key=>f.factors.find(x=>x.key===key)?.score;
+    const onshore=has(c.windDirectionDeg)&&has(spot?.windExposure?.facingDeg)&&Math.abs(((c.windDirectionDeg-spot.windExposure.facingDeg+540)%360)-180)<=params.factors.wind.onshoreSectorHalfWidthDeg;
+    const severeCondition=(has(score("wind"))&&score("wind")<cp.sinkBelow)||(mode!=="inshore"&&has(score("waves"))&&score("waves")<cp.sinkBelow)||(has(score("rain"))&&score("rain")<cp.sinkBelow)||(has(c.rainPct)&&c.rainPct>=cp.rainProbabilityPct)||(has(c.thunderPct)&&c.thunderPct>=cp.thunderProbabilityPct)||(mode!=="inshore"&&has(c.waveHeightM)&&c.waveHeightM>cp.waveHeightM)||(onshore&&has(c.windMph)&&c.windMph>=cp.onshoreWindMph)||(has(c.windGustMph)&&c.windGustMph>=cp.windGustMph);
+    const insufficientData=availableShare<params.factors.minimumAvailableWeightShare||allCriticalMissing;
+    if(insufficientData){cap.push({code:"notEnoughCurrentData",params:{availableWeightShare:availableShare}});rawSuitability=Math.min(rawSuitability??100,cp.suitabilityCap);}
+    if(severeCondition){cap.push({code:"severeConditions",params:{}});rawSuitability=Math.min(rawSuitability??100,cp.suitabilityCap);}
     const suitability=has(rawSuitability)?Math.round(rawSuitability):null;
-    const conf=calculateConfidence({conditions:c,mode,spot,historyN:ht?.historicalRate?.n,historyAvailable:ht?.historyAvailable===true,forecastAgeHours,alertsChecked,wavesAvailable:wavesOk,tideAvailable:f.factors.find(x=>x.key==="tide")?.available===true,params}),gates=safetyGates(c,{mode,params});
+    let conf=calculateConfidence({conditions:c,mode,spot,historyN:ht?.historicalRate?.n,historyAvailable:ht?.historyAvailable===true,forecastAgeHours,alertsChecked,wavesAvailable:wavesOk,tideAvailable:f.factors.find(x=>x.key==="tide")?.available===true,params});
+    if(insufficientData)conf={...conf,confidence:Math.min(49,conf.confidence),confidenceLevel:"Low",confidenceReasons:[...conf.confidenceReasons,cReason("notEnoughCurrentData",60,"live")],amberQualifier:null};
+    const gates=safetyGates(c,{mode,params});
     const safetyInputsReady=has(c.windMph)&&has(c.windGustMph)&&typeof c.thunder==="boolean";
-    const conditionsReady=has(f.suitability)&&safetyInputsReady&&forecastAgeHours!=null&&forecastAgeHours<=params.freshness.forecastMaxAgeHours&&alertsChecked&&(mode==="inshore"||wavesOk);
+    const conditionsReady=has(f.suitability)&&!insufficientData&&safetyInputsReady&&forecastAgeHours!=null&&forecastAgeHours<=params.freshness.forecastMaxAgeHours&&alertsChecked&&(mode==="inshore"||wavesOk);
     const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,params});
     return {at,conditionsReady,suitability,rawSuitability,factors:f.factors,waterFit:f.waterFit,historyTiming:ht,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,caps:cap,confidence:conf.confidence,confidenceLevel:conf.confidenceLevel,confidenceReasons:conf.confidenceReasons,amberQualifier:conf.amberQualifier,gates,verdict,conditions:c};});
   const windows=findSpeciesWindows(scored,{params,locationId:spot.id,mode,speciesId:species.id,spot,now}).map(w=>{
@@ -143,11 +153,11 @@ export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,h
 export function selectDriver(candidates,options={}){return tieCandidates(candidates,options);}
 
 const waterType=mode=>mode==="inshore"?"inshore":"ocean";
-const acceptableBackup=x=>x.verdict==="GO"||x.verdict==="MAYBE";
+const acceptableBackup=x=>x.eligibility==="realistic"&&(x.verdict==="GO"||x.verdict==="MAYBE");
 /** Apply owner-approved backup tiers and the strict 7-mile straight-line radius. */
 export function chooseBackup(primary,candidates,{focusSpeciesId=null,params=MODEL_PARAMS}={}){
   const hasSafetyGate=(primary.gates??[]).some(x=>x.severity==="safety"||["thunder","wind","warning","waves"].includes(x.code));
-  const eligible=candidates.filter(x=>x.id!==primary.id&&acceptableBackup(x)&&!(primary.mode==="surf"&&x.mode==="pier")&&(x.speciesId===primary.speciesId||focusSpeciesId&&!hasSafetyGate));
+  const eligible=candidates.filter(x=>x.id!==primary.id&&acceptableBackup(x)&&(x.suitability??0)>=(primary.suitability??0)-5&&!(primary.mode==="surf"&&x.mode==="pier")&&(x.speciesId===primary.speciesId||focusSpeciesId&&!hasSafetyGate));
   const distance=x=>has(x.distanceMi)?x.distanceMi:primary.spot&&x.spot?haversineMiles(primary.spot,x.spot):null;
   const nearby=eligible.filter(x=>distance(x)!=null&&distance(x)<=params.selection.backupNearbyMiles);
   const later=eligible.filter(x=>x.locationId===primary.locationId&&x.mode===primary.mode&&Date.parse(x.start)>Date.parse(primary.end));
@@ -157,12 +167,12 @@ export function chooseBackup(primary,candidates,{focusSpeciesId=null,params=MODE
     nearby.filter(x=>waterType(x.mode)===waterType(primary.mode)&&x.locationId!==primary.locationId),
     eligible,
   ];
-  for(let i=0;i<tiers.length;i++)if(tiers[i].length){const sorted=tiers[i].sort((a,b)=>({GO:1,MAYBE:0}[b.verdict]-{GO:1,MAYBE:0}[a.verdict])||(b.suitability??0)-(a.suitability??0)||(distance(a)??Infinity)-(distance(b)??Infinity));const x=sorted[0];return {kind:x.speciesId!==primary.speciesId?"other-species":i===0?"other-mode":i===1?"later-window":i===2?"nearby-same-water":"best-anywhere",id:x.id,locationId:x.locationId,mode:x.mode,speciesId:x.speciesId,verdict:x.verdict,distanceMi:distance(x),area:x.area??null,reason:x.reason??(x.speciesId!==primary.speciesId?"Another target fits these conditions better.":"A nearby alternative may fit better.")};}
+  for(let i=0;i<tiers.length;i++)if(tiers[i].length){const sorted=tiers[i].sort((a,b)=>({GO:1,MAYBE:0}[b.verdict]-{GO:1,MAYBE:0}[a.verdict])||(b.suitability??0)-(a.suitability??0)||(distance(a)??Infinity)-(distance(b)??Infinity));const x=sorted[0],kind=x.speciesId!==primary.speciesId?"other-species":i===0?"other-mode":i===1?"later-window":i===2?"nearby-same-water":"best-anywhere";return {kind,id:x.id,locationId:x.locationId,mode:x.mode,speciesId:x.speciesId,verdict:x.verdict,distanceMi:distance(x),area:x.area??null,reason:x.reason??(kind==="later-window"?"A later window at this spot has a similar fit.":kind==="other-mode"?"A nearby spot in another mode has a similar fit.":"A nearby alternative has a similar fit.")};}
   return null;
 }
 /** Keep driver first; rank the remaining target candidates by suitability. */
 export function orderTargets(driver,targets,{limit=MODEL_PARAMS.selection.maxTargets}={}){
-  const pool=[driver,...targets].filter(x=>x&&x.eligibility!=="bycatch"),safeDriver=pool.includes(driver)?driver:null;
+  const pool=[driver,...targets].filter(x=>x&&x.eligibility==="realistic"&&(x.suitability??0)>=MODEL_PARAMS.thresholds.maybeSuitabilityMin),safeDriver=pool.includes(driver)?driver:null;
   const ordered=safeDriver?[safeDriver,...pool.filter(x=>x!==safeDriver&&x.speciesId!==safeDriver.speciesId).sort((a,b)=>(b.suitability??0)-(a.suitability??0))]:pool.sort((a,b)=>(b.suitability??0)-(a.suitability??0));
   return ordered.slice(0,Math.max(limit,1)).map(x=>({...x,rareTag:x.historicalRate?.band==="Rare"}));
 }

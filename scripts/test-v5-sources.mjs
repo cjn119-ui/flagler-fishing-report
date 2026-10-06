@@ -56,8 +56,8 @@ await check("NWS hourly and alerts parse independently", async () => {
   const points = await fetchNwsPoints(spot, { fetchImpl: async () => response(fixture("nws-points-land")), now });
   const hourly = await fetchNwsHourly(spot, { points, fetchImpl: async () => response(fixture("nws-hourly")), now });
   const alerts = await fetchNwsAlerts(spot, { fetchImpl: async () => response(fixture("nws-alerts")), now });
-  assert.equal(hourly.ok, true); assert.ok(hourly.values.length > 0);
-  assert.equal(alerts.ok, true); assert.equal(alerts.values.length, 1);
+  assert.equal(hourly.ok, true); assert.ok(hourly.values.rows.length > 0);
+  assert.equal(alerts.ok, true); assert.equal(alerts.values.rows.length, 1);assert.equal(alerts.values.rows[0].event,"Small Craft Advisory");assert.equal(alerts.values.rows[0].severity,"Minor");
   const bad = await fetchNwsAlerts(spot, { fetchImpl: failFetch, now });
   assert.equal(bad.ok, false); assert.equal(hourly.ok, true);
 });
@@ -77,12 +77,12 @@ await check("NWS station readings preserve pressure samples", async () => {
     [/\/gridpoints\/JAX\/89,29\/stations/, fixture("nws-stations")]]);
   const obs = await fetchNwsObservations(spot, { points, fetchImpl, now });
   assert.equal(obs.ok, true); assert.equal(obs.station, "KFIN");
-  assert.ok(obs.values[0].pressurePa > 0);
+  assert.ok(obs.values.rows[0].pressurePa > 0);
 });
 
 await check("CO-OPS GMT conversion and DST repeated hour remain distinct instants", async () => {
   const predictions = await fetchCoopsPredictions(spot, { fetchImpl: async () => response(fixture("coops-predictions")), now });
-  assert.equal(predictions.ok, true); assert.match(predictions.values[0].time, /Z$/);
+  assert.equal(predictions.ok, true); assert.match(predictions.values.rows[0].time, /Z$/);
   const a = parseCoopsGmt("2026-11-01 05:30"), b = parseCoopsGmt("2026-11-01 06:30");
   assert.notEqual(a, b);
   const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", timeZoneName: "short" });
@@ -91,7 +91,7 @@ await check("CO-OPS GMT conversion and DST repeated hour remain distinct instant
 
 await check("CO-OPS water temperature parses readings and handles missing station", async () => {
   const water = await fetchCoopsWaterTemperature(spot, { fetchImpl: async () => response(fixture("coops-water-temperature")), now });
-  assert.equal(water.ok, true); assert.equal(water.station, "8720218"); assert.ok(Number.isFinite(water.values[0].temperatureC));
+  assert.equal(water.ok, true); assert.equal(water.station, "8720218"); assert.ok(Number.isFinite(water.values.rows[0].temperatureC));
   const none = await fetchCoopsWaterTemperature({ ...spot, waterTemp: null }, { now });
   assert.equal(none.ok, false);
 });
@@ -113,13 +113,13 @@ await check("NWS wave intervals parse ISO durations and cover tomorrow's full wi
   const points = await fetchNwsPoints(spot, { fetchImpl: async () => response(fixture("nws-points-marine")), now, marine: true });
   const waves = await fetchNwsWaveForecast(spot, { points, fetchImpl: async () => response(fixture("nws-grid-wave")), now });
   assert.equal(waves.ok, true); assert.equal(waves.units, "wmoUnit:m");
-  assert.ok(waves.values.every(v => v.validFrom && v.validTo));
+  assert.ok(waves.values.rows.every(v => v.validFrom && v.validTo));
   assert.equal(parseDurationMs("P6DT13H"), (6 * 24 + 13) * 3600000);
   assert.equal(waveCoverage(waves, "2026-10-06T09:00:00Z", "2026-10-07T01:00:00Z"), true);
   assert.equal(waveCoverage({ ...waves, stale: true }, "2026-10-06T09:00:00Z", "2026-10-07T01:00:00Z"), false);
   const nulls = await fetchNwsWaveForecast(spot, { points, fetchImpl: async () => response({ properties: { updateTime: "2026-10-05T18:00:00Z",
     waveHeight: { uom: "wmoUnit:m", values: [{ validTime: "2026-10-06T09:00:00Z/PT2H", value: null }] } } }), now });
-  assert.equal(nulls.values[0].waveHeightM, null); assert.equal(waveCoverage(nulls, "2026-10-06T09:00:00Z", "2026-10-06T11:00:00Z"), false);
+  assert.equal(nulls.values.rows[0].waveHeightM, null); assert.equal(waveCoverage(nulls, "2026-10-06T09:00:00Z", "2026-10-06T11:00:00Z"), false);
   const empty = await fetchNwsWaveForecast(spot, { points, fetchImpl: async () => response({ properties: { updateTime: "2026-10-05T18:00:00Z",
     waveHeight: { uom: "wmoUnit:m", values: [] } } }), now });
   assert.equal(empty.ok, true); assert.equal(waveCoverage(empty, "2026-10-06T09:00:00Z", "2026-10-06T11:00:00Z"), false);

@@ -13,6 +13,6 @@ export async function fetchNwsHourly(location, { points, fetchImpl, now = Date.n
     const issuedAt = p.updateTime ?? p.generatedAt ?? null;
     return observation({ provider: "nws", kind: "hourlyForecast", locationId, station: points.station, url, fetchedAt: new Date(now).toISOString(),
       issuedAt, validFrom: values[0]?.startTime ?? null, validTo: values.at(-1)?.endTime ?? null,
-      units: "NWS quantitative values; windSpeed mph text; temperature °F", values, stale: isStale(issuedAt, 6 * 3600000, now) });
+      units: "NWS quantitative values; windSpeed mph text; temperature °F", values: { rows: values }, stale: isStale(issuedAt, 6 * 3600000, now) });
   } catch (error) { return failure({ provider: "nws", kind: "hourlyForecast", locationId, station: points?.station, url }, error); }
 }

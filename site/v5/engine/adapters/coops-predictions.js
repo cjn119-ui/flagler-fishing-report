@@ -10,9 +10,9 @@ export async function fetchCoopsPredictions(location, { fetchImpl, now = Date.no
   try {
     const { json } = await fetchJson(url, { fetchImpl, timeoutMs });
     if (!Array.isArray(json?.predictions)) throw new Error(json?.error?.message ?? "CO-OPS prediction rows missing");
-    const values = json.predictions.map(row => ({ time: parseCoopsGmt(row.t), type: row.type, heightFt: Number(row.v) }));
+    const values = { rows: json.predictions.map(row => ({ time: parseCoopsGmt(row.t), type: row.type, heightFt: Number(row.v) })) };
     return observation({ provider: "coops", kind: "tidePredictions", locationId, station, url, fetchedAt: new Date(now).toISOString(),
-      validFrom: values[0]?.time ?? null, validTo: values.at(-1)?.time ?? null, units: "ft MLLW; timestamps UTC", values });
+      validFrom: values.rows[0]?.time ?? null, validTo: values.rows.at(-1)?.time ?? null, units: "ft MLLW; timestamps UTC", values });
   } catch (error) { return failure({ provider: "coops", kind: "tidePredictions", locationId, station, url }, error); }
 }
 

@@ -10,6 +10,6 @@ export async function fetchNwsAlerts(location, { fetchImpl, now = Date.now(), ti
       urgency: f.properties?.urgency, certainty: f.properties?.certainty, effective: f.properties?.effective,
       expires: f.properties?.expires, onset: f.properties?.onset, ends: f.properties?.ends,
       headline: f.properties?.headline, description: f.properties?.description }));
-    return observation({ provider: "nws", kind: "alerts", locationId, url, fetchedAt: new Date(now).toISOString(), values: alerts });
+    return observation({ provider: "nws", kind: "alerts", locationId, url, fetchedAt: new Date(now).toISOString(), values: { rows: alerts } });
   } catch (error) { return failure({ provider: "nws", kind: "alerts", locationId, url }, error); }
 }

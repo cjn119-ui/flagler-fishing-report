@@ -86,9 +86,9 @@ export function getHistoricalTiming(history, { start, end, mode, speciesId, mrip
   if (!Number.isFinite(+date) || !Number.isFinite(+endDate) || +endDate<=+date) throw new TypeError("Invalid history window");
   const month=Number(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",month:"numeric"}).format(date)), query={speciesId,mripAliases,mode,month,waterF,waterTempF};
   const historyRate=getShrunkSpeciesMonthRate(history,query), curve=getSeasonCurve(history,{speciesId,mripAliases,mode});
-  const complete=curve.every(finite), peak=complete?Math.max(...curve):null;
-  const seasonScore=complete ? peak===0?0:Math.max(0,Math.min(1,historyRate.rate/peak)) : null;
+  const eligiblePeaks=curve.filter((rate,i)=>{const m=getSpeciesMonthRate(history,{speciesId,mripAliases,mode,month:i+1});return finite(rate)&&m.hitTrips>=MODEL_PARAMS.history.seasonPeakMinimumHits;}), complete=curve.every(finite), peak=eligiblePeaks.length?Math.max(...eligiblePeaks):null;
+  const seasonScore=complete&&finite(historyRate.rate)&&peak!==null ? Math.max(0,Math.min(1,historyRate.rate/peak,historyRate.rate/MODEL_PARAMS.history.seasonAbsoluteRateCap)) : null;
   const currentF=waterTempF;
   const waterFit=Array.isArray(waterF)&&waterF.length===4?{state:!finite(currentF)?null:currentF<waterF[0]?"cold":currentF>waterF[3]?"hot":currentF>=waterF[1]&&currentF<=waterF[2]?"ideal":"ok",currentF:finite(currentF)?currentF:null,minF:waterF[0],maxF:waterF[3],idealLowF:waterF[1],idealHighF:waterF[2]}:null;
-  return { historicalRate:{...historyRate,month,monthName:monthNames[month-1]}, historyAvailable:historyRate.available===true, seasonCurve:curve, seasonScore, seasonAvailable:seasonScore!==null, waterFit };
+  return { historicalRate:{...historyRate,month,monthName:monthNames[month-1]}, historyAvailable:historyRate.available===true, seasonCurve:curve, seasonPeakRate:peak, seasonScore, seasonAvailable:seasonScore!==null, waterFit };
 }

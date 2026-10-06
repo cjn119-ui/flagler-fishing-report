@@ -42,8 +42,8 @@ export function formatGates(run, _now) { return (run.recommendation.gates ?? [])
 export function formatConfidence(run, _now) {
   const r=run.recommendation, label=CONFIDENCE_COPY[r.confidenceLevel] ?? `${r.confidenceLevel ?? "Unknown"} confidence`;
   const summary=formatCopyMessage(r.confidenceSummary);
-  const reasons=(r.confidenceReasons ?? []).map(x=>formatCopyMessage(x.text ?? x)).filter(Boolean);
-  return [label, Number.isFinite(r.confidence) ? String(Math.round(r.confidence)) : null, summary || reasons.join("; ")].filter(Boolean).join(" · ");
+  const reasons=[...new Set((r.confidenceReasons ?? []).map(x=>x.code==="sourceUnavailable"?"Some current data sources are unavailable.":formatCopyMessage(x.text ?? x)).filter(Boolean))].slice(0,3);
+  return [label, Number.isFinite(r.confidence) ? String(Math.round(r.confidence)) : null, summary||reasons.join("; ")].filter(Boolean).join(" · ");
 }
 export function formatFreshness(run, now) {
   const sources=run.inputs?.sourceStatus ?? [];
@@ -51,14 +51,15 @@ export function formatFreshness(run, now) {
   if (!all.length) return FRESHNESS_COPY.unavailable;
   const labels=[];
   for (const s of all) {
-    const fetched=s.fetchedAt ? asDate(s.fetchedAt) : null;
+    const issued=s.issuedAt ? asDate(s.issuedAt) : null;
     const observed=s.observedAt ? asDate(s.observedAt) : null;
-    const ref=validDate(fetched ?? new Date(NaN)) ? fetched : observed;
+    const fetched=s.fetchedAt ? asDate(s.fetchedAt) : null;
+    const ref=validDate(issued??new Date(NaN))?issued:validDate(observed??new Date(NaN))?observed:fetched;
     const age=ref && validDate(ref) ? Math.max(0,Math.floor((asDate(now)-ref)/60000)) : s.ageMinutes;
     const stale=s.stale===true || s.status==="stale";
     const status=s.available===false || s.status==="unavailable" ? FRESHNESS_COPY.unavailable : stale ? FRESHNESS_COPY.stale : s.usedFallback ? FRESHNESS_COPY.fallback : FRESHNESS_COPY.current;
     const source=s.label ?? s.source ?? s.kind;
-    labels.push(`${source ? `${source}: ` : ""}${status}${Number.isFinite(age) ? ` · ${age} min old` : ""}`);
+    labels.push(`${source ? `${source}: ` : ""}${status}${status!==FRESHNESS_COPY.unavailable&&Number.isFinite(age) ? ` · ${age} min old` : ""}`);
   }
   return [...new Set(labels)].join("; ");
 }
@@ -100,4 +101,9 @@ export function formatRunCopy(run, now) {
     reason:formatReason(run,now), gates:formatGates(run,now), confidence:formatConfidence(run,now),
     freshness:formatFreshness(run,now), windowStatus:formatWindowStatus(run,now), historicalRates:formatRates(run,now),
   };
+}
+
+export function formatVerdictLine(run) {
+  const r=run.recommendation, name=r.targets?.find(x=>x.speciesId===r.driverSpeciesId)?.name??r.headline?.text?.split(" ")[0]??"Fishing";
+  return `${r.verdict} — ${name} at ${r.displayName}, ${formatWhenLabel(run,run.generatedAt)}`;
 }

@@ -17,13 +17,14 @@ export async function fetchNwsWaveForecast(location, { points, fetchImpl, now = 
     const issuedAt = p.updateTime ?? p.validTimes ?? null;
     return observation({ provider: "nws", kind: "waveForecast", locationId, station: points?.station, url,
       fetchedAt: new Date(now).toISOString(), issuedAt, validFrom: values[0]?.validFrom ?? null, validTo: values.at(-1)?.validTo ?? null,
-      units: field.uom ?? null, values, stale: isStale(issuedAt, 6 * 3600000, now) });
+      units: field.uom ?? null, values: { rows: values }, stale: isStale(issuedAt, 6 * 3600000, now) });
   } catch (error) { return failure({ provider: "nws", kind: "waveForecast", locationId, station: points?.station, url }, error); }
 }
 
 export function waveCoverage(observation, start, end) {
-  if (!observation?.ok || observation.stale || !Array.isArray(observation.values)) return false;
-  const intervals = observation.values.filter(v => Number.isFinite(v.waveHeightM) && v.validFrom && v.validTo)
+  const rows=Array.isArray(observation?.values)?observation.values:observation?.values?.rows;
+  if (!observation?.ok || observation.stale || !Array.isArray(rows)) return false;
+  const intervals = rows.filter(v => Number.isFinite(v.waveHeightM) && v.validFrom && v.validTo)
     .map(v => [Date.parse(v.validFrom), Date.parse(v.validTo)]).sort((a,b) => a[0]-b[0]);
   let coveredUntil = Date.parse(start);
   for (const [from, to] of intervals) {

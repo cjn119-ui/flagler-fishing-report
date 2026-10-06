@@ -1,6 +1,6 @@
 /** Versioned parameters. `null` values are deliberate gates for later evidence. */
 export const MODEL_PARAMS = Object.freeze({
-  paramsVersion: "v5-params-a3",
+  paramsVersion: "v5-params-a4-review-fixes",
   weightsByMode: Object.freeze({
     surf: Object.freeze({ season: 0.24, water: 0.18, tide: 0.14, light: 0.10, wind: 0.10, waves: 0.10, pressure: 0.05, solunar: 0.05, rain: 0.04 }),
     pier: Object.freeze({ season: 0.24, water: 0.18, tide: 0.14, light: 0.10, wind: 0.10, waves: 0.10, pressure: 0.05, solunar: 0.05, rain: 0.04 }),
@@ -12,13 +12,15 @@ export const MODEL_PARAMS = Object.freeze({
     numericMinN: 80,
     thinMinN: 30,
     bands: Object.freeze({ commonMin: 0.20, occasionalMin: 0.05 }),
-    realisticFloor: null,
+    realisticFloor: 0.05,
     realisticFloorProvisional: true,
     seasonCapBelow: 0.10,
     seasonCapSuitability: 20,
     unavailablePenalty: 15,
     thinPenalty: 15,
     lowSamplePenalty: 8,
+    seasonPeakMinimumHits: 10,
+    seasonAbsoluteRateCap: 0.20,
   }),
   thresholds: Object.freeze({
     greatFit: 70,
@@ -52,10 +54,17 @@ export const MODEL_PARAMS = Object.freeze({
     distantTideStationMiles: 15,
   }),
   factors: Object.freeze({
+    minimumAvailableWeightShare: 0.60,
+    conditionCaps: Object.freeze({ sinkBelow: 0.25, suitabilityCap: 49, rainProbabilityPct: 70, thunderProbabilityPct: 30, waveHeightM: 1.8, onshoreWindMph: 20, windGustMph: 30 }),
+    alertGates: Object.freeze([
+      Object.freeze({ events: ["Tornado Warning", "Severe Thunderstorm Warning", "Flash Flood Warning", "Gale Warning", "Storm Warning", "Hurricane Warning", "Tropical Storm Warning"], minimumSeverity: "Severe" }),
+      Object.freeze({ events: ["High Surf Advisory", "High Surf Warning", "Rip Current Statement", "Rip Current Warning", "Small Craft Advisory", "Coastal Flood Advisory", "Coastal Flood Warning"], minimumSeverity: "Severe" }),
+    ]),
     effectHelpsMin: 0.67,
     effectNeutralMin: 0.34,
     tideSensitivityMultipliers: Object.freeze({ high: 1.3, medium: 1, low: 0.6 }),
-    tide: Object.freeze({ oppositeDirectionFloor: 0.35, anyDirectionScore: 0.7, rateNormalizationScale: null, rateNormalizationScaleProvisional: true }),
+    // Coverage uses 0.5 ft/hr as a review proposal only; do not activate without calibration.
+    tide: Object.freeze({ oppositeDirectionFloor: 0.35, anyDirectionScore: 0.7, rateNormalizationScale: null, rateNormalizationScaleProvisional: true, rateNormalizationScaleProposal: 0.5 }),
     light: Object.freeze({ lowlightMinutes: 60, middayScore: 0.4, nightScore: 0.25, dayScore: 1, nightDaySpeciesScore: 0.3, anyScore: 0.8 }),
     solunar: Object.freeze({ majorMinutes: 60, minorMinutes: 30, majorScore: 1, minorScore: 0.75, neutralScore: 0.45, phaseBoost: 0.1, phaseDays: 3, synodicDays: 29.530588853 }),
     wind: Object.freeze({ fullScoreMaxMph: 10, zeroScoreMph: 25, gustZeroMph: 30, onshoreCalmPenalty: 0.15, onshoreRoughBonus: 0.05, offshoreCalmBonus: 0.1, inshoreOnshorePenalty: 0.1, onshoreSectorHalfWidthDeg: 90 }),
@@ -91,14 +100,18 @@ export function validateParams(params = MODEL_PARAMS) {
   assert(h.kNeighbor===80&&h.kMonth===40,"params.history","shrinkage priors must be 80/40");
   assert(h.numericMinN===80&&h.thinMinN===30,"params.history","sample cutoffs must be 80/30");
   assert(h.seasonCapBelow===0.10&&h.seasonCapSuitability===20,"params.history","relative season cap must be 0.10/20");
+  assert(Number.isInteger(h.seasonPeakMinimumHits)&&h.seasonPeakMinimumHits>0&&Number.isFinite(h.seasonAbsoluteRateCap)&&h.seasonAbsoluteRateCap>0,"params.history.season","minimum hits and absolute rate cap are required");
   assert(isObject(t),"params.thresholds","expected object");
   const go=t.goSuitabilityMin;assert(go===null||(Number.isFinite(go)&&go>=0&&go<=100),"params.thresholds.goSuitabilityMin","expected null pending hindcast or score from 0 to 100");if(go===null)assert(t.goSuitabilityMinProvisional===true,"params.thresholds.goSuitabilityMinProvisional","must mark null as provisional");
   for(const k of ["goConfidenceMin","highConfidenceMin","moderateConfidenceMin"])assert(Number.isFinite(t[k])&&t[k]>=0&&t[k]<=100,`params.thresholds.${k}`,"expected score from 0 to 100");
   assert(isObject(c),"params.confidence","expected object");for(const [k,v] of Object.entries(c))assert(Number.isFinite(v)&&v>=0&&v<=100,`params.confidence.${k}`,"expected penalty/score from 0 to 100");
   assert(isObject(f),"params.freshness","expected object");for(const [k,v] of Object.entries(f))assert(Number.isFinite(v)&&v>=0,`params.freshness.${k}`,"expected nonnegative number");
   assert(isObject(params.factors)&&isObject(params.windows)&&isObject(params.selection),"params","factors, windows, and selection groups are required");
+  assert(Number.isFinite(params.factors.minimumAvailableWeightShare)&&params.factors.minimumAvailableWeightShare>=0&&params.factors.minimumAvailableWeightShare<=1,"params.factors.minimumAvailableWeightShare","expected share from 0 to 1");
+  assert(Array.isArray(params.factors.alertGates)&&params.factors.alertGates.every(x=>Array.isArray(x.events)&&["Severe","Extreme"].includes(x.minimumSeverity)),"params.factors.alertGates","expected versioned event/severity table");
   assert(params.factors.tide.rateNormalizationScale===null||Number.isFinite(params.factors.tide.rateNormalizationScale)&&params.factors.tide.rateNormalizationScale>0,"params.factors.tide.rateNormalizationScale","expected null pending reviewed scale or positive number");
   if(params.factors.tide.rateNormalizationScale===null)assert(params.factors.tide.rateNormalizationScaleProvisional===true,"params.factors.tide.rateNormalizationScaleProvisional","must mark null as provisional");
+  assert(Number.isFinite(params.factors.tide.rateNormalizationScaleProposal)&&params.factors.tide.rateNormalizationScaleProposal>0,"params.factors.tide.rateNormalizationScaleProposal","expected a documented positive review proposal");
   return true;
 }
 

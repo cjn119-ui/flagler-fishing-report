@@ -32,12 +32,12 @@ else observations=await fetchSources({locations:ACTIVE_SPOTS,now});
 const fixedNow=now??process.env.__v5FixtureNow;
 const completelyFailed=observations.length>0&&observations.every(x=>!x?.ok);
 if(completelyFailed){
-  if(previousRuns.length){await preserveFiles(deployedSeed.runs.length?deployedSeed.files:localSeed.files);console.warn("all V5 sources failed; preserving the deployed runs");process.exit(0);}
+  if(previousRuns.length){await preserveFiles(deployedSeed.runs.length?deployedSeed.files:localSeed.files);console.error("all V5 sources failed; preserving the deployed runs");process.exit(1);}
   console.error("all V5 sources failed and no usable deployed runs are available");process.exit(1);
 }
 let built;
 try{built=await buildPredictionRun({now:fixedNow,locations:ACTIVE_SPOTS,species:SPECIES,history,observations,previousRuns,preferences:{favourites:[]},catalogHash,codeRevision:process.env.GITHUB_SHA??"working-tree"});}
-catch(error){if(previousRuns.length){await preserveFiles(deployedSeed.runs.length?deployedSeed.files:localSeed.files);console.error(`V5 build failed; preserving deployed runs: ${error.message}`);process.exit(0);}throw error;}
+catch(error){if(previousRuns.length){await preserveFiles(deployedSeed.runs.length?deployedSeed.files:localSeed.files);console.error(`V5 build failed; preserving deployed runs: ${error.message}`);process.exit(1);}throw error;}
 try{
 for(const run of [built.today,built.tomorrow])validatePredictionRun(run);
 const payloads={"today.json":built.today,"tomorrow.json":built.tomorrow,"index.json":{schemaVersion:1,generatedAt:built.today.generatedAt,recommendedHorizon:(Number(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour:"numeric",hour12:false}).format(new Date(fixedNow)))>=15?"tomorrow":"today"),today:{id:built.today.id,targetDate:built.today.targetDate,status:built.today.status},tomorrow:{id:built.tomorrow.id,targetDate:built.tomorrow.targetDate,status:built.tomorrow.status},details:Object.keys(built.details).sort()}};
@@ -45,4 +45,4 @@ const writes=[];for(const [name,value] of Object.entries(payloads)){const body=c
 for(const [name,value] of Object.entries(built.details)){const body=canonical(value)+"\n",size=gzipSync(body).byteLength;if(size>LIMITS.detail)throw new Error(`${name} gzip ${size} exceeds ${LIMITS.detail}`);writes.push([`${OUT}${name}`,body,size]);}
 for(const [path,body] of writes){await mkdir(path.slice(0,path.lastIndexOf("/")),{recursive:true});await writeFile(path,body);}
 console.log(`V5 generated: today ${writes.find(x=>x[0].endsWith("today.json"))[2]} B gzip; tomorrow ${writes.find(x=>x[0].endsWith("tomorrow.json"))[2]} B; index ${writes.find(x=>x[0].endsWith("index.json"))[2]} B; ${Object.keys(built.details).length} details`);
-}catch(error){if(previousRuns.length){await preserveFiles(deployedSeed.runs.length?deployedSeed.files:localSeed.files);console.error(`V5 output failed; preserving deployed runs: ${error.message}`);process.exit(0);}throw error;}
+}catch(error){if(previousRuns.length){await preserveFiles(deployedSeed.runs.length?deployedSeed.files:localSeed.files);console.error(`V5 output failed; preserving deployed runs: ${error.message}`);process.exit(1);}throw error;}
