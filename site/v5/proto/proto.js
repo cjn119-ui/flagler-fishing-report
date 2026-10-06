@@ -21,9 +21,9 @@ const TIER = { GO: 0, MAYBE: 1, SKIP: 2 };
 const LEVEL = { GO: 0, MAYBE: 1, SKIP: 2 };
 const VERDICT_SPOKEN = { GO: "Go", MAYBE: "Maybe", SKIP: "Skip" };
 const DELTA = { better: "Better tomorrow", similar: "About the same", worse: "Rougher tomorrow" };
-const SHORT_REASON = { provisionalGoThreshold: "Strong candidate; GO threshold still provisional." }; // taste Q5 (engine/copy.js owns the long form)
+const SHORT_REASON = { provisionalGoThreshold: "Looks good — we're holding GO until our thresholds are tested." }; // taste Q5 (engine/copy.js owns the long form)
 const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
-const BAR_H = { GO: 94, MAYBE: 62, SKIP: 28, Promising: 78, Mixed: 52, Tough: 26 }; // decorative height for the label, not a score
+const tick = (kind = "select") => navigator.vibrate?.(kind === "select" ? 6 : 12);
 
 /* ---------- state ---------- */
 const st = { tab: "today", h: "today", spot: null, mode: null, species: null, t: null, state: "maybe", day: 0, f: "all" };
@@ -65,20 +65,21 @@ function icon(name, cls = "") { return s("svg", { viewBox: "0 0 24 24", "aria-hi
 const modeIcon = (m) => icon(m === "pier" ? "pier" : m === "inshore" ? "inshore" : "wave");
 
 /* ---------- formatting (display only) ---------- */
-const fmtTime = (d) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(d)).replace(":00", "");
+const validDate = (d) => d != null && d !== "" && Number.isFinite(+new Date(d));
+const fmtTime = (d) => !validDate(d) ? "Time unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(d)).replace(":00", "");
 const ampm = (t) => t.match(/\s([AP]M)$/)?.[1];
-const fmtRange = (a, b) => { const x = fmtTime(a), y = fmtTime(b); return `${ampm(x) && ampm(x) === ampm(y) ? x.replace(/\s[AP]M$/, "") : x}–${y}`; };
-const localParts = (d) => Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(new Date(d)).map((p) => [p.type, p.value]));
+const fmtRange = (a, b) => { if (!validDate(a) || !validDate(b)) return "Time unavailable"; const x = fmtTime(a), y = fmtTime(b); return `${ampm(x) && ampm(x) === ampm(y) ? x.replace(/\s[AP]M$/, "") : x}–${y}`; };
+const localParts = (d) => !validDate(d) ? {} : Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(new Date(d)).map((p) => [p.type, p.value]));
 const localHour = (d) => Number(localParts(d).hour) % 24;
 const localMin = (d) => Number(localParts(d).minute);
-const dayKey = (d) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(d));
+const dayKey = (d) => !validDate(d) ? "" : new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(d));
 const partWord = (d) => { const hr = localHour(d); return hr < 12 ? "morning" : hr < 17 ? "afternoon" : "evening"; };
 const ageText = (min) => min < 60 ? `${min} min ago` : `${Math.round(min / 60)} hr${Math.round(min / 60) === 1 ? "" : "s"} ago`;
 const modeLabel = (m) => ({ surf: "Surf", pier: "Pier", inshore: "Inshore" }[m] ?? m);
 const cap = (x) => x ? x[0].toUpperCase() + x.slice(1) : x;
 const spName = (id) => SPECIES.find((x) => x.id === id)?.name ?? id;
 const spCat = (id) => SPECIES.find((x) => x.id === id);
-const wk = (date, o) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...o }).format(new Date(`${date}T16:00:00Z`));
+const wk = (date, o) => !validDate(`${date}T16:00:00Z`) ? "Date unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...o }).format(new Date(`${date}T16:00:00Z`));
 const msg = formatCopyMessage;
 
 function freshness(run, now) {
@@ -87,7 +88,7 @@ function freshness(run, now) {
   const level = age > STALE_MIN || pastValid ? "stale" : age >= AGING_MIN ? "aging" : "fresh";
   return { age, level };
 }
-function relDay(iso, now) { const k = dayKey(iso), n = dayKey(now); return k === n ? "today" : k === dayKey(now - 86400000) ? "yesterday" : "earlier"; }
+function relDay(iso, now) { if (!validDate(iso) || !validDate(now)) return "date unavailable"; const k = dayKey(iso), n = dayKey(now); return k === n ? "today" : k === dayKey(now - 86400000) ? "yesterday" : "earlier"; }
 const haversine = (a, b) => { const R = 3958.8, r = Math.PI / 180, dLa = (b.lat - a.lat) * r, dLo = (b.lon - a.lon) * r; const x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
 
 /* ---------- data + context ---------- */
@@ -167,7 +168,7 @@ function render({ resetScroll = false } = {}) {
   const fk = document.activeElement?.dataset?.fk;
   const c = ctx();
   st.t = st.t && c.run.slots?.length ? st.t : null;
-  renderHeader(c); renderCtl(c); renderBanner(c);
+  renderCtl(c); renderHeader(c); renderBanner(c);
   const view = $("view");
   const nodes = st.tab === "today" ? todayView(c) : st.tab === "spots" ? spotsView(c) : st.tab === "species" ? speciesView(c) : planView(c);
   view.replaceChildren(h("h1", { class: "sr-only" }, { today: "Today", spots: "Spots", species: "Species", plan: "Plan" }[st.tab]), ...nodes);
@@ -180,7 +181,7 @@ function render({ resetScroll = false } = {}) {
 }
 function announce(c) {
   const r = c.rec, focus = c.focus ? ` for ${r.targets?.[0]?.name ?? spName(st.species)}` : "";
-  const text = `${VERDICT_SPOKEN[r.verdict]}${focus}. ${c.skip ? msg(r.headline) : `${r.displayName}, ${r.mode}, ${fmtRange(r.window.start, r.window.end)}`}.${c.stale ? " Last known report." : ""}`;
+  const text = `${VERDICT_SPOKEN[r.verdict]}${focus}. ${c.skip ? msg(r.headline) : `${r.displayName}, ${r.mode}, ${fmtRange(r.window?.start, r.window?.end)}`}.${c.stale ? " Last known report." : ""}`;
   if (text !== lastSpoken) { lastSpoken = text; $("live").textContent = text; }
 }
 function go(tab, opts) { session.scroll[st.tab] = window.scrollY; closeSheet(); st.tab = tab; render({ resetScroll: true, ...opts }); }
@@ -196,11 +197,11 @@ function renderHeader(c) {
   const { run, fr, offline } = c;
   const t = fmtTime(run.generatedAt);
   const chip = $("fresh");
-  let text = t, tag = "Updated ", sv = "fresh";
+  let text = !validDate(run.generatedAt) ? "Time unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(run.generatedAt)), tag = "Updated ", sv = "fresh";
   if (offline) { sv = "offline"; tag = "Offline · "; }
   else if (fr.level === "aging") { sv = "aging"; text = ageText(fr.age); }
-  else if (c.stale) { sv = "stale"; tag = relDay(run.generatedAt, c.now) === "yesterday" ? "Yesterday " : "Updated "; }
-  chip.dataset.s = sv; chip.replaceChildren(h("span", { class: "lbl" }, tag), text);
+  else if (c.stale) { sv = "stale"; tag = relDay(run.generatedAt, c.now) === "yesterday" ? "From yesterday " : "Updated "; }
+  chip.dataset.s = sv; chip.replaceChildren(sv === "stale" ? icon("warn") : sv === "offline" ? icon("off") : "", h("span", { class: "lbl" }, tag), text);
   chip.setAttribute("aria-label", `${tag}${text}`);
   const rb = $("refresh"); rb.disabled = offline;
   rb.setAttribute("aria-label", offline ? "Refresh unavailable while offline" : "Refresh report");
@@ -213,9 +214,10 @@ function segment(label, items, cur, on, cls = "") {
     h("button", { type: "button", "aria-pressed": String(cur === id), "data-fk": `${label}-${id}`, onclick: () => on(id) }, text)));
 }
 function renderCtl(c) {
-  const ctl = $("ctl"); ctl.replaceChildren();
+  const ctl = $("ctl"), fresh = $("fresh"); ctl.replaceChildren(fresh);
   if (st.tab === "plan") return;
   ctl.append(segment("Report day", [["today", "Today"], ["tomorrow", "Tomorrow"]], st.h, (v) => { st.h = v; st.t = null; render(); }, "day"));
+  ctl.append($("fresh"));
   if (st.tab !== "today") return;
   if (st.species) ctl.append(h("button", { class: "fchip", type: "button", "data-fk": "unfocus", "aria-label": `Targeting ${spName(st.species)}. Remove`, onclick: () => scope({ spot: st.spot, mode: st.mode }) },
     "Targeting: ", h("b", {}, spName(st.species)), h("i", {}, s("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: PATHS.x })))));
@@ -238,28 +240,28 @@ function renderBanner(c) {
 }
 
 /* ---------- TODAY ---------- */
-function whenOf(c) { return c.skip ? msg(c.rec.whenLabel) : formatWhenLabel({ recommendation: c.rec }, c.now); }
+function whenOf(c) { if (!c.skip && (!validDate(c.rec.window?.start) || !validDate(c.rec.window?.end))) return "Time unavailable"; return c.skip ? msg(c.rec.whenLabel) : formatWhenLabel({ recommendation: c.rec }, c.now); }
 function todayView(c) {
-  const out = [verdictCard(c)];
+  const out = [];
   if (c.focusMissing) out.unshift(h("p", { class: "notice", role: "status" }, `${spName(st.species)} has no usable window in this run, so Today shows the overall best. Remove the chip to clear it.`));
-  out.push(targetsCard(c), useCard(c), confCard(c), backupCard(c), whyCard(c), timesCard(c), conditionsCard(c), tvCard(c), spotsTeaser(c), sourcesCard(c));
+  out.push(h("div", { class: "today-grid" }, h("div", { class: "col-a" }, verdictCard(c), glanceCard(c), backupCard(c)), h("div", { class: "col-b" }, timesCard(c), conditionsCard(c), whyCard(c), tvCard(c), spotsTeaser(c), sourcesCard(c))));
   return out.filter(Boolean);
 }
 function verdictCard(c) {
   const { rec: r, run } = c;
   const safety = r.gates?.length > 0;
   const lvl = LEVEL[r.verdict];
-  const C = 326.7, target = C * (1 - Math.max(0, Math.min(100, r.suitability ?? 0)) / 100);
-  const arc = s("circle", { class: "ring-fill", cx: 60, cy: 60, r: 52, "stroke-dashoffset": C });
+  const C = 301.6, target = C * (1 - Math.max(0, Math.min(100, r.suitability ?? 0)) / 100);
+  const arc = s("circle", { class: "ring-fill", cx: 60, cy: 60, r: 48, "stroke-dashoffset": C });
   requestAnimationFrame(() => requestAnimationFrame(() => arc.setAttribute("stroke-dashoffset", target)));
   const ringIcon = r.verdict === "GO" ? "check" : r.verdict === "SKIP" ? (safety ? "shield" : "x") : "wave";
   const ring = h("div", { class: "ring", "aria-hidden": "true" },
-    s("svg", { class: "rsvg", viewBox: "0 0 120 120" }, s("circle", { class: "ring-track", cx: 60, cy: 60, r: 52 }), arc),
-    h("div", { class: "ring-text" }, icon(ringIcon), h("span", {}, r.verdict), c.stale ? h("small", {}, "Last known") : null));
+    s("svg", { class: "rsvg", viewBox: "0 0 120 120" }, s("circle", { class: "ring-track", cx: 60, cy: 60, r: 48 }), arc),
+    h("div", { class: "ring-text" }, icon(ringIcon), h("span", {}, VERDICT_SPOKEN[r.verdict]), c.stale ? h("small", {}, "Last known") : null));
   const reasonRaw = r.reason?.code && SHORT_REASON[r.reason.code] ? SHORT_REASON[r.reason.code] : msg(r.reason?.text ?? r.reason);
-  const reason = r.verdict !== "GO" && reasonRaw ? h("p", { class: "why-line" }, reasonRaw) : null;
-  const qual = r.amberQualifier && !c.skip ? h("p", { class: "qual" }, icon("warn"), msg(r.amberQualifier)) : null;
-  const eyebrow = h("p", { class: "eyebrow" }, whenOf(c), c.focus ? h("span", { class: "tag" }, `for ${spName(st.species)}`) : null);
+  const reason = !c.skip && r.verdict !== "GO" && r.reason?.code !== "provisionalGoThreshold" && reasonRaw ? h("p", { class: "why-line" }, reasonRaw) : null;
+  const qual = r.amberQualifier && !c.skip && r.confidenceReasons?.some((x) => x.kind === "live") ? h("p", { class: "qual" }, icon("warn"), msg(r.amberQualifier)) : null;
+  const eyebrow = h("p", { class: "eyebrow" }, whenOf(c).split(" · ")[0], c.focus ? h("span", { class: "tag" }, `for ${spName(st.species)}`) : null);
   const notes = [];
   if (c.focus && TIER[c.overall.verdict] < TIER[r.verdict]) notes.push(h("p", { class: "note" }, h("b", {}, "Overall today: "), formatVerdictLine(c.run).replace(/, [^,]*$/, "")));
   else if (st.spot && !c.focus && TIER[c.overall.verdict] < TIER[r.verdict]) notes.push(h("p", { class: "note" }, h("b", {}, "Best overall today: "), `${c.overall.displayName} (${c.overall.verdict})`));
@@ -275,32 +277,33 @@ function verdictCard(c) {
     notes, bet);
 }
 function windowLine(c) {
-  const r = c.rec, w = r.window, st0 = Date.parse(w.start), en = Date.parse(w.end), range = fmtRange(w.start, w.end);
-  const sameDay = dayKey(w.start) === dayKey(c.now);
-  if (!sameDay) return h("p", { class: "win" }, `${range} · `, h("span", { class: "muted" }, st0 > c.now ? "Tomorrow" : ""));
-  if (c.stale && en < c.now) {
-    const next = (c.run.days ?? []).flatMap((d) => d.windows ?? []).filter((x) => Date.parse(x.start) > c.now).sort((a, b) => Date.parse(a.start) - Date.parse(b.start))[0];
-    return h("p", { class: "win" }, h("s", {}, range), " ", next ? h("span", { class: "muted" }, `Next window ${fmtTime(next.start)}`) : h("span", { class: "muted" }, "Window ended"));
+  const w = c.rec.window;
+  if (!w) return null;
+  if (!validDate(w.start) || !validDate(w.end)) return h("p", { class: "win muted" }, "Time unavailable");
+  const start = Date.parse(w.start), end = Date.parse(w.end), range = fmtRange(w.start, w.end);
+  if (end <= c.now) {
+    const next = (c.run.days ?? []).flatMap((d) => d.windows ?? []).find((x) => validDate(x.start) && Date.parse(x.start) > c.now);
+    return h("p", { class: "win" }, h("s", {}, range), " · ", h("span", { class: "muted" }, next ? `Next window ${fmtTime(next.start)}` : "Window ended"));
   }
-  if (c.now >= st0 && c.now < en) return h("p", { class: "win" }, h("strong", {}, `Fish now — until ${fmtTime(w.end)}`));
-  if (c.now < st0) return h("p", { class: "win" }, `${range} · `, h("span", { class: "muted" }, formatWindowStatus({ recommendation: r }, c.now, w)));
-  return h("p", { class: "win" }, h("s", {}, range), " ", h("span", { class: "muted" }, "Window ended"));
+  if (dayKey(w.start) !== dayKey(c.now)) return h("p", { class: "win" }, `${range} · Tomorrow`);
+  if (c.now >= start) return h("p", { class: "win" }, h("strong", {}, `Fish now — until ${fmtTime(w.end)}`));
+  return h("p", { class: "win" }, range, " · ", formatWindowStatus({ recommendation: c.rec }, c.now, w));
 }
 function betRow(c) {
   const r = c.rec;
   const label = c.focus ? "Best for this fish" : st.spot ? "Best window here" : "Best bet";
   return h("button", { class: "bet", type: "button", "data-fk": "bet", onclick: (e) => openSpotDetail(r.locationId, r.mode, e.currentTarget) },
-    h("div", {}, h("p", { class: "k" }, label), h("div", { class: "nm" }, r.displayName, h("span", { class: "mchip" }, modeIcon(r.mode), modeLabel(r.mode))), windowLine(c)), icon("arrow", "go-i"));
+    h("div", {}, h("p", { class: "k" }, label), h("div", { class: "nm" }, h("span",{class:"bet-name"},r.displayName), h("span", { class: "mchip" }, modeIcon(r.mode), modeLabel(r.mode))), windowLine(c) ?? h("p", { class: "win muted" }, "Time unavailable")), icon("arrow", "go-i"));
 }
 function nextOption(c) {
   const n = c.rec.nextOption;
   const body = n ? [h("div", { class: "nm" }, n.displayName, h("span", { class: "mchip" }, modeIcon(n.mode), modeLabel(n.mode)), n.verdict ? h("span", { class: "vchip", "data-v": n.verdict }, VERDICT_SPOKEN[n.verdict]) : null),
-      h("p", { class: "win" }, n.label ? msg(n.label) : "", " · ", fmtRange(n.window.start, n.window.end))]
+      h("p", { class: "win" }, n.label ? msg(n.label) : "", " · ", fmtRange(n.window?.start, n.window?.end))]
     : [h("p", { class: "win" }, "Check back later.")];
-  return h("div", { class: "bet static" }, h("div", {}, h("p", { class: "k" }, "Next best option"), body));
+  return h("button", { class: "bet", type: "button", onclick: () => { if (n && dayKey(n.window?.start) !== dayKey(c.now)) { st.h = "tomorrow"; st.t = null; render(); } else if (n) scope({ spot: n.locationId, mode: n.mode }); } }, h("div", {}, h("p", { class: "k" }, "Next best option"), body), icon("arrow", "go-i"));
 }
 function targetsCard(c) {
-  const r = c.rec, targets = (r.targets ?? []).slice(0, 3);
+  const r = c.rec, targets = (r.targets ?? []).slice(0, 2);
   if (!targets.length) return null;
   const list = h("ul", { class: "targets" });
   for (const t of targets) {
@@ -309,14 +312,14 @@ function targetsCard(c) {
       h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${t.suitability}%` })), h("span", { class: "t-num" }, t.suitability))));
     if (session.history) list.append(h("li", { class: "t-hist" }, `${t.name}: ${formatHistoricalRate(t.historicalRate, r.mode)}`));
   }
-  const toggle = h("button", { class: "toggle", type: "button", "data-fk": "hist", "aria-pressed": String(session.history), onclick: () => { session.history = !session.history; render(); } }, "Local history", h("span", { class: "sw", "aria-hidden": "true" }));
-  const hint = session.hint ? h("div", { class: "hint-row" }, h("p", { class: "hint" }, "Suitability = how well conditions fit each fish. It is not a catch chance."),
-    h("button", { type: "button", "aria-label": "Dismiss hint", "data-fk": "hint-x", onclick: () => { session.hint = false; render(); } }, "×")) : null;
+  const toggle = h("button", { class: "toggle", type: "button", "data-fk": "hist", "aria-pressed": String(session.history), onclick: () => { session.history = !session.history; render(); } }, session.history ? "Hide local history" : "Show local history");
+  const hint = !store.get("hintSeen", false) ? h("div", { class: "hint-row" }, h("p", { class: "hint" }, "Suitability = how well conditions fit each fish. It is not a catch chance."),
+    h("button", { type: "button", "aria-label": "Dismiss hint", "data-fk": "hint-x", onclick: () => { store.set("hintSeen", true); render(); } }, "×")) : null;
   const why = c.skip ? (c.rec.gates?.[0] ? msg(c.rec.gates[0].text ?? c.rec.gates[0]) : msg(r.reason?.text ?? r.reason)) : "";
   return h("section", { class: `card${c.skip ? " quiet" : ""}`, "aria-label": "Targets" },
-    h("div", { class: "card-h" }, h("h2", {}, "Targets"), h("span", { class: "sub" }, "Suitability"), toggle),
-    c.skip ? h("p", { class: "why-q" }, `Muted: ${why}`) : null,
-    h("div", { class: "card-body" }, list, hint));
+    h("div", { class: "card-h" }, h("h2", {}, "Targets"), h("span", { class: "sub" }, "Suitability")),
+    c.skip ? h("p", { class: "why-q" }, icon("shield"), `On hold: ${why}`) : null,
+    h("div", { class: "card-body" }, list, toggle, hint));
 }
 function useCard(c) {
   const r = c.rec, set = r.setup ?? {};
@@ -336,22 +339,28 @@ function confCard(c) {
   const [lvl, num, ...rest] = formatConfidence({ recommendation: r }).split(" · ");
   const det = h("details", { class: "how", open: session.conf || null });
   det.addEventListener("toggle", () => { session.conf = det.open; });
-  det.append(h("summary", { "data-fk": "conf" }, "Why this confidence?"), h("ul", {}, (r.confidenceReasons ?? []).map((x) => h("li", {}, msg(x.text)))));
+  det.append(h("summary", { "data-fk": "conf" }, "Why?"), h("ul", {}, [...(r.confidenceReasons ?? []).map((x) => h("li", {}, msg(x.text))), r.reason?.code === "provisionalGoThreshold" ? h("li",{},SHORT_REASON.provisionalGoThreshold) : null]));
   return h("section", { class: "card conf", "aria-label": "Confidence" },
     h("div", { class: "conf-row" }, h("p", { class: "conf-line" }, "Confidence: ", h("b", {}, `${lvl.replace(" confidence", "")} · ${num}`)),
       c.partial ? h("span", { class: "vchip amber" }, icon("warn"), "Partial data") : null),
-    rest.length ? h("p", { class: "conf-sum" }, `Our data: ${rest.join(" · ")}.`) : null,
     r.confidenceReasons?.length ? det : null);
+}
+function glanceCard(c) {
+  const targets = targetsCard(c), use = useCard(c), conf = confCard(c);
+  const card = h("section", { class: `card glance${c.skip ? " quiet" : ""}`, "aria-label": "Targets and setup" });
+  if (targets) card.append(...targets.childNodes);
+  use.classList.remove("card"); conf.classList.remove("card");
+  card.append(use, conf); return card;
 }
 function backupCard(c) {
   const b = c.rec.backup;
-  if (!b) return null;
+  if (!b?.window || !validDate(b.window.start) || !validDate(b.window.end)) return c.skip ? null : c.rec.nextOption ? nextOption(c) : null;
   const loc = locOf(c.run, b.locationId);
   const outside = b.distanceMi != null && b.distanceMi > 7;
   return h("button", { class: "bet backup", type: "button", "data-fk": "backup",
     onclick: () => scope({ spot: b.locationId, mode: b.mode }) },
-    h("div", {}, h("p", { class: "k" }, "Backup"), h("div", { class: "nm" }, loc?.name ?? b.locationId, b.mode ? h("span", { class: "mchip" }, modeIcon(b.mode), modeLabel(b.mode)) : null, h("span", { class: "vchip", "data-v": b.verdict }, VERDICT_SPOKEN[b.verdict])),
-      h("p", { class: "win muted" }, b.reason), outside && b.area ? h("p", { class: "fine" }, `In ${b.area}`) : null), icon("arrow", "go-i"));
+    h("div", {}, h("p", { class: "k" }, "Backup"), h("div", { class: "nm" }, b.kind === "later-window" ? `Later here · ${fmtRange(b.window.start, b.window.end)}` : loc?.name ?? b.locationId, b.mode ? h("span", { class: "mchip" }, modeIcon(b.mode), modeLabel(b.mode)) : null, h("span", { class: "vchip", "data-v": b.verdict }, VERDICT_SPOKEN[b.verdict])),
+      b.kind !== "later-window" ? h("p", { class: "win" }, fmtRange(b.window.start, b.window.end)) : null, h("p", { class: "fine" }, b.reason), outside && b.area ? h("p", { class: "fine" }, `In ${b.area}`) : null), icon("arrow", "go-i"));
 }
 function effectMark(effect, safety) {
   const e = effect === "helps" || effect === "hurts" || effect === "neutral" ? effect : "none";
@@ -363,7 +372,8 @@ function whyCard(c) {
   const r = c.rec, factors = c.isBest && !st.species ? (c.run._proto?.factors ?? []) : [];
   const safety = (r.gates?.length ?? 0) > 0;
   const helps = factors.filter((f) => f.effect === "helps").slice(0, 3);
-  const rows = [...helps.map((f) => ({ e: "helps", t: `${f.label}: ${msg(f.humanLabel)}` })), ...(r.why ?? []).map((w) => ({ e: w.effect ?? (/unavailable|thin|buoy/i.test(w.code) ? "hurts" : "none"), t: msg(w) }))];
+  const rows0 = [...factors.filter((f)=>f.effect === "hurts" && f.available !== false && !/unavailable|thin|buoy|stale|missing/i.test(`${f.code ?? ""} ${msg(f.humanLabel)}`)).slice(0,1).map((f)=>({e:"hurts",t:`${f.label}: ${msg(f.humanLabel)}`})), ...helps.map((f) => ({ e: "helps", t: `${f.label}: ${msg(f.humanLabel)}` })), ...(r.why ?? []).filter((w) => !/unavailable|thin|buoy|stale|missing/i.test(w.code ?? "")).map((w) => ({ e: w.effect ?? (/unavailable|thin|buoy/i.test(w.code) ? "hurts" : "none"), t: msg(w) }))];
+  const rows = [...rows0.filter((w) => w.e === "helps").slice(0,3), ...rows0.filter((w) => w.e === "hurts").slice(0,1)];
   const list = h("ul", { class: "whys" }, rows.map((w) => h("li", {}, effectMark(w.e, safety && w.e === "hurts"), h("span", {}, w.t))));
   let table = null;
   if (factors.length) {
@@ -372,7 +382,7 @@ function whyCard(c) {
     det.append(h("summary", { "data-fk": "factors" }, "See all factors"), h("table", { class: "ftable" }, h("caption", { class: "sr-only" }, "All factors with effect, value and weight"),
       h("thead", { class: "sr-only" }, h("tr", {}, h("th", { scope: "col" }, "Factor"), h("th", { scope: "col" }, "Value and weight"))),
       h("tbody", {}, factors.map((f) => h("tr", {}, h("th", { scope: "row" }, h("b", {}, `${f.label}: ${msg(f.humanLabel)}`), h("small", {}, msg(f.detail))),
-        h("td", {}, effectMark(f.effect, f.limiting && safety), h("div", {}, f.value == null || typeof f.value === "string" ? "—" : `${+f.value.toFixed(2)}${f.unit ? " " + f.unit : ""}`), h("small", {}, `weight ${f.weight?.toFixed(2) ?? "—"}`)))))));
+        h("td", {}, effectMark(f.effect, f.limiting && safety), h("div", {}, /pressure|season/i.test(f.label) || f.value == null || typeof f.value === "string" ? "—" : `${+f.value.toFixed(2)}${f.unit ? " " + f.unit : ""}`), h("small", {}, `weight ${f.weight?.toFixed(2) ?? "—"}`)))))));
     table = det;
   }
   return h("section", { class: "card", id: "why", "aria-label": "Why" }, h("div", { class: "card-h" }, h("h2", {}, "Why")), list, table);
@@ -389,45 +399,49 @@ function timesCard(c) {
   const n = pts.length, r = c.rec, light = c.run._proto?.light;
   const t0 = Date.parse(pts[0].at), step = (Date.parse(pts[n - 1].at) - t0) / (n - 1), span = step * n;
   const wins = [r.window, ...(c.run.days ?? []).flatMap((d) => d.windows ?? []).filter((w) => w.locationId === r.locationId && w.mode === r.mode)].filter(Boolean);
-  const inWin = (at) => wins.some((w) => Date.parse(at) >= Date.parse(w.start) && Date.parse(at) < Date.parse(w.end));
+  const inWin = (at) => wins.some((w) => Date.parse(at) < Date.parse(w.end) && Date.parse(at) + step > Date.parse(w.start));
   const hasSp = pts.some((p) => p.topSpecies?.length);
   let idx = 0;
   if (st.t) idx = Math.max(0, pts.findIndex((p) => p.at === st.t));
-  else { const ni = pts.findIndex((p, i) => c.now >= Date.parse(p.at) && (i === n - 1 || c.now < Date.parse(pts[i + 1].at))); idx = ni >= 0 && c.now <= Date.parse(pts[n - 1].at) + step ? ni : Math.max(0, pts.findIndex((p) => inWin(p.at))); }
+  else { const ni = pts.findIndex((p, i) => c.now >= Date.parse(p.at) && (i === n - 1 || c.now < Date.parse(pts[i + 1].at))); idx = ni >= 0 && wins.some((w) => c.now >= Date.parse(w.start) && c.now < Date.parse(w.end)) ? ni : Math.max(0, pts.findIndex((p) => inWin(p.at))); }
   const nowIdx = pts.findIndex((p, i) => c.now >= Date.parse(p.at) && (i === n - 1 || c.now < Date.parse(pts[i + 1].at)));
 
   const strip = h("div", { class: "scrub", role: "slider", tabindex: "0", "aria-orientation": "horizontal", "aria-label": "Time of day", "aria-valuemin": 0, "aria-valuemax": n - 1, "data-fk": "scrub" });
   const bars = pts.map((p, i) => h("span", { class: `sb${p.suitability == null ? " none" : ""}${inWin(p.at) ? " in" : ""}${i === nowIdx && c.now <= Date.parse(pts[n - 1].at) + step ? " now" : ""}`, style: `--h:${p.suitability == null ? 7 : Math.max(10, p.suitability)}%` }));
   strip.append(...bars);
   const axis = h("div", { class: "axis", "aria-hidden": "true" });
-  pts.forEach((p, i) => { if (localMin(p.at) === 0 && localHour(p.at) % 3 === 0) axis.append(h("span", { style: `left:${((i + 0.5) / n) * 100}%` }, fmtTime(p.at))); });
+  pts.forEach((p, i) => { if (i % Math.ceil(n / 5) === 0) axis.append(h("span", { style: `left:${((i + 0.5) / n) * 100}%` }, `${localHour(p.at) % 12 || 12}${localHour(p.at) < 12 ? "a" : "p"}`)); });
+  const heights = pts.map((p) => p.tide?.heightFt).filter(Number.isFinite);
+  if (heights.length > 1) { const lo = Math.min(...heights), hi = Math.max(...heights); strip.append(s("svg", { class: "tide-curve", viewBox: "0 0 100 100", preserveAspectRatio: "none", "aria-hidden": "true" }, s("polyline", { points: pts.flatMap((p,i) => Number.isFinite(p.tide?.heightFt) ? [`${(i+.5)/n*100},${90-(p.tide.heightFt-lo)/(hi-lo || 1)*70}`] : []).join(" "), fill: "none", stroke: "var(--accent)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }))); }
   const day = h("div", { class: "daybar", "aria-hidden": "true" });
   if (light) (light.sunrise ?? []).forEach((rise) => { const set = (light.sunset ?? []).find((z) => Date.parse(z) > Date.parse(rise)); if (set) { const a = Math.max(0, (Date.parse(rise) - t0) / span), b = Math.min(1, (Date.parse(set) - t0) / span); if (b > a) day.append(h("i", { style: `left:${a * 100}%;width:${(b - a) * 100}%` })); } });
   if (light) (light.sunset ?? []).forEach((set) => { if (!(light.sunrise ?? []).some((rise) => Date.parse(set) > Date.parse(rise))) { const b = Math.min(1, (Date.parse(set) - t0) / span); if (b > 0) day.append(h("i", { style: `left:0;width:${b * 100}%` })); } });
 
   const readout = h("div", { class: "readout" });
   function update(i, { commit = false } = {}) {
+    if (idx !== Math.max(0, Math.min(n - 1, i))) tick();
     idx = Math.max(0, Math.min(n - 1, i));
     const p = pts[idx];
     bars.forEach((b, k) => b.classList.toggle("on", k === idx));
+    strip.dataset.time = fmtTime(p.at); strip.style.setProperty("--selected", `${(idx+.5)/n*100}%`);
     const txt = `${fmtTime(p.at)}, ${p.suitability == null ? "no fishing window" : `suitability ${p.suitability}`}`;
     strip.setAttribute("aria-valuenow", idx); strip.setAttribute("aria-valuetext", txt);
     const isNow = idx === nowIdx;
     const lightTxt = lightAt(light, p.at);
     const tide = p.tide?.heightFt != null ? { v: cap(p.tide.direction ?? "—"), d: `${p.tide.heightFt.toFixed(1)} ft` } : null;
     readout.replaceChildren(
-      h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)), h("span", { class: "vchip", "data-v": inWin(p.at) ? "GO" : null }, inWin(p.at) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows"),
+      h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)), h("span", { class: "vchip", "data-v": null }, inWin(p.at) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows"),
         isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : 0); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now")),
       h("div", { class: "stats ro-tiles" },
         h("div", { class: `stat${tide ? "" : " off"}` }, h("p", { class: "k" }, "Tide"), h("p", { class: "v" }, tide?.v ?? "Unavailable"), tide ? h("p", { class: "d" }, tide.d) : null),
         h("div", { class: `stat${lightTxt ? "" : " off"}` }, h("p", { class: "k" }, "Light"), h("p", { class: "v" }, lightTxt?.v ?? "—"), lightTxt?.d ? h("p", { class: "d" }, lightTxt.d) : null),
-        h("div", { class: `stat${p.suitability == null ? " off" : ""}` }, h("p", { class: "k" }, "Suitability"), h("p", { class: "v" }, p.suitability ?? "—"), h("p", { class: "d" }, "this spot, this time"))),
+        h("div", { class: `stat${p.suitability == null ? " off" : ""}` }, h("p", { class: "k" }, "Suitability"), h("p", { class: "v" }, p.suitability ?? "—"), h("p", { class: "d" }, "Fit at this hour"))),
       speciesAt(p));
     if (commit) { st.t = p.at; writeHash(); }
   }
   function speciesAt(p) {
     const list = p.topSpecies ?? [];
-    if (!hasSp) return h("p", { class: "fine" }, "This sample has no per-time species scores, so the window targets above stay as shown.");
+    if (!hasSp) return null;
     if (!list.length) return h("p", { class: "fine" }, "No species ranking at this time: it falls outside a fishing window.");
     return h("ul", { class: "ro-sp", "aria-label": "Species at this time" }, list.map((x) => h("li", {}, h("button", { class: "t-btn", type: "button", onclick: (e) => openSpecies(x.speciesId, e.currentTarget) },
       h("span", { class: "t-name" }, spName(x.speciesId), x.speciesId === st.species ? h("span", { class: "tag" }, "Targeting") : null),
@@ -447,7 +461,7 @@ function timesCard(c) {
   update(idx);
   const events = (c.run.slots?.[0]?.tideEvents ?? []).slice(0, 4).map((e) => `${e.type === "high" ? "High" : "Low"} ${fmtTime(e.at)}`).join(" · ");
   return h("section", { class: "card", "aria-label": "Best times" },
-    h("div", { class: "card-h" }, h("h2", {}, "Best times"), h("span", { class: "sub" }, "Drag or tap to scrub")),
+    h("div", { class: "card-h" }, h("h2", {}, "Best times"), h("span", { class: "sub" }, "Drag to see any hour")),
     strip, axis, day,
     h("div", { class: "legend", "aria-hidden": "true" }, h("span", {}, h("i", {}), "Window"), h("span", {}, h("i", { class: "d" }), "Daylight"), h("span", {}, h("i", { class: "n" }), "No window"), h("span", {}, h("i", { class: "o" }), "Selected")),
     readout, events ? h("p", { class: "fine" }, events) : null);
@@ -460,12 +474,13 @@ function lightAt(light, at) {
   return dayNow ? { v: "Daylight", d: nextSet ? `Sunset ${fmtTime(nextSet)}` : "" } : { v: "Night", d: nextRise ? `Sunrise ${fmtTime(nextRise)}` : "" };
 }
 function conditionsCard(c) {
-  const f = c.isBest && !st.species ? (c.run._proto?.factors ?? []) : [];
+  const all = c.isBest && !st.species ? (c.run._proto?.factors ?? []) : [];
+  const f = ["wind", "surf", "tide", "water", "light", "sky"].flatMap((key) => all.filter((x) => x.label.toLowerCase().includes(key) || key === "sky" && x.key === "rain")).slice(0,6);
   if (!f.length) return null;
   const safety = (c.rec.gates?.length ?? 0) > 0;
-  return h("section", { class: "card", "aria-label": "Conditions" }, h("div", { class: "card-h" }, h("h2", {}, "Conditions"), h("span", { class: "sub" }, "Plain words first")),
+  return h("section", { class: "card", "aria-label": "Conditions" }, h("div", { class: "card-h" }, h("h2", {}, "Conditions")),
     h("div", { class: "stats" }, f.map((x) => h("div", { class: `stat${x.available === false ? " off" : ""}` },
-      h("p", { class: "k" }, effectMark(x.effect, x.limiting && safety), x.label), h("p", { class: "v" }, msg(x.humanLabel)),
+      h("p", { class: "k" }, effectMark(x.effect, x.limiting && safety), x.label), h("p", { class: "v" }, x.available === false ? "Unavailable" : msg(x.humanLabel)),
       h("p", { class: "d" }, x.value == null || typeof x.value === "string" ? "" : `${+x.value.toFixed(1)} ${x.unit ?? ""}`.trim())))));
 }
 function tvCard(c) {
@@ -476,7 +491,7 @@ function tvCard(c) {
     return h("button", { class: "tv-c", type: "button", style: "text-align:left;cursor:pointer;color:inherit", onclick: () => { st.h = target; st.t = null; render({ resetScroll: false }); window.scrollTo({ top: 0 }); } },
       h("p", { class: "k" }, label, h("span", { class: "vchip", "data-v": day.verdict }, VERDICT_SPOKEN[day.verdict])),
       w ? h("p", { class: "w" }, fmtRange(w.start, w.end)) : h("p", { class: "w" }, "No good window"),
-      w ? h("p", { class: "s" }, `${w.displayName ?? ""} · ${partWord(w.start)}`) : h("p", { class: "s" }, msg(day.reason))); };
+      w ? h("p", { class: "s" }, [w.displayName, partWord(w.start)].filter(Boolean).join(" · ")) : h("p", { class: "s" }, msg(day.reason))); };
   return h("section", { class: "card", "aria-label": "Today versus tomorrow" }, h("div", { class: "card-h" }, h("h2", {}, "Today vs tomorrow")),
     h("div", { class: "tv" }, card("Today", d[0], "today"), card("Tomorrow", d[1], "tomorrow")), cmp ? h("p", { class: "delta" }, DELTA[cmp]) : null);
 }
@@ -514,14 +529,14 @@ function spotRows(run, filter) {
 function spotRowEl(r, c, { star = true, onPick } = {}) {
   const { loc, rec } = r;
   const top = rec.targets?.[0];
-  const pick = () => (onPick ?? ((l, m) => scope({ spot: l, mode: m, persist: true })))(loc.id, st.f === "all" ? (loc.modes.length > 1 ? null : loc.modes[0]) : st.f);
+  const pick = () => matchMedia("(min-width:900px)").matches && st.tab === "spots" ? openSpotDetail(loc.id, rec.mode) : (onPick ?? ((l, m) => scope({ spot: l, mode: m, persist: true })))(loc.id, st.f === "all" ? (loc.modes.length > 1 ? null : loc.modes[0]) : st.f);
   const favs = store.get("favs", []);
   return h("li", { class: `row${st.spot === loc.id ? " sel" : ""}${star ? "" : " nostar"}` },
-    h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${rec.verdict}, ${rec.mode}, ${fmtRange(rec.window.start, rec.window.end)}${top ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
-      h("div", { class: "r1" }, h("span", { class: "nm" }, loc.name), h("span", { class: "vchip", "data-v": rec.verdict }, VERDICT_SPOKEN[rec.verdict])),
-      h("p", { class: "r2" }, h("span", { class: "mi" }, loc.modes.map((m) => modeIcon(m))), `${loc.modes.map(modeLabel).join(" / ")} · ${loc.area}`, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
-      h("p", { class: "r2" }, `${fmtRange(rec.window.start, rec.window.end)}${top ? ` · ${top.name} ${top.suitability}` : ""}`)),
-    star ? h("button", { class: "star", type: "button", "data-fk": `star-${loc.id}`, "aria-pressed": String(favs.includes(loc.id)), "aria-label": `Favourite ${loc.name}`, onclick: () => { const f = store.get("favs", []); store.set("favs", f.includes(loc.id) ? f.filter((x) => x !== loc.id) : [...f, loc.id]); rerenderList(); } }, icon("star")) : null);
+    h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${rec.verdict}, ${rec.mode}, ${fmtRange(rec.window?.start, rec.window?.end)}${top ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
+      h("div", { class: "r1" }, h("span", { class: "nm" }, loc.name), null),
+      h("p", { class: "r2" }, h("span", { class: "mi" }, loc.modes.map((m) => modeIcon(m))), `${modeLabel(rec.mode)} · ${loc.area} · ${fmtRange(rec.window?.start,rec.window?.end)}`, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
+      h("p", { class: "r2" }, top ? `${top.name} ${top.suitability}` : "")),
+    star ? h("button", { class: "star", type: "button", "data-fk": `star-${loc.id}`, "aria-pressed": String(favs.includes(loc.id)), "aria-label": `Favourite ${loc.name}`, onclick: () => { const f = store.get("favs", []); tick(); store.set("favs", f.includes(loc.id) ? f.filter((x) => x !== loc.id) : [...f, loc.id]); rerenderList(); } }, icon("star")) : null);
 }
 let listHost = null;
 function rerenderList() { if (listHost) { const fk = document.activeElement?.dataset?.fk; listHost.rebuild(); if (fk) listHost.el.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true }); } }
@@ -532,13 +547,13 @@ function spotList(c, { onPick } = {}) {
     const best = c.run.recommendation;
     const anyRow = h("li", { class: `row any nostar${!st.spot ? " sel" : ""}` }, h("button", { class: "main", type: "button", "data-fk": "spot-any", "aria-label": `Best anywhere, ${best.verdict}, currently ${best.displayName}`, onclick: () => (onPick ?? (() => scope({ persist: true })))(null, null) },
       h("div", { class: "r1" }, h("span", { class: "nm" }, "Best anywhere"), h("span", { class: "vchip", "data-v": best.verdict }, VERDICT_SPOKEN[best.verdict])),
-      h("p", { class: "r2" }, `Default scope · today it is ${best.displayName}`)));
+      h("p", { class: "r2" }, `Follows the best spot · now ${best.displayName}`)));
     const favRows = rows.filter((r) => r.fav);
-    const near = h("button", { class: "btn-s", type: "button", "data-fk": "near", "aria-pressed": String(!!session.near && session.near !== "denied"), onclick: askNear }, "Near me");
+    const near = h("button", { class: "btn-s near", type: "button", "data-fk": "near", "aria-pressed": String(!!session.near && session.near !== "denied"), onclick: askNear  , "aria-label": "Sort by distance" }, icon("pin"));
     el.replaceChildren(
       h("div", { class: "tools-row" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; rebuild(); document.querySelector(`[data-fk="Mode filter-${v}"]`)?.focus({ preventScroll: true }); }), near),
       session.near === "denied" ? h("p", { class: "notice", role: "status" }, "Location is off — showing best first.") : "",
-      h("ul", { class: "list" }, anyRow, favRows.length ? favRows.map((r) => spotRowEl(r, c, { onPick })) : "", rows.filter((r) => !r.fav).map((r) => spotRowEl(r, c, { onPick }))));
+      h("ul", { class: "list" }, anyRow, ...["GO", "MAYBE", "SKIP"].flatMap((v) => { const group = rows.filter((r) => r.rec.verdict === v); return group.length ? [h("li", { class: "tier eyebrow" }, VERDICT_SPOKEN[v]), ...group.map((r) => spotRowEl(r,c,{onPick}))] : []; })));
   };
   function askNear() {
     if (session.near && session.near !== "denied") { session.near = null; rebuild(); return; }
@@ -549,7 +564,7 @@ function spotList(c, { onPick } = {}) {
   return el;
 }
 function spotsView(c) {
-  return [h("section", { class: "card", "aria-label": "Spots" }, h("div", { class: "card-h" }, h("h2", {}, "Spots"), h("span", { class: "sub" }, "Ranked by verdict, then fit")), spotList(c))];
+  return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "card-h" }, h("h2", {}, "Spots"), h("span", { class: "sub" }, "Ranked by verdict, then fit")), spotList(c))];
 }
 
 /* ---------- SPECIES ---------- */
@@ -564,46 +579,39 @@ function speciesRows(c) {
 }
 function speciesView(c) {
   const rows = speciesRows(c);
-  const grid = h("ul", { class: "grid" }, rows.map(({ sp, best, suit, focused }) =>
+  const tiles = (items) => h("ul", { class: "grid" }, items.map(({ sp, best, suit, focused }) =>
     h("li", {}, h("button", { class: `sp${suit == null || (!focused && best?.eligibility !== "realistic") ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
       "aria-label": `${sp.name}, ${suit == null ? "no reading" : `suitability ${suit}`}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-      h("div", { class: "big" }, h("b", {}, suit ?? "—"), h("span", {}, suit == null ? "no window" : best?.band ?? "")),
+      h("div", { class: "big" }, h("b", {}, suit ?? "—"), h("span", {}, suit == null ? "no window" : best?.eligibility !== "realistic" ? "Rare in surveys" : best?.band ?? "")),
       h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${suit ?? 0}%` }))))));
-  return [h("section", { class: "card", "aria-label": "Species" },
+  return [h("section", { class: "card species-browser", "aria-label": "Species" },
     h("div", { class: "card-h" }, h("h2", {}, "Species"), h("span", { class: "sub" }, "Suitability, best first")),
     st.species ? h("p", { class: "notice" }, `Targeting ${spName(st.species)}. Today is re-ranked for it.`) : null,
-    h("div", { class: "tools-row" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })), grid)];
+    h("div", { class: "tools-row" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })), tiles(rows.filter((x)=>!x.sp.bycatch)), h("details",{class:"also",open:session.also||null,ontoggle:(e)=>{session.also=e.currentTarget.open;}},h("summary",{},"Also biting (bycatch)"),tiles(rows.filter((x)=>x.sp.bycatch))))];
 }
 
 /* ---------- PLAN ---------- */
+function dayBody(d, i) {
+  const outlook = d.kind === "outlook", bw = d.bestWindow ?? {};
+  return h("div", {}, h("span", { class: `vchip${outlook ? " outline" : ""}`, "data-v": outlook ? null : d.verdict, "data-l": d.outlookLabel }, outlook ? d.outlookLabel : VERDICT_SPOKEN[d.verdict]),
+    /planner.forecast|forecastDay/.test(d.reason?.code ?? "") ? null : h("p", { class: "fine" }, msg(d.reason)),
+    outlook ? h("p", {}, [cap(bw.partOfDay), bw.tidePhase ? `${bw.tidePhase} tide` : null].filter(Boolean).join(" · ")) : h("ul", { class: "wins" }, (d.windows ?? []).map((w) => h("li", {}, [w.displayName, modeLabel(w.mode)].filter(Boolean).join(" · "), fmtRange(w.start,w.end)))),
+    h("ul", { class: "targets" }, (d.topSpecies ?? []).slice(0,3).map((t) => h("li", {}, h("button", { class: "t-btn", type: "button", onclick: (e) => openSpecies(t.speciesId,e.currentTarget) }, t.name, h("span", {}, t.suitability ?? ""))))),
+    !outlook ? h("button", { class: "btn", type: "button", onclick: () => { closeSheet(); st.h = i === 0 ? "today" : "tomorrow"; st.t = null; go("today"); } }, `Open ${i === 0 ? "Today" : "Tomorrow"}`) : null);
+}
 function planView(c) {
   const days = c.run.days ?? D[RICH].days;
-  const sel = days[Math.min(st.day, days.length - 1)];
-  const lab = (d) => d.kind === "outlook" ? d.outlookLabel : d.verdict;
-  const strip = h("ul", { class: "wk-bars", "aria-label": "Next 7 days" }, days.map((d, i) => h("li", {},
-    h("button", { class: `wk-col${d.kind === "outlook" ? " outlook" : ""}`, type: "button", "data-l": lab(d), "data-fk": `day-${i}`, "aria-pressed": String(i === st.day), "aria-controls": "daypanel", "aria-label": `${i === 0 ? "Today" : wk(d.date, { weekday: "long" })}, ${lab(d)}${d.kind === "outlook" ? " outlook" : ""}`, onclick: () => { st.day = i; render(); } },
-      h("span", { class: "wk-lab" }, lab(d)), h("span", { class: "wk-track" }, h("span", { class: "wk-bar", style: `height:${BAR_H[lab(d)] ?? 30}%` })),
-      h("span", { class: "wk-day" }, i === 0 ? "Today" : wk(d.date, { weekday: "short" })), h("span", { class: "wk-meta" }, wk(d.date, { month: "numeric", day: "numeric" }))))));
-  const open = (target) => { st.h = target; st.t = null; go("today"); };
-  let body;
-  if (sel.kind === "forecast") {
-    body = [h("div", { class: "kv" }, h("span", { class: "vchip", "data-v": sel.verdict }, sel.verdict), h("span", { class: "muted" }, `Confidence ${sel.confidence}`)),
-      h("p", { class: "fine" }, msg(sel.reason)),
-      sel.windows?.length ? h("div", { class: "block" }, h("h3", {}, "Windows"), h("ul", { class: "wins" }, sel.windows.map((w) => h("li", {}, h("span", {}, w.displayName, h("small", {}, `${modeLabel(w.mode)} · ${w.partOfDay}`)), h("b", {}, fmtRange(w.start, w.end)))))) : null,
-      sel.topSpecies?.length ? h("div", { class: "block" }, h("h3", {}, "Top species"), h("ul", { class: "targets" }, sel.topSpecies.slice(0, 3).map((t) => h("li", {}, h("button", { class: "t-btn", type: "button", onclick: (e) => openSpecies(t.speciesId, e.currentTarget) }, h("span", { class: "t-name" }, t.name), h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${t.suitability}%` })), h("span", { class: "t-num" }, t.suitability)))))) : null,
-      h("div", { class: "cta" }, h("button", { class: "btn", type: "button", "data-fk": "open-day", onclick: () => open(st.day === 0 ? "today" : "tomorrow") }, `Open ${st.day === 0 ? "Today" : "Tomorrow"}`))];
-  } else {
-    const bw = sel.bestWindow ?? {};
-    body = [h("div", { class: "kv" }, h("span", { class: "vchip", "data-l": sel.outlookLabel }, `${sel.outlookLabel} outlook`), h("span", { class: "muted" }, `Confidence ${sel.confidence}`)),
-      h("p", { class: "fine" }, msg(sel.reason)),
-      h("p", { style: "margin-top:12px;font-size:14px" }, [cap(bw.partOfDay), bw.tidePhase ? `${bw.tidePhase} tide` : null].filter(Boolean).join(" · ") || "Part of day not yet known"),
-      h("p", { class: "fine" }, "Outlook days name no spot or exact window: wind and surf are not reliable this far ahead.")];
-  }
-  return [h("section", { class: "card", "aria-label": "Plan" }, h("div", { class: "card-h" }, h("h2", {}, "Next 7 days"), h("span", { class: "sub" }, "Days 1–2 forecast, 3–7 outlook")), strip,
-      h("p", { class: "fine" }, "Solid bars are forecast days (GO / MAYBE / SKIP). Dashed bars are outlook days (Promising / Mixed / Tough); bar height only echoes the label.")),
-    h("section", { class: "card daycard", id: "daypanel", role: "region", "aria-live": "polite", "aria-label": "Day detail" },
-      h("div", { class: "card-h" }, h("h2", {}, `${st.day === 0 ? "Today" : wk(sel.date, { weekday: "long" })}, ${wk(sel.date, { month: "short", day: "numeric" })}`), h("span", { class: "sub" }, sel.kind === "outlook" ? "Outlook" : "Forecast")), body)];
+  const list = h("ul", { class: "days" }, days.flatMap((d,i) => {
+    const outlook = d.kind === "outlook", w = d.windows?.[0], bw = d.bestWindow ?? {};
+    const title = i === 0 ? "Today" : wk(d.date,{weekday:"short"});
+    const line = outlook ? [cap(bw.partOfDay), bw.tidePhase ? `${bw.tidePhase} tide` : null].filter(Boolean).join(" · ") : w ? [fmtRange(w.start,w.end),w.displayName].filter(Boolean).join(" · ") : "No good window";
+    return [i === 2 ? h("li", { class: "outlook-caption" }, h("h3", {}, "Outlook · days 3–7"), h("p", { class: "fine" }, "Outlook for days 3–7 uses season, tides, moon and the daily forecast. It updates daily.")) : null,
+      h("li", {}, h("button", { class: "day-row", type: "button", "data-fk": `day-${i}`, onclick: (e) => { st.day=i; const pane=document.querySelector(".plan-detail"); if(matchMedia("(min-width:900px)").matches && pane) pane.replaceChildren(h("h2",{},title),dayBody(d,i)); else openSheet(title,dayBody(d,i),e.currentTarget); } },
+        h("span", {}, title,h("small",{},wk(d.date,{month:"short",day:"numeric"}))), h("span",{class:`vchip${outlook ? " outline" : ""}`,"data-v":outlook?null:d.verdict,"data-l":d.outlookLabel},outlook?d.outlookLabel:VERDICT_SPOKEN[d.verdict]),
+        h("span", {class:"day-copy"},line,h("small",{},(d.topSpecies??[]).map((t)=>t.name).slice(0,2).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
+  }));
+  return [h("div",{class:"plan-layout"},h("section",{class:"card"},h("h2",{},"Next 7 days"),h("p",{class:"eyebrow"},st.species?`for ${spName(st.species)}`:st.spot?locOf(c.run,st.spot)?.name:"Best anywhere"),list),h("section",{class:"card plan-detail desktop-pane"},dayBody(days[st.day],st.day)))];
 }
 
 /* ---------- sheets ---------- */
@@ -638,6 +646,7 @@ function trap(e) {
 }
 function closeSheet(silent) {
   if (!sheet) return;
+  tick("close"); sheet.observer?.disconnect();
   const { prev, prevFk } = sheet; sheet = null;
   $("sheet-root").replaceChildren();
   $("app").inert = false; $("tabbar").inert = false; $("review").inert = false;
@@ -652,13 +661,14 @@ function openSpotSheet(opener) {
 function openSpotDetail(id, mode, opener) {
   const c = ctx(), loc = locOf(c.run, id), cat = SPOTS.find((x) => x.id === id);
   if (!cat) return;
-  const body = h("div", {},
+  const rec = c.run.scopeViews?.byLocation?.[`${id}:${mode}`]?.recommendation;
+  const body = h("div", {}, rec ? h("div", {}, h("p", {}, h("span", {class:"vchip", "data-v":rec.verdict},VERDICT_SPOKEN[rec.verdict]), " ", fmtRange(rec.window?.start,rec.window?.end)), h("p",{class:"fine"},(rec.targets??[]).slice(0,3).map((t)=>`${t.name} ${t.suitability}`).join(" · "))) : null,
     h("p", { class: "muted" }, `${loc?.area ?? ""} · ${loc?.modes?.map(modeLabel).join(" / ") ?? ""}`),
     cat.notes ? h("p", { style: "margin-top:10px" }, cat.notes) : null,
     cat.access?.length ? h("div", { class: "block" }, h("h3", {}, "Access"), h("ul", { style: "margin:0;padding-left:18px" }, cat.access.map((a) => h("li", {}, a)))) : null,
     cat.tips?.length ? h("div", { class: "block" }, h("h3", {}, "Tips"), h("ul", { style: "margin:0;padding-left:18px" }, cat.tips.map((a) => h("li", {}, a)))) : null,
-    h("div", { class: "cta" }, st.spot === id ? null : h("button", { class: "btn", type: "button", onclick: () => scope({ spot: id, mode }) }, "Scope Today to this spot"), h("button", { class: "btn alt", type: "button", onclick: () => closeSheet() }, "Close")));
-  openSheet(cat.name, body, opener);
+    h("div", { class: "cta" }, st.spot === id ? null : h("button", { class: "btn", type: "button", onclick: () => scope({ spot: id, mode }) }, "Show this spot on Today"), h("a", { class: "btn alt", href: /Mac|iPhone|iPad/.test(navigator.userAgent) ? `https://maps.apple.com/?daddr=${cat.lat},${cat.lon}` : `https://www.google.com/maps/dir/?api=1&destination=${cat.lat},${cat.lon}` }, "Directions")));
+  if (matchMedia("(min-width:900px)").matches && st.tab === "spots") { let pane = document.querySelector(".spot-detail"); if (!pane) { pane = h("section",{class:"card spot-detail"}); document.querySelector(".spots-layout").append(pane); } pane.replaceChildren(h("h2",{},cat.name),body); } else openSheet(cat.name, body, opener);
 }
 function openSpecies(id, opener) {
   const c = ctx(), sp = spCat(id);
@@ -684,7 +694,7 @@ function openSpecies(id, opener) {
       h("div", { class: "season", role: "img", "aria-label": `Seasonal pattern by month, ${sp.name}. Strongest ${MONTHS.map((_, i) => i).filter((i) => curve[i] === Math.max(...curve.filter((v) => v != null)))?.map((i) => new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2020, i, 1)))).join(", ")}.` },
         curve.map((v, i) => h("div", { class: `m${i + 1 === month ? " cur" : ""}${v == null ? " nul" : ""}` }, h("div", { class: "tr" }, v == null ? null : h("i", { style: `height:${Math.max(4, (v / mx) * 100)}%` })), h("span", { class: "l", "aria-hidden": "true" }, MONTHS[i])))),
       h("p", { class: "fine" }, "Regional share of surveyed trips that caught it, by month (relative bars). Today's month is outlined.")) : null,
-    best?.historicalRate ? h("div", { class: "block" }, h("h3", {}, "Local history"), h("p", { style: "font-size:14px" }, formatHistoricalRate(best.historicalRate, best.mode))) : null,
+    best?.historicalRate ? h("div", { class: "block" }, h("h3", {}, "Local history"), h("p", { style: "font-size:var(--fs-body)" }, formatHistoricalRate(best.historicalRate, best.mode))) : null,
     h("div", { class: "block" }, h("h3", {}, "Setup"), h("dl", {},
       byMode.where ? h("div", {}, h("dt", {}, "Where"), h("dd", {}, byMode.where)) : null,
       byMode.bait?.length ? h("div", {}, h("dt", {}, "Bait"), h("dd", {}, h("ul", {}, byMode.bait.map((b) => h("li", {}, b))))) : null,
@@ -696,7 +706,24 @@ function openSpecies(id, opener) {
       st.species === id ? h("button", { class: "btn alt", type: "button", onclick: () => scope({ spot: st.spot, mode: st.mode }) }, "Stop targeting") :
       h("button", { class: "btn", type: "button", disabled: focused ? null : true, "aria-describedby": focused ? null : "tt-why", onclick: () => scope({ spot: null, species: id }) }, `Target this: ${sp.name}`),
       !sp.bycatch && !focused ? h("p", { class: "fine", id: "tt-why" }, `No usable window for ${sp.name} in this run, so it can't re-rank Today.`) : null));
-  openSheet(sp.name, body, opener);
+  const blocks = [...body.querySelectorAll(":scope > .block")];
+  const setupBlock = blocks.find((x) => x.querySelector("h3")?.textContent === "Setup");
+  const historyBlock = blocks.find((x) => x.querySelector("h3")?.textContent === "Local history");
+  const seasonBlock = blocks.find((x) => x.querySelector("h3")?.textContent === "Season by month");
+  const placeBlock = blocks.find((x) => x.querySelector("h3")?.textContent === "Best place and time");
+  const actionHost = body.querySelector(":scope > .cta"); const action = actionHost?.querySelector("button");
+  if (action) { action.textContent = st.species === id ? "Stop targeting" : "Target this"; body.querySelector(".kv").append(action); }
+  if(placeBlock) { placeBlock.replaceChildren(h("h3",{},"Best for this fish"),h("button",{class:"bet",type:"button",onclick:()=>scope({spot:focused?.locationId ?? best?.locationId,mode:place.mode})},h("span",{},place.displayName," · ",fmtRange(place.window?.start,place.window?.end)),h("span",{class:"vchip","data-v":focused?.verdict},VERDICT_SPOKEN[focused?.verdict] ?? ""))); }
+  const reasons = (focused?.why ?? best?.why ?? []).filter((x)=>!/unavailable|thin|buoy|stale|missing/i.test(x.code??""));
+  const why = h("div",{class:"block"},h("h3",{},"Why now"),h("ul",{class:"whys"},[...reasons.filter((x)=>x.effect==="helps").slice(0,2),...reasons.filter((x)=>x.effect==="hurts").slice(0,1)].map((x)=>h("li",{},effectMark(x.effect),msg(x)))));
+  if(setupBlock) { setupBlock.querySelector("h3").textContent="Use"; setupBlock.querySelector(".fine")?.remove(); }
+  if(seasonBlock) { seasonBlock.querySelector("h3").textContent="Local history"; seasonBlock.querySelector(".fine").textContent="Share of surveyed trips that caught it, by month"; if(historyBlock) { seasonBlock.append(...[...historyBlock.children].slice(1)); historyBlock.remove(); } }
+  if (!why.querySelector("li")) why.append(h("p",{class:"fine"},"Condition details unavailable for this fish."));
+  body.append(why); if(setupBlock) body.append(setupBlock); if(seasonBlock) body.append(seasonBlock); else if(historyBlock) body.append(historyBlock);
+  body.append(h("a",{class:"btn alt",href:"https://myfwc.com/fishing/saltwater/recreational/",target:"_blank",rel:"noopener"},"Check current FWC rules")); actionHost?.remove();
+  if(matchMedia("(min-width:900px)").matches && st.tab === "species") { const browser = document.querySelector(".species-browser"); let layout=browser.parentElement.querySelector(".species-layout"); if(!layout) { layout=h("div",{class:"species-layout"}); browser.replaceWith(layout); layout.append(browser); } let pane=layout.querySelector(".species-pane"); if(!pane) { pane=h("section",{class:"card species-pane"});layout.append(pane); } pane.replaceChildren(h("h2",{},sp.name),body); }
+  else { openSheet(sp.name, body, opener); if(action) { const footer=h("div",{class:"sheet-f",hidden:true},h("button",{class:action.className,type:"button",disabled:action.disabled||null,onclick:()=>action.click()},action.textContent));sheet.panel.append(footer);sheet.observer=new IntersectionObserver(([entry])=>{footer.hidden=entry.isIntersecting;},{root:sheet.panel.querySelector(".sheet-b")});sheet.observer.observe(action); } }
+
 }
 
 /* ---------- toast, review ---------- */
@@ -710,6 +737,7 @@ function syncReview() {
 }
 async function setState(id) { const def = STATES.find((x) => x.id === id); await load(def.file); st.state = id; st.tab = "today"; st.h = "today"; st.spot = null; st.mode = null; st.species = null; st.t = null; lastSpoken = ""; closeSheet(true); render({ resetScroll: true }); }
 function initReview() {
+  $("review").hidden = !["127.0.0.1","localhost"].includes(location.hostname) && new URLSearchParams(location.hash.slice(1)).get("review") !== "1";
   const sl = $("review-states");
   for (const d of STATES) sl.append(h("button", { type: "button", "data-id": d.id, "aria-pressed": "false", onclick: () => setState(d.id) }, d.label));
   const tl = $("review-themes");
@@ -727,10 +755,17 @@ async function init() {
   $("refresh").addEventListener("click", () => {
     const chip = $("fresh"), rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     chip.replaceChildren(rm ? "" : h("span", { class: "spin" }), "Updating…");
-    setTimeout(() => render(), 900);
+    setTimeout(() => { tick("refresh"); render(); $("pull-refresh")?.remove(); }, 900);
   });
+  if (matchMedia("(display-mode: standalone)").matches) document.body.style.overscrollBehaviorY = "contain";
+  let pullStart = null, pulled = false;
+  document.addEventListener("touchstart", (e) => { pullStart = st.tab === "today" && scrollY === 0 && !sheet ? e.touches[0].clientY : null; }, {passive:true});
+  document.addEventListener("touchmove", (e) => { if (pullStart != null && e.touches[0].clientY-pullStart > 64 && !cOffline()) { pulled=true; if (!$("pull-refresh")) $("ctl").append(h("div",{id:"pull-refresh",role:"status"},"Updating…")); } },{passive:true});
+  document.addEventListener("touchend", () => { if(pulled) $("refresh").click(); pullStart=null; pulled=false; });
+  const cOffline = () => ctx().offline;
+  const nav = $("tabbar"), wide = matchMedia("(min-width:900px)"); const placeNav = () => { if(wide.matches) document.querySelector(".bar").append(nav); else document.body.insertBefore(nav,$("sheet-root")); }; placeNav(); wide.addEventListener("change",placeNav);
   initReview();
-  $("view").replaceChildren(h("div", { class: "skel", style: "height:190px", "aria-label": "Reading the water…" }), h("div", { class: "skel", style: "height:120px;margin-top:12px" }));
+  $("view").replaceChildren(h("div",{class:"card skeleton-hero"},h("div",{class:"skel skeleton-ring"}),h("div",{},...[60,90,40].map((w)=>h("div",{class:"skel skeleton-line",style:`width:${w}%`}))),h("p",{class:"muted"},"Reading the water…")),h("div",{class:"card"},...[1,2,3].map(()=>h("div",{class:"skel skeleton-row"}))));
   try {
     const first = new URLSearchParams(location.hash.slice(1));
     const wanted = STATES.find((x) => x.id === first.get("state")) ?? STATES[0];
@@ -745,6 +780,6 @@ async function init() {
       h("div", { class: "cta" }, h("button", { class: "btn", type: "button", onclick: () => location.reload() }, "Try again"))));
     $("view").setAttribute("aria-busy", "false");
   }
-  addEventListener("hashchange", async () => { const p = new URLSearchParams(location.hash.slice(1)); const d = STATES.find((x) => x.id === p.get("state")); if (d) await load(d.file); readHash(); render(); });
+  addEventListener("hashchange", async () => { closeSheet(true); const p = new URLSearchParams(location.hash.slice(1)); const d = STATES.find((x) => x.id === p.get("state")); if (d) await load(d.file); readHash(); render(); });
 }
 init();
