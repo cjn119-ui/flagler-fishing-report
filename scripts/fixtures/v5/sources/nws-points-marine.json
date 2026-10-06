@@ -1,0 +1,12 @@
+{
+  "properties": {
+    "forecastHourly": "https://api.weather.gov/gridpoints/JAX/91,30/forecast/hourly",
+    "forecastGridData": "https://api.weather.gov/gridpoints/JAX/91,30",
+    "observationStations": "https://api.weather.gov/gridpoints/JAX/91,30/stations",
+    "gridId": "JAX",
+    "gridX": 91,
+    "gridY": 30,
+    "forecastZone": "https://api.weather.gov/zones/forecast/AMZ454",
+    "type": "marine"
+  }
+}

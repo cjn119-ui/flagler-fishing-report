@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "source": "NOAA National Data Buoy Center",
+  "station": "41117 · St. Augustine offshore buoy",
+  "station_note": "Offshore observation; conditions may differ at shore.",
+  "observed_at": "2026-10-05T17:56:00.000Z",
+  "fetched_at": "2026-10-05T18:46:13.606Z",
+  "values": {
+    "wave_height_m": 0.5,
+    "dominant_period_s": 9,
+    "average_period_s": 5.3,
+    "water_temperature_c": 28.1,
+    "wind_speed_ms": null,
+    "wind_gust_ms": null,
+    "wind_direction_deg": null
+  },
+  "cached": false
+}

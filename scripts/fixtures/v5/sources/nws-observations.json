@@ -1,0 +1,82 @@
+{
+  "features": [
+    {
+      "properties": {
+        "timestamp": "2026-10-05T17:50:00+00:00",
+        "barometricPressure": {
+          "unitCode": "wmoUnit:Pa",
+          "value": 101460,
+          "qualityControl": "V"
+        },
+        "temperature": {
+          "unitCode": "wmoUnit:degC",
+          "value": 31,
+          "qualityControl": "V"
+        },
+        "windSpeed": {
+          "unitCode": "wmoUnit:km_h-1",
+          "value": 7.56,
+          "qualityControl": "V"
+        },
+        "windGust": {
+          "unitCode": "wmoUnit:km_h-1",
+          "value": null,
+          "qualityControl": "Z"
+        },
+        "textDescription": "Partly Cloudy"
+      }
+    },
+    {
+      "properties": {
+        "timestamp": "2026-10-05T16:50:00+00:00",
+        "barometricPressure": {
+          "unitCode": "wmoUnit:Pa",
+          "value": 101560,
+          "qualityControl": "V"
+        },
+        "temperature": {
+          "unitCode": "wmoUnit:degC",
+          "value": 31,
+          "qualityControl": "V"
+        },
+        "windSpeed": {
+          "unitCode": "wmoUnit:km_h-1",
+          "value": 9.36,
+          "qualityControl": "V"
+        },
+        "windGust": {
+          "unitCode": "wmoUnit:km_h-1",
+          "value": null,
+          "qualityControl": "Z"
+        },
+        "textDescription": "Partly Cloudy"
+      }
+    },
+    {
+      "properties": {
+        "timestamp": "2026-10-05T14:50:00+00:00",
+        "barometricPressure": {
+          "unitCode": "wmoUnit:Pa",
+          "value": 101660,
+          "qualityControl": "V"
+        },
+        "temperature": {
+          "unitCode": "wmoUnit:degC",
+          "value": 27,
+          "qualityControl": "V"
+        },
+        "windSpeed": {
+          "unitCode": "wmoUnit:km_h-1",
+          "value": 0,
+          "qualityControl": "V"
+        },
+        "windGust": {
+          "unitCode": "wmoUnit:km_h-1",
+          "value": null,
+          "qualityControl": "Z"
+        },
+        "textDescription": "Clear"
+      }
+    }
+  ]
+}

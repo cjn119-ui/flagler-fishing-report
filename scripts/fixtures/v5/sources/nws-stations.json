@@ -1,0 +1,8 @@
+{
+  "observationStations": [
+    "https://api.weather.gov/stations/KFIN",
+    "https://api.weather.gov/stations/KDAB",
+    "https://api.weather.gov/stations/KDED",
+    "https://api.weather.gov/stations/KEVB"
+  ]
+}

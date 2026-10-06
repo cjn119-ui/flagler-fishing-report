@@ -1,0 +1,106 @@
+{
+  "properties": {
+    "updateTime": "2026-10-05T16:31:48+00:00",
+    "temperature": {
+      "uom": "wmoUnit:degC",
+      "values": [
+        {
+          "validTime": "2026-10-05T10:00:00+00:00/PT1H",
+          "value": 24.444444444444443
+        },
+        {
+          "validTime": "2026-10-05T11:00:00+00:00/PT1H",
+          "value": 23.88888888888889
+        },
+        {
+          "validTime": "2026-10-05T12:00:00+00:00/PT1H",
+          "value": 24.444444444444443
+        }
+      ]
+    },
+    "windSpeed": {
+      "uom": "wmoUnit:km_h-1",
+      "values": [
+        {
+          "validTime": "2026-10-05T10:00:00+00:00/PT2H",
+          "value": 3.704
+        },
+        {
+          "validTime": "2026-10-05T12:00:00+00:00/PT3H",
+          "value": 5.556
+        },
+        {
+          "validTime": "2026-10-05T15:00:00+00:00/PT1H",
+          "value": 3.704
+        }
+      ]
+    },
+    "windDirection": {
+      "uom": "wmoUnit:degree_(angle)",
+      "values": [
+        {
+          "validTime": "2026-10-05T10:00:00+00:00/PT1H",
+          "value": 140
+        },
+        {
+          "validTime": "2026-10-05T11:00:00+00:00/PT1H",
+          "value": 110
+        },
+        {
+          "validTime": "2026-10-05T12:00:00+00:00/PT1H",
+          "value": 90
+        }
+      ]
+    },
+    "windGust": {
+      "uom": "wmoUnit:km_h-1",
+      "values": [
+        {
+          "validTime": "2026-10-05T10:00:00+00:00/PT2H",
+          "value": 9.26
+        },
+        {
+          "validTime": "2026-10-05T12:00:00+00:00/PT1H",
+          "value": 11.112
+        },
+        {
+          "validTime": "2026-10-05T13:00:00+00:00/PT1H",
+          "value": 9.26
+        }
+      ]
+    },
+    "probabilityOfPrecipitation": {
+      "uom": "wmoUnit:percent",
+      "values": [
+        {
+          "validTime": "2026-10-05T10:00:00+00:00/PT1H",
+          "value": 11
+        },
+        {
+          "validTime": "2026-10-05T11:00:00+00:00/PT1H",
+          "value": 12
+        },
+        {
+          "validTime": "2026-10-05T12:00:00+00:00/PT1H",
+          "value": 10
+        }
+      ]
+    },
+    "probabilityOfThunder": {
+      "values": [
+        {
+          "validTime": "2026-10-05T10:00:00+00:00/PT1H",
+          "value": 11
+        },
+        {
+          "validTime": "2026-10-05T11:00:00+00:00/PT1H",
+          "value": 12
+        },
+        {
+          "validTime": "2026-10-05T12:00:00+00:00/PT1H",
+          "value": 13
+        }
+      ]
+    }
+  }
+}

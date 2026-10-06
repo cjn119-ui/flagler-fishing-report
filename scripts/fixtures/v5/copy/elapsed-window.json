@@ -1,0 +1,34 @@
+{
+  "now": "2026-10-06T15:00:00.000Z",
+  "run": {
+    "recommendation": {
+      "mode": "inshore",
+      "partOfDay": "morning",
+      "headline": {"code":"headline","params":{},"text":"Redfish on the outgoing tide"},
+      "whenLabel": {"code":"when","params":{},"text":"Today morning"},
+      "useLine": {"code":"setup","params":{},"text":"Live shrimp near the dock"},
+      "reason": {"code":"tide","text":{"code":"tide","params":{},"text":"The tide is moving out"}},
+      "gates": [{"code":"wind","text":{"code":"gate.wind","params":{},"text":"Wind builds during this window"},"startsAt":"2026-10-06T12:00:00.000Z","endsAt":"2026-10-06T13:00:00.000Z","severity":"caution"}],
+      "confidence": 54,
+      "confidenceLevel": "Moderate",
+      "confidenceReasons": [{"code":"pressure","text":{"code":"pressure","params":{},"text":"Pressure readings are unavailable"},"penalty":5,"kind":"live"}],
+      "confidenceSummary": {"code":"confidence.partial","params":{},"text":"Pressure readings are unavailable"},
+      "freshness": {"ageMinutes":120,"stale":true,"usedFallback":true,"status":"stale","label":"Tide"},
+      "window": {"start":"2026-10-06T12:00:00.000Z","end":"2026-10-06T13:00:00.000Z","partOfDay":"morning"},
+      "targets": [{"speciesId":"redfish","historicalRate":{"rate":0.08,"n":45,"lowSample":true,"band":"Occasional","month":10,"unit":"trips","sourceLabel":"river, bridge and bank surveys"},"seasonBasis":"absoluteOnly","historyNotes":[{"code":"history.inshoreSpread","params":{},"text":"Inshore catches in the surveys are spread over many species, so none is Common. A GO here means today's conditions line up in one of this species's better inshore months, not that most trips catch one."},{"code":"season.thinPeak","params":{"species":"Redfish","month":"October"},"text":"Too few survey catches to pick Redfish's best month; season uses its overall October survey rate."}]}]
+    },
+    "inputs": {"sourceStatus":[{"kind":"tide","fetchedAt":"2026-10-06T13:00:00.000Z","ageMinutes":120,"stale":true,"usedFallback":true,"status":"stale","label":"Tide"}]}
+  },
+  "expected": {
+    "headline":"Redfish on the outgoing tide",
+    "whenLabel":"Today morning · 8–9 AM",
+    "useLine":"Live shrimp near the dock",
+    "reason":"The tide is moving out",
+    "gates":["Wind builds during this window"],
+    "confidence":"Moderate confidence · 54 · Pressure readings are unavailable",
+    "freshness":"Tide: Data is stale · 120 min old",
+    "windowStatus":"Window ended",
+    "historicalRates":[{"speciesId":"redfish","text":"Occasional in October surveys — low sample (river, bridge and bank surveys)."}],
+    "historyNotes":[{"speciesId":"redfish","notes":[{"code":"history.inshoreSpread","text":"Inshore catches in the surveys are spread over many species, so none is Common. A GO here means today's conditions line up in one of this species's better inshore months, not that most trips catch one."},{"code":"season.thinPeak","text":"Too few survey catches to pick Redfish's best month; season uses its overall October survey rate."}]}]
+  }
+}

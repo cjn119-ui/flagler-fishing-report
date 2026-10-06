@@ -1,0 +1,154 @@
+{
+  "now": "2026-10-06T15:00:00.000Z",
+  "run": {
+    "recommendation": {
+      "mode": "inshore",
+      "partOfDay": "morning",
+      "headline": {
+        "code": "recommendation.goSeasonal",
+        "params": {},
+        "text": "Better than usual at Vilano Beach today"
+      },
+      "whenLabel": {
+        "code": "when",
+        "params": {},
+        "text": "Today morning"
+      },
+      "useLine": {
+        "code": "setup",
+        "params": {},
+        "text": "Live shrimp near the dock"
+      },
+      "reason": null,
+      "gates": [
+        {
+          "code": "wind",
+          "text": {
+            "code": "gate.wind",
+            "params": {},
+            "text": "Wind builds during this window"
+          },
+          "startsAt": "2026-10-06T12:00:00.000Z",
+          "endsAt": "2026-10-06T13:00:00.000Z",
+          "severity": "caution"
+        }
+      ],
+      "confidence": 54,
+      "confidenceLevel": "Moderate",
+      "confidenceReasons": [
+        {
+          "code": "pressure",
+          "text": {
+            "code": "pressure",
+            "params": {},
+            "text": "Pressure readings are unavailable"
+          },
+          "penalty": 5,
+          "kind": "live"
+        }
+      ],
+      "confidenceSummary": {
+        "code": "confidence.partial",
+        "params": {},
+        "text": "Pressure readings are unavailable"
+      },
+      "freshness": {
+        "ageMinutes": 120,
+        "stale": true,
+        "usedFallback": true,
+        "status": "stale",
+        "label": "Tide"
+      },
+      "window": {
+        "start": "2026-10-06T12:00:00.000Z",
+        "end": "2026-10-06T13:00:00.000Z",
+        "partOfDay": "morning"
+      },
+      "targets": [
+        {
+          "speciesId": "redfish",
+          "historicalRate": {
+            "rate": 0.08,
+            "n": 45,
+            "lowSample": true,
+            "band": "Occasional",
+            "month": 10,
+            "unit": "trips",
+            "sourceLabel": "river, bridge and bank surveys"
+          },
+          "seasonBasis": "absoluteOnly",
+          "historyNotes": [
+            {
+              "code": "history.inshoreSpread",
+              "params": {},
+              "text": "Inshore catches in the surveys are spread over many species, so none is Common. A GO here means today's conditions line up in one of this species's better inshore months, not that most trips catch one."
+            },
+            {
+              "code": "season.thinPeak",
+              "params": {
+                "species": "Redfish",
+                "month": "October"
+              },
+              "text": "Too few survey catches to pick Redfish's best month; season uses its overall October survey rate."
+            }
+          ]
+        }
+      ],
+      "verdict": "GO",
+      "displayName": "Vilano Beach",
+      "suitability": 82,
+      "benchmarkLine": {
+        "code": "recommendation.goContext",
+        "params": {},
+        "text": "Fit 82 - above this spot's normal for October"
+      }
+    },
+    "inputs": {
+      "sourceStatus": [
+        {
+          "kind": "tide",
+          "fetchedAt": "2026-10-06T13:00:00.000Z",
+          "ageMinutes": 120,
+          "stale": true,
+          "usedFallback": true,
+          "status": "stale",
+          "label": "Tide"
+        }
+      ]
+    }
+  },
+  "expected": {
+    "headline": "Better than usual at Vilano Beach today",
+    "whenLabel": "Today morning \u00b7 8\u20139 AM",
+    "useLine": "Live shrimp near the dock",
+    "reason": "",
+    "gates": [
+      "Wind builds during this window"
+    ],
+    "confidence": "Moderate confidence \u00b7 54 \u00b7 Pressure readings are unavailable",
+    "freshness": "Tide: Data is stale \u00b7 120 min old",
+    "windowStatus": "Window ended",
+    "historicalRates": [
+      {
+        "speciesId": "redfish",
+        "text": "Occasional in October surveys \u2014 low sample (river, bridge and bank surveys)."
+      }
+    ],
+    "historyNotes": [
+      {
+        "speciesId": "redfish",
+        "notes": [
+          {
+            "code": "history.inshoreSpread",
+            "text": "Inshore catches in the surveys are spread over many species, so none is Common. A GO here means today's conditions line up in one of this species's better inshore months, not that most trips catch one."
+          },
+          {
+            "code": "season.thinPeak",
+            "text": "Too few survey catches to pick Redfish's best month; season uses its overall October survey rate."
+          }
+        ]
+      }
+    ],
+    "benchmarkLine": "Fit 82 - above this spot's normal for October"
+  }
+}

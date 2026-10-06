@@ -1,0 +1,30 @@
+{
+  "table": {
+    "columnNames": [
+      "time",
+      "sea_surface_wave_significant_height",
+      "sea_surface_wave_period_at_variance_spectral_density_maximum",
+      "sea_surface_wave_from_direction"
+    ],
+    "columnTypes": [
+      "String",
+      "double",
+      "double",
+      "double"
+    ],
+    "columnUnits": [
+      "UTC",
+      "m",
+      "s",
+      "degrees"
+    ],
+    "rows": [
+      [
+        "2026-10-05T18:00:00Z",
+        0.5,
+        9.876543045043945,
+        80.1875
+      ]
+    ]
+  }
+}

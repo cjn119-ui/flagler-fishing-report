@@ -1,0 +1,34 @@
+{
+  "now": "2026-11-02T04:55:00.000Z",
+  "run": {
+    "recommendation": {
+      "mode": "surf",
+      "partOfDay": "dawn",
+      "headline": {"code":"headline","params":{},"text":"Whiting on the incoming tide"},
+      "whenLabel": {"code":"when","params":{},"text":"Tomorrow morning"},
+      "useLine": {"code":"setup","params":{},"text":"Shrimp on a double-drop rig"},
+      "reason": {"code":"tide","text":{"code":"tide","params":{},"text":"The tide is moving"}},
+      "gates": [],
+      "confidence": 78,
+      "confidenceLevel": "High",
+      "confidenceReasons": [],
+      "confidenceSummary": {"code":"confidence.current","params":{},"text":"Forecast and tides are current"},
+      "freshness": {"ageMinutes":12,"stale":false,"usedFallback":false,"status":"current","label":"Forecast"},
+      "window": {"start":"2026-11-02T05:20:00.000Z","end":"2026-11-02T06:20:00.000Z","partOfDay":"dawn"},
+      "targets": [{"speciesId":"whiting","historicalRate":{"rate":0.32,"n":100,"lowSample":false,"band":"Common","month":11,"unit":"trips","sourceLabel":"pier and beach surveys"}}]
+    },
+    "inputs": {"sourceStatus":[{"kind":"forecast","fetchedAt":"2026-11-02T04:43:00.000Z","ageMinutes":12,"stale":false,"usedFallback":false,"status":"current","label":"Forecast"}]}
+  },
+  "expected": {
+    "headline":"Whiting on the incoming tide",
+    "whenLabel":"Tomorrow morning · 12:20–1:20 AM",
+    "useLine":"Shrimp on a double-drop rig",
+    "reason":"The tide is moving",
+    "gates":[],
+    "confidence":"High confidence · 78 · Forecast and tides are current",
+    "freshness":"Forecast: Current data · 12 min old",
+    "windowStatus":"Opens in 25 min",
+    "historicalRates":[{"speciesId":"whiting","text":"About 3 in 10 Northeast Florida shore fishing trips caught one in November (2015–2025 surveys); pier and beach surveys."}],
+    "historyNotes":[]
+  }
+}

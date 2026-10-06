@@ -1,0 +1,22 @@
+{
+  "table": {
+    "columnNames": [
+      "time",
+      "sea_water_temperature"
+    ],
+    "columnTypes": [
+      "String",
+      "double"
+    ],
+    "columnUnits": [
+      "UTC",
+      "degree_Celsius"
+    ],
+    "rows": [
+      [
+        "2026-10-05T18:28:20Z",
+        28.099998474121094
+      ]
+    ]
+  }
+}

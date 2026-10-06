@@ -1,0 +1,33 @@
+# MRIP / NDBC history QA
+
+Built with system Python and cached MRIP zips (`2015–2025`).
+
+## Catch definition repair
+
+**Before → after.** The former respondent-attributed Type-A-only estimate was ocean **.1303** and inland **.1149** (published denominators included 5 and 25 proxy interviews). The corrected primary rates, excluding those proxies, are ocean **585/931 = .6284** and inland **770/1,742 = .4420**. Proxy-inclusive sensitivity rates are ocean **.6271 (n=936)** and inland **.4426 (n=1,767)**. `p_any_fish` now uses the repaired rate; the prior Type-A-only rate remains as `p_any_fish_legacy_personal_type_a_only`. The available-catch answer remains diagnostic.
+
+One unique interview `(YEAR, WAVE, ID_CODE)` is a hit if any joined species row has `CLAIM > 0 AND F_BY_P == 1` (individually attributed Type A), or `HARVEST > 0` (B1), or `RELEASE > 0` (B2). B1/B2 count even when `F_BY_P == 8`; group Type A (`F_BY_P == 2`) does not. Each trip/species alias union is counted once. Species `p` uses the same rule. `TRIP.CATCH` remains an available-catch indicator and is not used as the outcome definition. Existing bait/forage/unknown-fish exclusions remain in force for the any-fish rate. All primary `n` values are unique non-proxy interviews; the artifact retains `imputed_proxy` source keys and reports proxy-inclusive counts/rates alongside primary values.
+
+Across all **2,703** unique trip keys, Type A only: **100 (3.70%)**; B1/B2 only: **1,109 (41.03%)**; both: **238 (8.81%)**. On the primary non-proxy denominator, ocean (n=931) has A-only **35 (3.76%)**, B-only **475 (51.02%)**, both **86 (9.24%)**; inland (n=1,742) has A-only **64 (3.67%)**, B-only **624 (35.82%)**, both **149 (8.55%)**. These categories are disjoint; trips with only excluded bait/unknown catches may still fall outside the corrected any-fish hit rate.
+
+The operational definition follows the NOAA MRIP Survey Variables workbook ([TRIP `F_BY_P` / `CATCH`, CATCH `CLAIM` / `HARVEST` / `RELEASE` / `TOT_CAT` / `IMP_REC`](https://media.fisheries.noaa.gov/2022-06/MRIP-Survey-Variables-for-Web.xls)), the [MRIP Data User Handbook, pp. 7–8 and 16–17](https://www.fisheries.noaa.gov/s3/2023-04/MRIP-Data-User-Handbook-04-2023.pdf), and [Survey Design and Statistical Methods, p. 27](https://www.fisheries.noaa.gov/s3/2024-05/MRIP-Survey-Design-and-Statistical-Methods-Updated-April-2024-508.pdf). See ADR §2 for the detailed rationale.
+
+## Checks
+
+The audit notes below preserve the source profiling performed before the catch-definition repair; the new estimand and its recomputed headline rates are documented above. Values explicitly labelled as prior/group-inclusive or weighted sensitivity are not the repaired primary estimate.
+
+- **Trip/catch grain and group catches:** NOAA defines TRIP as one interview and CATCH as one species per interview. Imputed records reuse `ID_CODE`; ID-only joining collapsed **30** 2020 proxy rows. `(YEAR,WAVE,ID_CODE)` retains **2,703** trips and **4,020** catch rows ([builder](../scripts/build_first_coast_history.py:88)). `CATCH=1` means yes; `F_BY_P=1` attributes fish to respondent. **1,107** positive-`TOT_CAT` trips have `CATCH=2`, `F_BY_P=8`, `CNTRBTRS=1`; ID-level `TOT_CAT>0` overstates respondent catch. Two `CATCH=1` trips have only `F_BY_P=2` species rows: keep yes, assign no species. `TOT_CAT=A+B1+B2`; 32 `CLAIM_UNADJ > CLAIM` rows may be group/incomplete-shore adjustments; `LEADER` identifies a group leader. Group-inclusive vs personal nonbait rate: ocean `.6271/.1303`, inland `.4426/.1149` ([builder](../scripts/build_first_coast_history.py:117)).
+- **Denominator / codes / time:** All trips remain in the denominator (0 lacked catch rows); positive `TOT_CAT`=1,447, `CATCH=1`=340, personal catches=338. `AREA_X=1` ocean ≤3 mi; `5` inland. `MODE_FX=3` shore; `MODE_F`: 1 pier/dock, 2 jetty, 3 bridge, 4 other man-made, 5 beach/bank ([builder](../scripts/build_first_coast_history.py:32)). Month/WAVE agree; all 2,703 `TIME` values are valid HHMM ([builder](../scripts/build_first_coast_history.py:99)).
+- **Thin samples:** Monthly n, Jan–Dec: ocean `43,37,72,122,81,113,197,146,19,33,41,32`; inland `121,109,159,197,183,192,150,148,139,154,116,99`. County Duval/Flagler/Nassau/St. Johns: ocean `511/346/9/70`; inland `1066/100/337/264`. Site-type n (pier/beach/jetty/bridge/other-man-made): ocean `814/94/17/11/0`; inland `541/929/30/131/136`. Thin: ocean September, Nassau, bridge, jetty, other-man-made; inland none below 30. Pool or shrink these.
+- **Species mapping (read-only):** Whiting maps Kingfish genus and Gulf/Southern kingfish; flounder maps Southern/Gulf and lefteye flounder genus. No unmapped flounder name reaches five personal-catch trips. Unmapped trips, ocean/inland: Atlantic spadefish `15/10`, spot `14/21`, silver perch `14/9`, bonnethead `11/—`, weakfish `10/—`, requiem shark family `6/—`, ladyfish `6/6`, hammerhead shark genus `5/—`, sand seatrout `—/15`, stingray genus `—/14`, pigfish `—/9`, black sea bass `—/9`, oyster toadfish `—/7`. Review shark/ray names as bycatch. No species.js edits.
+- **WP_INT / NDBC:** Weights are positive: `112–211,944`, median ≈`10,000`; maximum is 0.62% ocean / 0.66% inland weight total; Kish effective-n ≈`410/701`. Weighted/unweighted `p_any_fish`: ocean `.1478/.1303`, inland `.1188/.1149`. Keep weighted rates descriptive pending design-based uncertainty work. NDBC `WTMP` converts °C→°F; `>=99` removes 99/999 (one `999.0`); valid years 2017–2025 and all 365 bins populate. Leap handling omits Feb 29 and shifts later dates back one day ([builder](../scripts/build_first_coast_history.py:176)).
+
+## For GPT-6.1 Sol / architecture owner
+
+- Decide whether the engine should use respondent-declared `p_any_fish`, nonbait `p_any_target_fish`, or both; choose whether/how to use WP_INT and represent uncertainty.
+- Set shrinkage for thin monthly/site slices. NOAA cautions that MRIP is not designed for site-level estimates.
+- Review whether unmapped names should be targets, bycatch-only, or excluded.
+
+## Sources
+
+[MRIP Data User Handbook](https://media.fisheries.noaa.gov/2022-06/MRIP-Data-User-Handbook-Updated-2022-06-21.pdf) pp. 7–9, 32–33; [MRIP Read Me](https://www.fisheries.noaa.gov/s3/2023-04/MRIP-Read-Me.pdf) pp. 1–2 (imputation and grain); [MRIP Survey Variables workbook](https://media.fisheries.noaa.gov/2022-06/MRIP-Survey-Variables-for-Web.xls); [MRIP downloads](https://www.fisheries.noaa.gov/recreational-fishing-data/recreational-fishing-data-downloads); [TOT_CAT definition](https://www.st.nmfs.noaa.gov/st1/recreational/pubs/data_users/append_f.pdf); [NDBC units and missing-value conventions](https://www.ndbc.noaa.gov/faq/measdes.shtml).
