@@ -1,6 +1,7 @@
 // Proves the post-generation validator passes good output and fails the bugs it exists to catch.
 import assert from "node:assert/strict";
 import { validateGenerated, formatRows } from "./test-generated-output.mjs";
+import { latestReport } from "../src/worker.mjs";
 
 const now = new Date("2026-10-04T16:00:00Z"); // 12:00 EDT Sunday
 const iso = (ms) => new Date(+now + ms).toISOString();
@@ -41,6 +42,22 @@ const expectFail = async (name, mutate, match, fetchHourly) => {
   const errs = errorsOf(await run(files, fetchHourly));
   assert.ok(errs.some((e) => match.test(e)), `${name}: expected an error matching ${match}, got ${JSON.stringify(errs)}`);
 };
+
+// A failed current-day refresh must never make a future preview the current report.
+{
+  const current = { schema_version: 1, report_date: "2026-10-06", run_id: "old", generated_at: "2026-10-06T22:51:10.943Z", report_text: "old" };
+  const future = { schema_version: 1, report_date: "2026-10-08", run_id: "preview", generated_at: "2026-10-07T05:20:26.481Z", report_text: "preview" };
+  const env = { REPORTS: { get: async (key) => JSON.stringify(key === "current-report" ? current : future) } };
+  assert.equal((await latestReport(env, new Date("2026-10-07T05:20:00Z"))).report_date, "2026-10-06");
+  for (let ms = Date.parse("2026-10-07T04:00:00Z"); ms < Date.parse("2026-10-07T23:00:00Z"); ms += 15 * MIN) {
+    const selected = await latestReport(env, new Date(ms));
+    assert.ok(selected.report_date <= "2026-10-07", `future ${selected.report_date} was exposed at ${new Date(ms).toISOString()}`);
+  }
+  const priorPreview = { ...future, report_date: "2026-10-07" };
+  const priorNightEnv = { REPORTS: { get: async (key) => JSON.stringify(key === "current-report" ? current : priorPreview) } };
+  assert.equal((await latestReport(priorNightEnv, new Date("2026-10-07T03:55:00Z"))).report_date, "2026-10-07");
+  assert.equal((await latestReport(priorNightEnv, new Date("2026-10-07T04:10:00Z"))).report_date, "2026-10-07");
+}
 
 // Baseline passes, with catch scores in range.
 {
