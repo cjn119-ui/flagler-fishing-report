@@ -8,6 +8,7 @@ import { fetchCoopsWaterTemperature } from "./adapters/coops-water-temperature.j
 import { fetchSecoora } from "./adapters/secoora.js";
 import { fetchNdbcFallback } from "./adapters/ndbc-fallback.js";
 import { fetchNwsWaveForecast } from "./adapters/nws-wave.js";
+import { fetchOpenMeteoMarineForecast, fetchOpenMeteoWeather } from "./adapters/open-meteo.js";
 
 const cache = new Map();
 export function clearSourceCache() { cache.clear(); }
@@ -57,7 +58,18 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
       jobs.push(["grid", "grid:" + id, () => fetchNwsWaveForecast(location, { points: marinePoints, fetchImpl, now, timeoutMs })]);
     }
     const results = await Promise.all(jobs.map(async ([kind,key,fn]) => cached(key, kind, now, fn)));
-    const [hourly, landGrid, alerts, pressure, tide, coopsWater, secooraWaves, secooraWater, waveForecast] = results;
+    let [hourly, landGrid, alerts, pressure, tide, coopsWater, secooraWaves, secooraWater, waveForecast] = results;
+    if (!hourly?.ok || hourly.stale || !landGrid?.ok || landGrid.stale) {
+      const fallback = await fetchOpenMeteoWeather(location, { fetchImpl, now, timeoutMs });
+      if ((!hourly?.ok || hourly.stale) && fallback.hourly.ok) hourly = fallback.hourly;
+      if ((!landGrid?.ok || landGrid.stale) && fallback.grid.ok) landGrid = fallback.grid;
+    }
+    if (marine && (!waveForecast?.ok || waveForecast.stale)) {
+      const fallback = await fetchOpenMeteoMarineForecast(
+        { ...location, lon: marineCoordinates.lon }, { fetchImpl, now, timeoutMs },
+      );
+      if (fallback.ok) waveForecast = fallback;
+    }
     const buoyOk = obs => obs?.ok && !obs.stale && Number.isFinite(Date.parse(obs.observedAt)) && now - Date.parse(obs.observedAt) <= 3*3600000;
     let ndbc = null;
     const waves = buoyOk(secooraWaves) ? secooraWaves : (ndbc ??= await fetchNdbcFallback(location, { fetchImpl, now, timeoutMs, url: ndbcUrl }));

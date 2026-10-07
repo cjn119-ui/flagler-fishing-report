@@ -211,6 +211,9 @@ function renderHeader(c) {
   const updatedAt = !validDate(run.generatedAt) ? "Time unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(run.generatedAt));
   let text = `${updatedAt} · ${ageText(Math.max(0, Math.round((Date.now() - Date.parse(run.generatedAt)) / 60000)))}`, tag = "Updated ", sv = "fresh";
   if (offline) { sv = "offline"; tag = "Offline · "; }
+  else if (run.inputs?.sourceStatus?.some((source) => source.provider === "open-meteo" && source.status === "fallback")) {
+    sv = "fallback"; tag = "Open-Meteo fallback · ";
+  }
   else if (fr.level === "aging") sv = "aging";
   else if (c.stale) { sv = "stale"; tag = "Stale · "; }
   chip.dataset.s = sv; chip.replaceChildren(sv === "stale" ? icon("warn") : sv === "offline" ? icon("off") : "", h("span", { class: "lbl" }, tag), text);
@@ -516,12 +519,20 @@ function spotsTeaser(c) {
     h("ul", { class: "list" }, rows.map((r) => spotRowEl(r, c, { star: false }))));
 }
 function sourcesCard(c) {
-  const run = c.run, srcs = run.inputs?.sourceStatus ?? [], missing = srcs.filter((x) => x.available === false);
+  const run = c.run, srcs = run.inputs?.sourceStatus ?? [], missing = srcs.filter((x) => x.available === false || x.stale);
+  const usesOpenMeteo = srcs.some((x) => x.provider === "open-meteo");
   const det = h("details", { class: "card use", open: session.sources || null, id: "sources" });
   det.addEventListener("toggle", () => { session.sources = det.open; });
   det.append(h("summary", { "data-fk": "sources" }, h("span", {}, "Data & sources"), missing.length ? h("span", { class: "vchip amber" }, `${missing.length} missing`) : null),
-    h("div", { class: "det-body" }, h("ul", { class: "src-list" }, srcs.map((x) => h("li", { "data-bad": x.available === false ? "" : null }, h("span", {}, x.label ?? x.kind), h("span", {}, x.available === false ? "Unavailable" : `${x.status === "current" ? "Current" : "Stale"} · ${fmtTime(x.fetchedAt)}`)))),
+    h("div", { class: "det-body" }, h("ul", { class: "src-list" }, srcs.map((x) => {
+      const provider = x.provider === "open-meteo" ? "Open-Meteo" : x.provider === "nws" ? "NWS" : x.provider;
+      const state = x.status === "fallback" ? `Fallback · ${provider}` : x.status === "current" ? `${provider} · Current` : x.status === "stale" ? `${provider} · Stale` : "Unavailable";
+      return h("li", { "data-bad": x.available === false || x.stale ? "" : null }, h("span", {}, x.label ?? x.kind), h("span", {}, x.available === false ? "Unavailable" : `${state} · ${fmtTime(x.fetchedAt)}`));
+    })),
       missing.length ? h("p", { class: "fine" }, `Missing right now: ${missing.map((m) => (m.label ?? m.kind).toLowerCase()).join(", ")}.`) : null,
+      usesOpenMeteo ? h("p", { class: "fine" }, "Weather and marine forecast fallback: Open-Meteo. Its API does not expose a model issue time here, so fallback forecasts cannot satisfy GO freshness checks or tomorrow's wave gate. Data by ",
+        h("a", { href: "https://open-meteo.com/", target: "_blank", rel: "noopener noreferrer" }, "Open-Meteo"),
+        " under ", h("a", { href: "https://creativecommons.org/licenses/by/4.0/", target: "_blank", rel: "noopener noreferrer" }, "CC BY 4.0"), ".") : null,
       h("p", { class: "fine" }, `Model ${run.modelVersion} · run ${fmtTime(run.generatedAt)} · all times Eastern. Prototype data.`)));
   return det;
 }

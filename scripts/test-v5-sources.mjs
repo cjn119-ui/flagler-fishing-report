@@ -12,6 +12,7 @@ import { fetchCoopsWaterTemperature } from "../site/v5/engine/adapters/coops-wat
 import { fetchSecoora } from "../site/v5/engine/adapters/secoora.js";
 import { fetchNdbcFallback } from "../site/v5/engine/adapters/ndbc-fallback.js";
 import { fetchNwsWaveForecast, waveCoverage } from "../site/v5/engine/adapters/nws-wave.js";
+import { fetchOpenMeteoMarineForecast, fetchOpenMeteoWeather } from "../site/v5/engine/adapters/open-meteo.js";
 import { parseDurationMs } from "../site/v5/engine/adapters/shared.js";
 import { clearSourceCache, fetchSources, sourceCachePolicy } from "../site/v5/engine/sources.js";
 import { recordNormalizedInputs, serializeNormalizedInputs } from "../site/v5/engine/recorder.js";
@@ -37,6 +38,29 @@ function routedFetch(routes) {
     if (item?.status === 503) return { ok: false, status: 503, json: async () => ({}) };
     return response(item);
   };
+}
+function openMeteoWeatherFixture() {
+  const hourly = { time: [], temperature_2m: [], precipitation_probability: [], wind_speed_10m: [],
+    wind_direction_10m: [], wind_gusts_10m: [] };
+  for (let i = 0; i < 168; i++) {
+    hourly.time.push(new Date(now + i * 3600000).toISOString().slice(0, 16));
+    hourly.temperature_2m.push(75);
+    hourly.precipitation_probability.push(20);
+    hourly.wind_speed_10m.push(8);
+    hourly.wind_direction_10m.push(90);
+    hourly.wind_gusts_10m.push(12);
+  }
+  return { hourly };
+}
+function openMeteoMarineFixture() {
+  const hourly = { time: [], wave_height: [], wave_period: [], wave_direction: [] };
+  for (let i = 0; i < 168; i++) {
+    hourly.time.push(new Date(now + i * 3600000).toISOString().slice(0, 16));
+    hourly.wave_height.push(0.8);
+    hourly.wave_period.push(7);
+    hourly.wave_direction.push(45);
+  }
+  return { hourly };
 }
 
 await check("NWS points links, metadata, and seven-day cache", async () => {
@@ -69,6 +93,57 @@ await check("NWS land grid normalizes wind, temperature, PoP, thunder and gust i
   assert.ok(grid.values.windSpeed[0].value >= 0); assert.ok(grid.values.windGust[0].value >= 0);
   assert.ok(grid.values.temperature[0].value > 50); assert.ok(grid.values.probabilityOfPrecipitation[0].value >= 0);
   assert.ok(Array.isArray(grid.values.probabilityOfThunder));
+});
+
+await check("Open-Meteo adapters normalize UTC weather and marine forecast intervals", async () => {
+  const fetchImpl = async url => response(String(url).includes("marine-api.")
+    ? openMeteoMarineFixture() : openMeteoWeatherFixture());
+  const weather = await fetchOpenMeteoWeather(spot, { fetchImpl, now });
+  assert.equal(weather.hourly.provider, "open-meteo");
+  assert.equal(weather.hourly.usedFallback, true);
+  assert.equal(weather.hourly.issuedAt, null);
+  assert.equal(weather.hourly.values.rows.length, 168);
+  assert.equal(weather.hourly.values.rows[0].windSpeed, 8);
+  assert.equal(weather.grid.values.windDirection[0].value, 90);
+  assert.equal(weather.grid.values.probabilityOfPrecipitation[0].value, 20);
+
+  const marine = await fetchOpenMeteoMarineForecast(spot, { fetchImpl, now });
+  assert.equal(marine.provider, "open-meteo");
+  assert.equal(marine.kind, "waveForecast");
+  assert.equal(marine.values.rows[0].waveHeightM, 0.8);
+  assert.equal(marine.values.rows[0].periodS, 7);
+  assert.equal(waveCoverage(marine, marine.validFrom, marine.values.rows[0].validTo), true);
+});
+
+await check("stale NWS weather and marine forecasts fall back to fresh Open-Meteo data", async () => {
+  clearSourceCache(); clearNwsPointsCache();
+  const location = { ...spot, modes: ["surf"] };
+  const staleAt = new Date(now - 8 * 3600000).toISOString();
+  const pointsFixture = fixture("nws-points-land");
+  const fetchImpl = async url => {
+    const text = String(url);
+    if (text.includes("/points/")) return response(pointsFixture);
+    if (text.includes("/forecast/hourly")) {
+      const value = fixture("nws-hourly");
+      value.properties.updateTime = staleAt;
+      return response(value);
+    }
+    if (text === "https://api.weather.gov/gridpoints/JAX/89,29") {
+      const value = fixture("nws-grid-land");
+      value.properties.updateTime = staleAt;
+      return response(value);
+    }
+    if (text.includes("marine-api.open-meteo.com")) return response(openMeteoMarineFixture());
+    if (text.includes("api.open-meteo.com")) return response(openMeteoWeatherFixture());
+    throw new Error("fixture transport failure");
+  };
+  const inputs = await fetchSources({ locations: [location], fetchImpl, now });
+  for (const kind of ["hourlyForecast", "gridForecast", "waveForecast"]) {
+    const fallback = inputs.find(x => x.kind === kind);
+    assert.equal(fallback?.provider, "open-meteo", `${kind} should use the fresh fallback`);
+    assert.equal(fallback?.stale, false);
+    assert.equal(fallback?.usedFallback, true);
+  }
 });
 
 await check("NWS station readings preserve pressure samples", async () => {
