@@ -56,7 +56,7 @@ await check("NWS hourly and alerts parse independently", async () => {
   const points = await fetchNwsPoints(spot, { fetchImpl: async () => response(fixture("nws-points-land")), now });
   const hourly = await fetchNwsHourly(spot, { points, fetchImpl: async () => response(fixture("nws-hourly")), now });
   const alerts = await fetchNwsAlerts(spot, { fetchImpl: async () => response(fixture("nws-alerts")), now });
-  assert.equal(hourly.ok, true); assert.ok(hourly.values.rows.length > 0);
+  assert.equal(hourly.ok, true); assert.ok(hourly.values.rows.length > 0); assert.match(hourly.issuedAt, /Z$/); assert.match(hourly.validFrom, /Z$/);
   assert.equal(alerts.ok, true); assert.equal(alerts.values.rows.length, 1);assert.equal(alerts.values.rows[0].event,"Small Craft Advisory");assert.equal(alerts.values.rows[0].severity,"Minor");
   const bad = await fetchNwsAlerts(spot, { fetchImpl: failFetch, now });
   assert.equal(bad.ok, false); assert.equal(hourly.ok, true);
