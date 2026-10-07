@@ -11,7 +11,13 @@ export function observation({
   units = {}, values = {}, ok = true, stale = false, usedFallback = false, error = null,
 }) {
   const safeErrorCode = error ? "source_unavailable" : null;
-  return { provider, source: provider, kind, locationId, station, url, observedAt, issuedAt, validFrom, validTo, fetchedAt,
+  const utc = value => {
+    if (value == null) return null;
+    const date = new Date(value);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : value;
+  };
+  return { provider, source: provider, kind, locationId, station, url, observedAt: utc(observedAt), issuedAt: utc(issuedAt),
+    validFrom: utc(validFrom), validTo: utc(validTo), fetchedAt: utc(fetchedAt),
     units: units ?? {}, values: values ?? {}, ok, stale: Boolean(stale), usedFallback: Boolean(usedFallback),
     safeErrorCode, error: error ? String(error).slice(0, 240) : null };
 }

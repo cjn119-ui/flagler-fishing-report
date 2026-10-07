@@ -44,6 +44,11 @@ jobs:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
           FORCE_REFRESH: ${{ inputs.force }}
         run: node scripts/generate.mjs
+      - name: Generate V5 live data
+        continue-on-error: true
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: node scripts/generate-v5.mjs
       - name: Validate generated output
         run: node scripts/test-generated-output.mjs
       - uses: actions/upload-pages-artifact@v3
