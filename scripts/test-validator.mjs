@@ -43,6 +43,49 @@ const expectFail = async (name, mutate, match, fetchHourly) => {
   assert.ok(errs.some((e) => match.test(e)), `${name}: expected an error matching ${match}, got ${JSON.stringify(errs)}`);
 };
 
+// Overnight current-day report: fixed 01:34 EDT clock and the stored next-day
+// record are the source of truth for whether the public report is an evening preview.
+{
+  const overnight = new Date("2026-10-07T05:34:00Z");
+  const overnightRun = (files, env = {}) => validateGenerated({ files, now: overnight, fetchHourly: async () => ({
+    updatedAt: new Date(+overnight - MIN),
+    periods: Array.from({ length: 48 }, (_, i) => ({ start: new Date(+overnight + (i - 1) * H), end: new Date(+overnight + i * H), windMph: 6, rainPct: 10 })),
+  }), env });
+  const eveningRecord = () => {
+    const f = good();
+    const generated = "2026-10-06T22:51:00Z"; // 18:51 EDT, 403 min before now
+    const preview = { schema_version: 1, forecast_grid: "JAX/89,29", report_date: "2026-10-07", run_id: "cloudflare-next-day-2026-10-07", generated_at: generated };
+    f.report = { ...preview, ok: true, report_text: reportText("Wednesday, October 7, 2026", "Next-Day Preview") };
+    f.state["current-report"] = { ...preview };
+    f.nextDay.report_date = "2026-10-08";
+    f.nextDay.generated_at = f.state["next-day-report"].generated_at = new Date(+overnight - MIN).toISOString();
+    f.nextDay.report_text = reportText("Thursday, October 8, 2026", "Next-Day Preview");
+    f.state["next-day-report"].report_date = "2026-10-08";
+    for (const k of ["weather", "marine", "tides"]) for (const key of ["fetched_at", "observed_at"]) if (f[k][key]) f[k][key] = new Date(+overnight - 5 * MIN).toISOString();
+    f.weather.forecast.fetched_at = f.weather.forecast.updated_at = new Date(+overnight - 5 * MIN).toISOString();
+    f.tides.prediction_date = "2026-10-07";
+    f.tides.events = Array.from({ length: 6 }, (_, i) => ({ time: new Date(+overnight + (i - 1) * 6 * H).toISOString(), height_ft: i % 2 ? 1 : 0.3, type: i % 2 ? "High" : "Low" }));
+    return f;
+  };
+  const rows = await overnightRun(eveningRecord());
+  assert.deepEqual(errorsOf(rows), [], "01:34 EDT: prior evening preview is accepted");
+  assert.match(formatRows(rows), /CURRENT\s+2026-10-07.*evening preview\s+PASS/);
+  assert.match(formatRows(rows), /evening preview.*18-hour freshness exception/);
+  assert.ok(errorsOf(await overnightRun(eveningRecord(), { MAX_EVENING_PREVIEW_AGE_MIN: "400" })).some((e) => /CURRENT: generated_at is stale/.test(e)), "evening preview age limit is configurable");
+
+  const aged = eveningRecord(); aged.report.generated_at = aged.state["current-report"].generated_at = "2026-10-06T10:34:00Z";
+  assert.ok(errorsOf(await overnightRun(aged)).some((e) => /CURRENT: generated_at is stale/.test(e)), "19-hour preview fails");
+  const wrongDate = eveningRecord(); wrongDate.report.report_date = wrongDate.state["current-report"].report_date = "2026-10-06";
+  assert.ok(errorsOf(await overnightRun(wrongDate)).some((e) => /CURRENT: report_date/.test(e)), "preview for a different date fails");
+  const tooEarly = eveningRecord(); tooEarly.report.generated_at = tooEarly.state["current-report"].generated_at = "2026-10-06T19:00:00Z"; // 15:00 EDT
+  assert.ok(errorsOf(await overnightRun(tooEarly)).some((e) => /CURRENT: generated_at is stale/.test(e)), "15:00 previous-day report gets no exception");
+  const morning = eveningRecord();
+  morning.report.report_text = reportText("Wednesday, October 7, 2026", "Morning Report");
+  morning.report.generated_at = morning.state["current-report"].generated_at = "2026-10-07T00:00:00Z";
+  morning.state["current-report"].run_id = "cloudflare-morning-2026-10-07";
+  assert.ok(errorsOf(await overnightRun(morning)).some((e) => /CURRENT: generated_at is stale/.test(e)), "same-day morning report older than 240 min gets no exception");
+}
+
 // A failed current-day refresh must never make a future preview the current report.
 {
   const current = { schema_version: 1, report_date: "2026-10-06", run_id: "old", generated_at: "2026-10-06T22:51:10.943Z", report_text: "old" };
