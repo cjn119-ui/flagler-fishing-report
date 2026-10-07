@@ -777,12 +777,11 @@ async function readReport(env, key) {
   return report;
 }
 
-async function latestReport(env) {
+export async function latestReport(env, now = new Date()) {
   const [current, nextDay] = await Promise.all([
     readReport(env, REPORT_CURRENT_KEY),
     readReport(env, REPORT_NEXT_DAY_KEY),
   ]);
-  const now = new Date();
   const today = localDate(now);
   const tomorrow = addCalendarDays(today, 1);
   const hour = formatLocalParts(now).hour;
@@ -791,7 +790,9 @@ async function latestReport(env) {
   // A prior evening's preview is a useful current-day fallback before the
   // morning report has completed.
   if (nextDay && nextDay.report_date === today) return nextDay;
-  const candidates = [current, nextDay].filter(Boolean);
+  // Keep a stale report available when today's refresh failed, but never
+  // promote a future preview into the current report outside the evening slot.
+  const candidates = [current, nextDay].filter((report) => report && report.report_date <= today);
   candidates.sort((left, right) => {
     const dateCompare = left.report_date.localeCompare(right.report_date);
     return dateCompare || left.generated_at.localeCompare(right.generated_at);
