@@ -3,7 +3,7 @@
 // fields or catch prediction are wrong. Run after scripts/generate.mjs:
 //   node scripts/test-generated-output.mjs [apiDir]
 // Env: VALIDATE_NOW (ISO instant, for reproducing a run), MAX_LIVE_AGE_MIN (default 90),
-// MAX_REPORT_AGE_MIN (default 240).
+// MAX_REPORT_AGE_MIN (default 240), MAX_EVENING_PREVIEW_AGE_MIN (default 1080).
 import { readFile, appendFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { localDay, parseWindMph, seriesFromHilo, sunEvents, pickWindows, nextHours } from "../site/shared/logic.js";
@@ -71,6 +71,21 @@ function checkReport(label, report, state, spec, now, limits) {
     if (s.forecast_grid !== "JAX/89,29") c.fail(`state.json forecast_grid is ${JSON.stringify(s.forecast_grid)}`);
   }
   return c;
+}
+
+function eveningPreviewRecord(report, state, expectedDate, now) {
+  if (!report || report.report_date !== expectedDate || localDay(now) !== expectedDate
+    || !String(report.report_text ?? "").includes("Report type: Next-Day Preview")) return null;
+  const generated = Date.parse(report.generated_at);
+  if (!Number.isFinite(generated) || !/^\d{4}-\d{2}-\d{2}$/.test(expectedDate)) return null;
+  const priorDay = calDay(expectedDate, -1);
+  if (localDay(new Date(generated)) !== priorDay || localHour(new Date(generated)) < 17) return null;
+  for (const key of ["current-report", "next-day-report"]) {
+    const record = state?.[key];
+    if (record?.report_date === expectedDate && record.generated_at === report.generated_at
+      && new RegExp(`^cloudflare-next-day(?:-recovery)?-${expectedDate}$`).test(record.run_id ?? "")) return key;
+  }
+  return null;
 }
 
 function checkWeather(w, now, limits) {
@@ -182,6 +197,7 @@ export async function validateGenerated({ files, now = new Date(), fetchHourly, 
   const limits = {
     liveMs: Number(env.MAX_LIVE_AGE_MIN ?? 90) * MIN,
     reportMs: Number(env.MAX_REPORT_AGE_MIN ?? 240) * MIN,
+    eveningPreviewMs: Number(env.MAX_EVENING_PREVIEW_AGE_MIN ?? 1080) * MIN,
   };
   const today = localDay(now), tomorrow = calDay(today, 1);
   // Mirror the worker's latestReport(): from 7 PM New York time /api/report serves tomorrow's preview.
@@ -189,7 +205,16 @@ export async function validateGenerated({ files, now = new Date(), fetchHourly, 
   const served = evening
     ? { expectedDate: tomorrow, type: "Next-Day Preview", fullDay: true, stateKey: "next-day-report" }
     : { expectedDate: today, type: "Morning Report", fullDay: localHour(now) < 17, stateKey: "current-report" };
-  const current = checkReport("CURRENT", files.report, files.state, served, now, limits);
+  const previewKey = !evening ? eveningPreviewRecord(files.report, files.state, today, now) : null;
+  const previewAge = files.report ? +now - Date.parse(files.report.generated_at) : NaN;
+  const allowEveningPreviewAge = Boolean(previewKey && previewAge > limits.reportMs && previewAge <= limits.eveningPreviewMs);
+  const currentSpec = previewKey ? { ...served, type: "Next-Day Preview", stateKey: previewKey } : served;
+  const current = checkReport("CURRENT", files.report, files.state, currentSpec, now,
+    allowEveningPreviewAge ? { ...limits, reportMs: limits.eveningPreviewMs } : limits);
+  if (allowEveningPreviewAge) {
+    current.eveningPreview = true;
+    current.warn(`evening preview uses the 18-hour freshness exception: ${Math.round(previewAge / MIN)} min old (limit ${Math.round(limits.eveningPreviewMs / MIN)} min)`);
+  }
   if (evening) {
     current.detail += " (preview)";
     // The morning report is not served after 7 PM, but today's must still exist in state.json.
@@ -210,8 +235,8 @@ export async function validateGenerated({ files, now = new Date(), fetchHourly, 
 export function formatRows(rows) {
   const out = rows.map((r) => {
     const status = r.errors.length ? "FAIL" : "PASS";
-    const fresh = r.stale ? "STALE" : r.checkedFreshness ? "fresh" : "";
-    return `${r.label.padEnd(14)}${r.detail.padEnd(18)}${fresh.padEnd(7)}${status}`.trimEnd();
+    const fresh = r.stale ? "STALE" : r.eveningPreview ? "evening preview" : r.checkedFreshness ? "fresh" : "";
+    return `${r.label.padEnd(14)}${r.detail.padEnd(18)}${fresh.padEnd(17)}${status}`.trimEnd();
   });
   for (const r of rows) {
     for (const e of r.errors) out.push(`  ✗ ${r.label}: ${e}`);
