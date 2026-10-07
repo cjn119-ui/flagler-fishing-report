@@ -62,7 +62,7 @@ assert.equal(localDay(new Date('2026-11-01T05:30:00Z')),'2026-11-01');
 assert.equal(localDay(new Date('2026-11-01T06:30:00Z')),'2026-11-01');
 // Test the worker's actual tide parser, including both repeated DST fall-back hours.
 const workerSource=await readFile(new URL('../src/worker.mjs',import.meta.url),'utf8');
-const worker=vm.runInNewContext(workerSource.replace('export async function latestReport','async function latestReport').replace('export default','const worker =')+'; ({tideEvents,tideEventsInWindow,localDate,parseBuoy,sunriseSunset,fetchFreshWeatherObservation})',{Intl,Date,Map,Set,Math,Number,String,URL,console});
+const worker=vm.runInNewContext(workerSource.replace('export async function latestReport','async function latestReport').replace('export default','const worker =')+'; ({tideEvents,tideEventsInWindow,localDate,parseBuoy,sunriseSunset,fetchFreshWeatherObservation,observationWindSpeedMs})',{Intl,Date,Map,Set,Math,Number,String,URL,console});
 const dst=worker.tideEvents([{t:'2026-11-01 05:30',v:'1',type:'H'},{t:'2026-11-01 06:30',v:'0',type:'L'}]);
 assert.equal(Date.parse(dst[1].time)-Date.parse(dst[0].time),3600e3);
 for(const e of dst) assert.equal(worker.localDate(new Date(e.time)),'2026-11-01');
@@ -81,13 +81,27 @@ assert.deepEqual(shortHours,[2,9,15,21]);
 assert.equal(worker.tideEventsInWindow(octTides,Date.parse('2026-10-06T20:47:00Z')).length,4,'the extended prediction window supplies four events at 20:47 UTC');
 for(let h=0;h<24;h++) assert.equal(worker.tideEventsInWindow(octTides,Date.parse(`2026-10-06T${String(h).padStart(2,'0')}:00:00Z`)).length,4,`four events at UTC hour ${h}`);
 const weatherNow=Date.parse('2026-10-06T21:30:00Z'),weatherCalls=[];
+const usableWeatherProperties=timestamp=>({timestamp,temperature:{value:20},windSpeed:{unitCode:'wmoUnit:m_s-1',value:0}});
 const fallbackWeather=await worker.fetchFreshWeatherObservation(async url=>{
   weatherCalls.push(url);
-  return {properties:{timestamp:url.includes('/KFIN/')?'2026-10-06T18:50:00Z':'2026-10-06T21:10:00Z'}};
+  return {properties:usableWeatherProperties(url.includes('/KFIN/')?'2026-10-06T18:50:00Z':'2026-10-06T21:10:00Z')};
 },weatherNow);
 assert.equal(fallbackWeather.station.id,'KDAB');assert.equal(weatherCalls.length,2,'a stale KFIN record falls back to the next nearby station');
-const primaryWeather=await worker.fetchFreshWeatherObservation(async url=>({properties:{timestamp:'2026-10-06T21:00:00Z'}}),weatherNow);
+const primaryWeather=await worker.fetchFreshWeatherObservation(async url=>({properties:usableWeatherProperties('2026-10-06T21:00:00Z')}),weatherNow);
 assert.equal(primaryWeather.station.id,'KFIN','a fresh local station remains preferred');
+// Captured NWS station responses, with the clock fixed to the capture window.
+const weatherFixture=JSON.parse(await readFile(new URL('./fixtures/weather-observations-2026-10-07.json',import.meta.url),'utf8'));
+const fixtureNow=Date.parse('2026-10-07T05:30:00Z');
+const recorded=Object.fromEntries(Object.entries(weatherFixture.stations).map(([id,row])=>[id,row.body]));
+const nullFirst=structuredClone(recorded);
+nullFirst.KFIN.properties.temperature.value=null;
+const fallbackObserved=await worker.fetchFreshWeatherObservation(async url=>nullFirst[url.match(/stations\/([^/]+)/)[1]],fixtureNow);
+assert.equal(fallbackObserved.station.id,'KDAB','a fresh observation without temperature falls back to the next station');
+assert.equal(worker.observationWindSpeedMs(recorded.KFIN.properties,'windSpeed'),0,'zero wind in km/h is a valid observation');
+close(worker.observationWindSpeedMs(recorded.KSGJ.properties,'windSpeed'),1.54,1e-12);
+const unusable=structuredClone(recorded);
+for(const row of Object.values(unusable)) { row.properties.temperature.value=null; row.properties.windSpeed.value=null; }
+await assert.rejects(worker.fetchFreshWeatherObservation(async url=>unusable[url.match(/stations\/([^/]+)/)[1]],fixtureNow),/KFIN.*temperature.*windSpeed.*KDAB.*temperature.*windSpeed.*KSGJ.*temperature.*windSpeed/i,'all unusable stations report each rejected field');
 const buoyRaw='#YY MM DD hh mm WVHT DPD WTMP WSPD\n2026 09 30 01 26 0.4 10 27.6 MM';
 const buoyNow=Date.parse('2026-09-30T02:00:00Z');
 assert.throws(()=>worker.parseBuoy(buoyRaw,null,Date.parse('2026-09-30T03:00:01Z')),/NDBC marine observation is stale/);
