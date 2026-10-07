@@ -23,7 +23,7 @@ function sourceAge(obs, now) {
 function freshEnough(obs, now, maxAgeMs) { return !!obs?.ok && !obs.stale && has(sourceAge(obs,now)) && sourceAge(obs,now)*60000<=maxAgeMs; }
 function freshness(obs, now, label) {
   const age=sourceAge(obs,now), available=!!obs?.ok;
-  return { kind:obs?.kind??label, label, status:!available?"unavailable":obs.stale?"stale":obs.usedFallback?"fallback":"current", available, ageMinutes:age, stale:!!obs?.stale, usedFallback:!!obs?.usedFallback, fetchedAt:obs?.fetchedAt??null, observedAt:obs?.observedAt??null, issuedAt:obs?.issuedAt??null, affects:obs?.kind??label };
+  return { kind:obs?.kind??label, label, provider:obs?.provider??null, url:obs?.url??null, status:!available?"unavailable":obs.stale?"stale":obs.usedFallback?"fallback":"current", available, ageMinutes:age, stale:!!obs?.stale, usedFallback:!!obs?.usedFallback, fetchedAt:obs?.fetchedAt??null, observedAt:obs?.observedAt??null, issuedAt:obs?.issuedAt??null, affects:obs?.kind??label };
 }
 function indexInputs(observations) {
   const m=new Map(),rank=o=>!o?.ok?0:o.stale?1:o.usedFallback?2:3; for(const o of observations??[]) { if(!o?.locationId||!o?.kind) continue; const k=`${o.locationId}\0${o.kind}`; const old=m.get(k); if(!old||rank(o)>rank(old)||rank(o)===rank(old)&&Date.parse(o.fetchedAt??0)>Date.parse(old.fetchedAt??0))m.set(k,o); }
@@ -154,7 +154,10 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
   const indexed=[],details={};
   for(const horizon of ["today","tomorrow"]) for(const loc of active) for(const mode of loc.modes??[]) {
     const modeSlots=horizonSlots[horizon], get=conditionsAtFor(loc,obsMap,nowMs), src=observationsFor(obsMap,loc), windObs=src("waveForecast");
-    const forecast=[src("hourlyForecast"),src("gridForecast")].find(x=>x?.ok&&!x.stale), forecastAge=forecast?.issuedAt?Math.max(0,(nowMs-Date.parse(forecast.issuedAt))/3600000):null, alerts=src("alerts"), alertsChecked=!!alerts?.ok&&!alerts.stale;
+    const forecasts=[src("hourlyForecast"),src("gridForecast")].filter(x=>x?.ok&&!x.stale);
+    const issuance=x=>{const value=Date.parse(x?.issuedAt??"");return Number.isFinite(value)?value:-Infinity;};
+    const forecast=forecasts.sort((a,b)=>issuance(b)-issuance(a))[0];
+    const forecastAge=forecast?.issuedAt?Math.max(0,(nowMs-Date.parse(forecast.issuedAt))/3600000):null, alerts=src("alerts"), alertsChecked=!!alerts?.ok&&!alerts.stale;
     for(const s of species) {
       if(!s.modes?.includes(mode))continue;
       const scores=scoreSpecies({species:s,spot:loc,mode,history,slots:modeSlots,conditionsAt:get,now:utc(nowMs),horizon,forecastAgeHours:forecastAge,alertsChecked,
@@ -196,7 +199,9 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
     const timeline=[];for(const loc of active)for(const mode of loc.modes??[]){const matching=list.filter(x=>x.locationId===loc.id&&x.mode===mode);const times=(horizonSlots[horizon]??[]).map(at=>{const xs=matching.map(x=>x.slots.find(q=>q.at===at)).filter(Boolean).sort((a,b)=>(b.suitability??-1)-(a.suitability??-1)), c=conditionsAtFor(loc,obsMap,nowMs)(at), astro=getAstronomy(localDay(at),loc.lat,loc.lon);return {at,suitability:xs[0]?.suitability??null,tide:{heightFt:c.tideHeightFt,rateFtPerHr:c.tideRateFtPerHr,direction:c.tideDirection,phase:null},lightPhase:null,moonMarks:astro.moon?.periods??[],topSpecies:xs.slice(0,3).map(x=>({speciesId:matching.find(m=>m.slots.includes(x))?.speciesId??null,suitability:x.suitability})),conditionLabels:[]};});timeline.push({locationId:loc.id,mode,slots:times});}
     const sourceStatus=carried.observations.filter(x=>active.some(l=>l.id===x.locationId)).map(x=>freshness(x,nowMs,x.kind));
     const missingInputs=sourceStatus.filter(x=>x.status==="unavailable"||x.stale).map(x=>({kind:x.kind,reason:x.status,locationId:carried.observations.find(o=>o.kind===x.kind)?.locationId??null,text:copy(`missing.${x.kind}`,`${x.label} unavailable or stale.`)}));
-    const requiredObs=carried.observations.filter(x=>["hourlyForecast","gridForecast","alerts","tidePredictions","waves","waterTemperature","pressureObservations","waveForecast"].includes(x.kind));
+    const metWeatherFallback=new Set(carried.observations.filter(x=>x.provider==="open-meteo"&&x.kind==="gridForecast").map(x=>x.locationId));
+    const requiredObs=carried.observations.filter(x=>["hourlyForecast","gridForecast","alerts","tidePredictions","waves","waterTemperature","pressureObservations","waveForecast"].includes(x.kind))
+      .filter(x=>!(x.provider==="open-meteo"&&x.kind==="hourlyForecast"&&metWeatherFallback.has(x.locationId)));
     const candidatePredictions=list.map(x=>compactSpeciesPrediction(x,x.window,x.detailsRef));
     const run=createPredictionRun({schemaVersion:{...SCHEMA_VERSION},id:runId,modelVersion:MODEL_VERSION,paramsHash,historyHash,inputsHash,catalogHash,codeRevision,horizon,targetDate,generatedAt:utc(nowMs),validFrom:utc(modeSlotsStart(horizonSlots[horizon],nowMs)),validTo:utc(modeSlotsEnd(horizonSlots[horizon],nowMs)),region:"First Coast",status:!sourceStatus.length||sourceStatus.every(x=>x.status==="unavailable")?"degraded":missingInputs.length?"partial":"ok",carriedForward:carried.carried.length>0,missingInputs,recommendation,scopeViews:{best:{recommendationId:recommendation.id},byLocation,bySpecies},locations:active.map(l=>({id:l.id,name:l.name,area:l.area,county:l.county,active:true,modes:l.modes,structure:l.structure,lat:l.lat,lon:l.lon,tideDistanceMi:l.tideDistanceMi})),bySpecies,candidates:candidatePredictions,slots:timeline,days:[],inputs:{sourceStatus,observations:requiredObs,priorSelection:sameDatePrior?{runId:sameDatePrior.id,recommendationId:sameDatePrior.recommendation?.id??null,targetDate}:null},notes:catalogWarnings,detailsRefs:Object.keys(details).filter(k=>k.startsWith(`details/${horizon}-`))});
     runs[horizon]=run;
