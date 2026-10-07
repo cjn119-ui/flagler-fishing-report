@@ -60,15 +60,21 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
     const results = await Promise.all(jobs.map(async ([kind,key,fn]) => cached(key, kind, now, fn)));
     let [hourly, landGrid, alerts, pressure, tide, coopsWater, secooraWaves, secooraWater, waveForecast] = results;
     if (!hourly?.ok || hourly.stale || !landGrid?.ok || landGrid.stale) {
-      const fallback = await fetchOpenMeteoWeather(location, { fetchImpl, now, timeoutMs });
+      const fallback = await fetchOpenMeteoWeather(location, { fetchImpl, now, timeoutMs: Math.max(timeoutMs, 15_000) });
       if ((!hourly?.ok || hourly.stale) && fallback.hourly.ok) hourly = fallback.hourly;
       if ((!landGrid?.ok || landGrid.stale) && fallback.grid.ok) landGrid = fallback.grid;
+      const unavailable = [
+        (!hourly?.ok || hourly.stale) && !fallback.hourly.ok ? fallback.hourly.error : null,
+        (!landGrid?.ok || landGrid.stale) && !fallback.grid.ok ? fallback.grid.error : null,
+      ].filter(Boolean);
+      if (unavailable.length) console.warn(`Open-Meteo weather fallback failed for ${id}: ${unavailable.join("; ")}`);
     }
     if (marine && (!waveForecast?.ok || waveForecast.stale)) {
       const fallback = await fetchOpenMeteoMarineForecast(
-        { ...location, lon: marineCoordinates.lon }, { fetchImpl, now, timeoutMs },
+        { ...location, lon: marineCoordinates.lon }, { fetchImpl, now, timeoutMs: Math.max(timeoutMs, 15_000) },
       );
       if (fallback.ok) waveForecast = fallback;
+      else console.warn(`Open-Meteo marine fallback failed for ${id}: ${fallback.error}`);
     }
     const buoyOk = obs => obs?.ok && !obs.stale && Number.isFinite(Date.parse(obs.observedAt)) && now - Date.parse(obs.observedAt) <= 3*3600000;
     let ndbc = null;
