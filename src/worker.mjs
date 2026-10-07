@@ -252,7 +252,7 @@ function observationIsFresh(timestamp, now = Date.now()) {
 }
 
 async function fetchFreshWeatherObservation(fetchLatest = fetchJson, now = Date.now()) {
-  let lastError;
+  const rejected = [];
   for (const station of WEATHER_OBSERVATION_STATIONS) {
     try {
       const payload = await fetchLatest(`https://api.weather.gov/stations/${station.id}/observations/latest`);
@@ -263,12 +263,16 @@ async function fetchFreshWeatherObservation(fetchLatest = fetchJson, now = Date.
       if (!observationIsFresh(properties.timestamp, now)) {
         throw new UpstreamError(`NWS observation for ${station.id} is stale or future-dated: ${properties.timestamp}`);
       }
+      const unusable = [];
+      if (number(properties.temperature && properties.temperature.value) === null) unusable.push("temperature");
+      if (observationWindSpeedMs(properties, "windSpeed") === null) unusable.push("windSpeed");
+      if (unusable.length) throw new UpstreamError(`NWS observation for ${station.id} has unusable ${unusable.join(" and ")}.`);
       return { properties, station };
     } catch (error) {
-      lastError = error;
+      rejected.push(`${station.id}: ${error.message}`);
     }
   }
-  throw lastError || new UpstreamError("No fresh NWS weather observation is available.");
+  throw new UpstreamError(`No usable fresh NWS weather observation; rejected ${rejected.join("; ") || "all stations"}.`);
 }
 
 async function fetchWeatherObservation() {
