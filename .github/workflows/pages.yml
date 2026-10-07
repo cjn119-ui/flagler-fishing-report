@@ -37,6 +37,7 @@ jobs:
           node scripts/test-catch.mjs
           node scripts/test-calculations.mjs
           node scripts/test-validator.mjs
+          node scripts/test-restore-last-good-api.mjs
       - uses: actions/configure-pages@v5
         id: pages
       - name: Generate report and live data
@@ -50,12 +51,26 @@ jobs:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
         run: node scripts/generate-v5.mjs
       - name: Validate generated output
+        id: output_validation
+        continue-on-error: true
         run: node scripts/test-generated-output.mjs
+      - name: Restore deployed root API data after validation failure
+        if: steps.output_validation.outcome == 'failure'
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: node scripts/restore-last-good-api.mjs
       - uses: actions/upload-pages-artifact@v3
+        if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
         with:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+        if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
+      - name: Mark refresh as failed when validation blocked root data
+        if: steps.output_validation.outcome == 'failure'
+        run: |
+          echo "Root data validation failed; deployed last-good root API data and current V5 files."
+          exit 1
       - name: Open an issue if the refresh failed
         if: failure() && github.event_name == 'schedule'
         env:
