@@ -302,7 +302,7 @@ function windowLine(c) {
   const start = Date.parse(w.start), end = Date.parse(w.end), range = fmtRange(w.start, w.end);
   if (end <= c.now) {
     const next = nextWindowLabel(c.run, c.rec, c.now);
-    return h("p", { class: "win" }, h("s", {}, range), " · ", h("span", { class: "muted" }, next ?? "No more windows today"));
+    return h("p", { class: "win" }, h("s", {}, range), " ", h("span", { class: "muted nowrap" }, "· ", next ?? "No more windows today"));
   }
   if (dayKey(w.start) !== dayKey(c.now)) return h("p", { class: "win" }, `${range} · Tomorrow`);
   if (c.now >= start) return h("p", { class: "win" }, h("strong", {}, `Fish now — until ${fmtTime(w.end)}`));
@@ -451,12 +451,13 @@ function timesCard(c) {
     const lightTxt = lightAt(light, p.at);
     const tide = p.tide?.heightFt != null ? { v: cap(p.tide.direction ?? "—"), d: `${p.tide.heightFt.toFixed(1)} ft` } : null;
     readout.replaceChildren(
-      h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)), h("span", { class: "vchip", "data-v": null }, inWin(p.at) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows"),
-        isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : nearestSlotIndex(pts, c.now)); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now")),
+      h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)),
+        isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : nearestSlotIndex(pts, c.now)); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now"),
+        h("span", { class: "vchip", "data-v": null }, inWin(p.at) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows")),
       h("div", { class: "stats ro-tiles" },
+        h("div", { class: `stat wide${p.suitability == null ? " off" : ""}` }, h("p", { class: "k" }, "Suitability"), h("p", { class: "v" }, p.suitability ?? "—"), h("p", { class: "d" }, "Fit at this hour")),
         h("div", { class: `stat${tide ? "" : " off"}` }, h("p", { class: "k" }, "Tide"), h("p", { class: "v" }, tide?.v ?? "Unavailable"), tide ? h("p", { class: "d" }, tide.d) : null),
-        h("div", { class: `stat${lightTxt ? "" : " off"}` }, h("p", { class: "k" }, "Light"), h("p", { class: "v" }, lightTxt?.v ?? "—"), lightTxt?.d ? h("p", { class: "d" }, lightTxt.d) : null),
-        h("div", { class: `stat${p.suitability == null ? " off" : ""}` }, h("p", { class: "k" }, "Suitability"), h("p", { class: "v" }, p.suitability ?? "—"), h("p", { class: "d" }, "Fit at this hour"))),
+        h("div", { class: `stat${lightTxt ? "" : " off"}` }, h("p", { class: "k" }, "Light"), h("p", { class: "v" }, lightTxt?.v ?? "—"), lightTxt?.d ? h("p", { class: "d" }, lightTxt.d) : null)),
       speciesAt(p));
     if (commit) { st.t = p.at; writeHash(); }
   }
@@ -563,8 +564,8 @@ function spotRowEl(r, c, { star = true, onPick } = {}) {
   return h("li", { class: `row${st.spot === loc.id ? " sel" : ""}${star ? "" : " nostar"}` },
     h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${rec.verdict}, ${rec.mode}, ${fmtRange(rec.window?.start, rec.window?.end)}${r.ended ? ", ended" : ""}${top ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
       h("div", { class: "r1" }, h("span", { class: "nm" }, loc.name), null),
-      h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.map((m) => modeIcon(m))), `${modeLabel(rec.mode)} · ${loc.area} · ${fmtRange(rec.window?.start,rec.window?.end)}${r.ended ? " · ended" : ""}`, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
-      h("p", { class: "r2" }, top ? `${top.name} ${top.suitability}` : "")),
+      h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.map((m) => modeIcon(m))), `${modeLabel(rec.mode)} · ${loc.area} · `, h("span", { class: "when" }, `${fmtRange(rec.window?.start,rec.window?.end)}${r.ended ? " · ended" : ""}`), r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
+      h("p", { class: "r2 r3" }, top ? `${top.name} ${top.suitability}` : "")),
     star ? h("button", { class: "star", type: "button", "data-fk": `star-${loc.id}`, "aria-pressed": String(favs.includes(loc.id)), "aria-label": `Favourite ${loc.name}`, onclick: () => { const f = store.get("favs", []); tick(); store.set("favs", f.includes(loc.id) ? f.filter((x) => x !== loc.id) : [...f, loc.id]); rerenderList(); } }, icon("star")) : null);
 }
 let listHost = null;
@@ -636,13 +637,14 @@ function planView(c) {
     const outlook = d.kind === "outlook", w = d.windows?.[0], bw = d.bestWindow ?? {};
     const title = i === 0 ? "Today" : wk(d.date,{weekday:"short"});
     const ended = i === 0 && w && Number.isFinite(Date.parse(w.end)) && Date.parse(w.end) <= c.now;
-    const line = outlook ? [cap(bw.partOfDay), bw.tidePhase ? `${bw.tidePhase} tide` : null].filter(Boolean).join(" · ") : w ? `${[fmtRange(w.start,w.end),w.displayName].filter(Boolean).join(" · ")}${ended ? " · ended" : ""}` : "No good window";
+    const range = w ? fmtRange(w.start,w.end) : "";
+    const line = outlook ? [cap(bw.partOfDay), bw.tidePhase ? `${bw.tidePhase} tide` : null].filter(Boolean).join(" · ") : w ? ended ? w.displayName : `${[range,w.displayName].filter(Boolean).join(" · ")}` : "No good window";
     return [i === 2 ? h("li", { class: "outlook-caption" }, h("h3", {}, "Outlook · days 3–7"), h("p", { class: "fine" }, "Outlook for days 3–7 uses season, tides, moon and the daily forecast. It updates daily.")) : null,
-      h("li", {}, h("button", { class: "day-row", type: "button", "data-fk": `day-${i}`, onclick: (e) => { st.day=i; const pane=document.querySelector(".plan-detail"); if(matchMedia("(min-width:900px)").matches && pane) pane.replaceChildren(h("h2",{},title),dayBody(d,i)); else openSheet(title,dayBody(d,i),e.currentTarget); } },
+      h("li", {}, h("button", { class: `day-row${i >= 2 ? " outlook" : ""}`, type: "button", "data-fk": `day-${i}`, onclick: (e) => { st.day=i; const pane=document.querySelector(".plan-detail"); if(matchMedia("(min-width:900px)").matches && pane) pane.replaceChildren(h("h2",{},title),dayBody(d,i)); else openSheet(title,dayBody(d,i),e.currentTarget); } },
         h("span", {}, title,h("small",{},wk(d.date,{month:"short",day:"numeric"}))), h("span",{class:`vchip${outlook ? " outline" : ""}`,"data-v":outlook?null:d.verdict,"data-l":d.outlookLabel},outlook?d.outlookLabel:VERDICT_SPOKEN[d.verdict]),
-        h("span", {class:"day-copy"},line,h("small",{},(d.topSpecies??[]).map((t)=>t.name).slice(0,2).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
+        h("span", {class:"day-copy"},h("span", {class:"day-line"},line),ended ? h("small",{class:"ended"},`Ended · ${range}`) : null,h("small",{},(d.topSpecies??[]).map((t)=>t.name).slice(0,2).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
   }));
-  return [h("div",{class:"plan-layout"},h("section",{class:"card"},h("h2",{},"Next 7 days"),h("p",{class:"eyebrow"},st.species?`for ${spName(st.species)}`:st.spot?locOf(c.run,st.spot)?.name:"Best anywhere"),list),h("section",{class:"card plan-detail desktop-pane"},dayBody(days[st.day],st.day)))];
+  return [h("div",{class:"plan-layout"},h("section",{class:"card"},h("div",{class:"card-h"},h("h2",{},"Next 7 days"),h("p",{class:"eyebrow"},st.species?`for ${spName(st.species)}`:st.spot?locOf(c.run,st.spot)?.name:"Best anywhere")),list),h("section",{class:"card plan-detail desktop-pane"},dayBody(days[st.day],st.day)))];
 }
 
 /* ---------- sheets ---------- */
@@ -747,7 +749,7 @@ function openSpecies(id, opener) {
   const placeBlock = blocks.find((x) => x.querySelector("h3")?.textContent === "Best place and time");
   const actionHost = body.querySelector(":scope > .cta"); const action = actionHost?.querySelector("button");
   if (action) { action.textContent = st.species === id ? "Stop targeting" : "Target this"; body.querySelector(".kv").append(action); }
-  if(placeBlock) { placeBlock.replaceChildren(h("h3",{},"Best for this fish"),h("button",{class:"bet",type:"button",onclick:()=>scope({spot:place.locationId ?? best?.locationId,mode:place.mode})},h("span",{},place.displayName," · ",fmtRange(place.window?.start,place.window?.end),ended?" · ended":""),h("span",{class:"vchip","data-v":place.verdict},VERDICT_SPOKEN[place.verdict] ?? ""))); }
+  if(placeBlock) { const verdict = VERDICT_SPOKEN[place.verdict]; placeBlock.replaceChildren(h("h3",{},"Best for this fish"),h("button",{class:"bet",type:"button",onclick:()=>scope({spot:place.locationId ?? best?.locationId,mode:place.mode})},h("span",{},place.displayName," · ",fmtRange(place.window?.start,place.window?.end),ended?" · ended":""),verdict ? h("span",{class:"vchip","data-v":place.verdict},verdict) : null)); }
   const reasons = (useFocused ? focused?.why ?? [] : best?.why ?? []).filter((x)=>!/unavailable|thin|buoy|stale|missing/i.test(x.code??""));
   const why = h("div",{class:"block"},h("h3",{},"Why now"),h("ul",{class:"whys"},[...reasons.filter((x)=>x.effect==="helps").slice(0,2),...reasons.filter((x)=>x.effect==="hurts").slice(0,1)].map((x)=>h("li",{},effectMark(x.effect),msg(x)))));
   if(setupBlock) { setupBlock.querySelector("h3").textContent="Use"; setupBlock.querySelector(".fine")?.remove(); }
