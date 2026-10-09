@@ -1,6 +1,6 @@
 // Proves the post-generation validator passes good output and fails the bugs it exists to catch.
 import assert from "node:assert/strict";
-import { validateGenerated, formatRows } from "./test-generated-output.mjs";
+import { validateGenerated, formatRows, rootApiValidationPassed } from "./test-generated-output.mjs";
 
 const now = new Date("2026-10-04T16:00:00Z"); // 12:00 EDT Sunday
 const iso = (ms) => new Date(+now + ms).toISOString();
@@ -80,6 +80,16 @@ await expectFail("tides not alternating", (f) => { f.tides.events[1].type = "Low
 await expectFail("hourly forecast empty", () => {}, /HOURLY: only 0 hourly periods/, async () => ({ updatedAt: new Date(+now - MIN), periods: [] }));
 await expectFail("hourly forecast stale", () => {}, /HOURLY: updateTime is stale/, async () => ({ ...(await hourlyOf()()), updatedAt: new Date(+now - 9 * H) }));
 await expectFail("hourly wind missing", () => {}, /HOURLY: wind missing in 48 of 48/, hourlyOf({ windMph: null }));
+{
+  const staleHourly = await run(good(), async () => ({
+    updatedAt: new Date(+now - 9 * H),
+    periods: Array.from({ length: 48 }, (_, i) => ({ start: new Date(+now + (i - 1) * H), end: new Date(+now + i * H), windMph: 6, rainPct: 10 })),
+  }));
+  assert.equal(rootApiValidationPassed(staleHourly), true, "stale NWS hourly data must not block otherwise-valid root API data");
+  assert.equal(rootApiValidationPassed([]), false, "missing root API checks fail closed");
+  const invalidReport = good(); invalidReport.report.report_date = "2026-10-03";
+  assert.equal(rootApiValidationPassed(await run(invalidReport)), false, "invalid root report data still blocks deployment");
+}
 await expectFail("no windows in calm weather", (f) => { f.tides.events = f.tides.events.map((e) => ({ ...e, time: iso(-40 * H) })); }, /no tide event after now|no inshore window|inshore has none/);
 
 // Legitimate states must not fail the deploy.

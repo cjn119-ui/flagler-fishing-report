@@ -37,6 +37,7 @@ jobs:
           node scripts/test-catch.mjs
           node scripts/test-calculations.mjs
           node scripts/test-validator.mjs
+          node scripts/test-restore-last-good-api.mjs
       - uses: actions/configure-pages@v5
         id: pages
       - name: Generate report and live data
@@ -44,22 +45,46 @@ jobs:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
           FORCE_REFRESH: ${{ inputs.force }}
         run: node scripts/generate.mjs
+      - name: Generate V5 live data
+        continue-on-error: true
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: node scripts/generate-v5.mjs
       - name: Validate generated output
+        id: output_validation
+        continue-on-error: true
         run: node scripts/test-generated-output.mjs
+      - name: Restore deployed root API data after validation failure
+        if: steps.output_validation.outputs.root_api_valid != 'true'
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+        run: node scripts/restore-last-good-api.mjs
       - uses: actions/upload-pages-artifact@v3
+        if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
         with:
           path: site
       - id: deployment
         uses: actions/deploy-pages@v4
+        if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
+      - name: Mark refresh as failed after validation failure
+        if: steps.output_validation.outcome == 'failure'
+        run: |
+          echo "Generated-output validation failed; see the step summary. Root API data was restored only if its own checks failed."
+          exit 1
       - name: Open an issue if the refresh failed
         if: failure() && github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh label create refresh-failure --color B60205 --description "Scheduled refresh failed" 2>/dev/null || true
-          if [ -z "$(gh issue list --label refresh-failure --state open --json number --jq '.[0].number')" ]; then
+          run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          issue_number="$(gh issue list --label refresh-failure --state open --json number --jq '.[0].number')"
+          body="The scheduled refresh failed: ${run_url}. Root API data is restored only when its own validation fails. The run summary contains the validation details."
+          if [ -z "$issue_number" ]; then
             gh issue create --label refresh-failure --title "Scheduled refresh failed" \
-              --body "The scheduled refresh failed: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}. The site keeps serving the last good data. Close this issue after fixing; a new one opens on the next failure."
+              --body "$body"
+          else
+            gh issue edit "$issue_number" --body "$body"
           fi
       - name: Keep schedule alive
         if: always() && github.event_name == 'schedule'
