@@ -34,6 +34,8 @@ const D = {};            // loaded JSON by file
 let lastSpoken = "";
 let dataSource = "sample", dataOffline = false;
 let refreshError = "";
+/* motion bookkeeping: entrances run once per view, value changes only on user input */
+const motion = { shown: null, seen: new Set(), seal: null, seg: null };
 
 /* ---------- tiny DOM helpers ---------- */
 const NS = "http://www.w3.org/2000/svg";
@@ -186,12 +188,27 @@ function render({ resetScroll = false } = {}) {
   const view = $("view");
   const nodes = st.tab === "today" ? todayView(c) : st.tab === "spots" ? spotsView(c) : st.tab === "species" ? speciesView(c) : planView(c);
   view.replaceChildren(h("h1", { class: "sr-only" }, { today: "Today", spots: "Spots", species: "Species", plan: "Plan" }[st.tab]), ...nodes);
+  animateView(view);
   view.setAttribute("aria-busy", "false");
   document.querySelectorAll(".tab").forEach((b) => b.dataset.tab === st.tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   syncReview(); writeHash();
   if (resetScroll) window.scrollTo({ top: session.scroll[st.tab] ?? 0 });
   if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true });
   if (st.tab === "today") announce(c);
+}
+function animateView(view) {
+  const key = `${st.tab}|${st.h}`, seal = view.querySelector(".seal"), sealKey = seal && `${seal.parentElement.closest("#verdict")?.dataset.level}|${seal.dataset.cert}|${seal.dataset.phase}|${seal.textContent}`;
+  if (seal && motion.seal && sealKey !== motion.seal) seal.classList.add("swap");
+  motion.seal = sealKey ?? motion.seal;
+  if (key === motion.shown) return;
+  const first = motion.shown == null; motion.shown = key;
+  if (!motion.seen.has(st.tab)) { // light stagger, once per view; the verdict is never held back
+    motion.seen.add(st.tab);
+    [...view.querySelectorAll(".col-a > :not(#verdict), .col-b > *, .spotlist .list > li, .grid > li, .days > li, .plan-layout > .card")].slice(0, 12)
+      .forEach((el, i) => { el.classList.add("stagger"); el.style.setProperty("--i", Math.min(i, 4)); });
+  }
+  if (first) return;
+  view.classList.remove("v-in"); void view.offsetWidth; view.classList.add("v-in");
 }
 function announce(c) {
   const r = c.rec, focus = c.focus ? ` for ${r.targets?.[0]?.name ?? spName(st.species)}` : "";
@@ -227,8 +244,12 @@ function renderHeader(c) {
   $("spot-pill").setAttribute("aria-label", `Scope: ${name}. Change spot`);
 }
 function segment(label, items, cur, on, cls = "") {
-  return h("div", { class: `seg ${cls}`, role: "group", "aria-label": label }, items.map(([id, text]) =>
-    h("button", { type: "button", "aria-pressed": String(cur === id), "data-fk": `${label}-${id}`, onclick: () => on(id) }, text)));
+  const at = items.findIndex(([id]) => id === cur), from = motion.seg?.label === label ? motion.seg.from : null; // controls are rebuilt, so slide from the last pick
+  if (motion.seg?.label === label) motion.seg = null;
+  const el = h("div", { class: `seg ${cls}${from != null && from !== at ? " slide" : ""}`, role: "group", "aria-label": label }, items.map(([id, text]) =>
+    h("button", { type: "button", "aria-pressed": String(cur === id), "data-fk": `${label}-${id}`, onclick: () => { motion.seg = { label, from: at }; on(id); } }, text)));
+  if (from != null) el.style.setProperty("--seg-from", `${from * 100}%`);
+  return el;
 }
 function renderCtl(c) {
   const ctl = $("ctl"), fresh = $("fresh"); ctl.replaceChildren(fresh);
@@ -443,12 +464,14 @@ function timesCard(c) {
   if (light) (light.sunset ?? []).forEach((set) => { if (!(light.sunrise ?? []).some((rise) => Date.parse(set) > Date.parse(rise))) { const b = Math.min(1, (Date.parse(set) - t0) / span); if (b > 0) day.append(h("i", { style: `left:0;width:${b * 100}%` })); } });
 
   const readout = h("div", { class: "readout" });
-  function update(i, { commit = false } = {}) {
-    if (idx !== Math.max(0, Math.min(n - 1, i))) tick();
+  function update(i, { commit = false, user = false } = {}) {
+    const moved = idx !== Math.max(0, Math.min(n - 1, i));
+    if (moved) tick();
     idx = Math.max(0, Math.min(n - 1, i));
+    readout.classList.toggle("tick", user && moved);
     const p = pts[idx];
     bars.forEach((b, k) => b.classList.toggle("on", k === idx));
-    strip.dataset.time = fmtTime(p.at); strip.style.setProperty("--selected", `${(idx+.5)/n*100}%`);
+    strip.dataset.time = fmtTime(p.at); strip.style.setProperty("--sel", (idx + .5) / n);
     const txt = `${fmtTime(p.at)}, ${p.suitability == null ? "no fishing window" : `suitability ${p.suitability}`}`;
     strip.setAttribute("aria-valuenow", idx); strip.setAttribute("aria-valuetext", txt);
     const isNow = idx === nowIdx;
@@ -456,7 +479,7 @@ function timesCard(c) {
     const tide = p.tide?.heightFt != null ? { v: p.tide.direction ? cap(p.tide.direction) : "", d: `${p.tide.heightFt.toFixed(1)} ft` } : null;
     fill(readout,
       h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)),
-        isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : nearestSlotIndex(pts, c.now)); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now"),
+        isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : nearestSlotIndex(pts, c.now), { user: true }); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now"),
         h("span", { class: "vchip", "data-v": null }, c.skip && slotHeld(p.at, r.window?.gates ?? []) ? "On hold" : slotInWindow(p.at, wins) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows")),
       h("div", { class: "stats ro-tiles" }, [
         p.suitability == null ? null : h("div", { class: "stat wide" }, h("p", { class: "k" }, "Suitability"), h("p", { class: "v" }, p.suitability), h("p", { class: "d" }, "Fit at this hour")),
@@ -475,14 +498,14 @@ function timesCard(c) {
   }
   const fromX = (e) => { const b = strip.getBoundingClientRect(); return Math.floor(((e.clientX - b.left) / b.width) * n); };
   let down = false;
-  strip.addEventListener("pointerdown", (e) => { down = true; strip.setPointerCapture(e.pointerId); update(fromX(e)); });
-  strip.addEventListener("pointermove", (e) => { if (down) update(fromX(e)); });
+  strip.addEventListener("pointerdown", (e) => { down = true; strip.setPointerCapture(e.pointerId); update(fromX(e), { user: true }); });
+  strip.addEventListener("pointermove", (e) => { if (down) update(fromX(e), { user: true }); });
   const end = () => { if (down) { down = false; st.t = pts[idx].at; writeHash(); } };
   strip.addEventListener("pointerup", end); strip.addEventListener("pointercancel", end);
   strip.addEventListener("keydown", (e) => {
     const k = { ArrowLeft: -1, ArrowDown: -1, ArrowRight: 1, ArrowUp: 1, PageDown: -4, PageUp: 4 }[e.key];
-    if (k != null) { e.preventDefault(); update(idx + k, { commit: true }); }
-    else if (e.key === "Home") { e.preventDefault(); update(0, { commit: true }); } else if (e.key === "End") { e.preventDefault(); update(n - 1, { commit: true }); }
+    if (k != null) { e.preventDefault(); update(idx + k, { commit: true, user: true }); }
+    else if (e.key === "Home") { e.preventDefault(); update(0, { commit: true, user: true }); } else if (e.key === "End") { e.preventDefault(); update(n - 1, { commit: true, user: true }); }
   });
   update(idx);
   const events = (c.run.slots?.[0]?.tideEvents ?? []).slice(0, 4).map((e) => `${e.type === "high" ? "High" : "Low"} ${fmtTime(e.at)}`).join(" · ");
@@ -686,7 +709,12 @@ function closeSheet(silent) {
   if (!sheet) return;
   tick("close"); sheet.observer?.disconnect();
   const { prev, prevFk } = sheet; sheet = null;
-  $("sheet-root").replaceChildren();
+  const leaving = [...$("sheet-root").children];
+  if (silent) $("sheet-root").replaceChildren();
+  else { // slide + fade out, then detach; reduced motion has no animations, so this resolves at once
+    leaving.forEach((n) => { n.inert = true; n.classList.add("out"); });
+    Promise.allSettled(leaving.flatMap((n) => n.getAnimations().map((a) => a.finished))).then(() => leaving.forEach((n) => n.remove()));
+  }
   $("app").inert = false; $("tabbar").inert = false; $("review").inert = false;
   if (silent) return;
   const target = prev?.isConnected ? prev : prevFk ? document.querySelector(`[data-fk="${prevFk}"]`) : null;
