@@ -323,7 +323,7 @@ body { overflow-x:visible; }
 .bar { position:sticky; top:0; z-index:20; background:color-mix(in srgb,var(--bg) 88%,transparent); backdrop-filter:blur(14px); padding:calc(var(--s-1) + env(safe-area-inset-top)) 0 var(--s-1); gap:var(--s-2); }
 .brand { gap:var(--s-2); } .mark { width:var(--hit); height:var(--hit); } .pill { flex:1; font-size:var(--fs-body); }
 .ctl { padding-bottom:var(--s-2); gap:var(--s-1); } .seg { padding:var(--s-1); gap:var(--s-1); } .seg button { min-height:var(--hit); padding:0 var(--s-2); font-size:var(--fs-sm); }
-#fresh { margin-left:auto; padding:var(--s-1); border:0; background:transparent; gap:0; font-size:var(--fs-meta); } #fresh svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:2; margin-right:var(--s-1); }
+#fresh { margin-left:auto; padding:var(--s-1); border:0; background:transparent; gap:var(--s-1); font-size:var(--fs-meta); } #fresh svg { width:12px; height:12px; fill:none; stroke:currentColor; stroke-width:2; margin-right:var(--s-1); }
 #fresh[data-s="stale"] { color:var(--mid-ink); border:1px solid color-mix(in srgb,var(--mid) 55%,transparent); }
 #fresh[data-s="fallback"] { color:var(--mid-ink); }
 #fresh[data-s="aging"], #fresh[data-s="offline"] { color:var(--muted); } #fresh[data-s="offline"] { border:1px solid var(--line-strong); }
@@ -380,7 +380,8 @@ body { overflow-x:visible; }
 @media(min-width:1024px) { .grid { grid-template-columns:repeat(4,minmax(0,1fr)); } .species-layout .grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation:none!important; transition:none!important; } }
 
-.hero .bet .nm { flex-wrap:nowrap; font-size:var(--fs-body); } .hero .bet .nm .mchip { margin-left:auto; } .hero .bet { padding:var(--s-2); } .hero .bet .win { font-size:var(--fs-sm); } .glance { padding-block:var(--s-2); } .src-list li[data-bad] span:last-child { color:var(--mid-ink); }
+.hero .bet .nm { flex-wrap:nowrap; font-size:var(--fs-body); min-width:0; } .hero .bet > div { flex:1; min-width:0; } .hero .bet .nm .bet-name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .hero .bet .nm .mchip { margin-left:auto; flex:none; } .hero .bet { padding:var(--s-2); } .hero .bet .win { font-size:var(--fs-sm); } .glance { padding-block:var(--s-2); } .src-list li[data-bad] span:last-child { color:var(--mid-ink); }
+.refresh-status { flex-basis:100%; margin:0; }
 /* Two primary targets keep setup and confidence inside the phone fold. */
 .glance { padding-block:var(--s-1); }
 .hero .headline { margin-block:var(--s-1); }
