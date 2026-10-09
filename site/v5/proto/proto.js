@@ -270,16 +270,16 @@ function verdictCard(c) {
   const { rec: r, run } = c;
   const safety = r.gates?.length > 0;
   const lvl = LEVEL[r.verdict];
-  const C = 301.6, target = C * (1 - Math.max(0, Math.min(100, r.suitability ?? 0)) / 100);
-  const arc = s("circle", { class: "ring-fill", cx: 60, cy: 60, r: 48, "stroke-dashoffset": C });
-  requestAnimationFrame(() => requestAnimationFrame(() => arc.setAttribute("stroke-dashoffset", target)));
-  const ringIcon = r.verdict === "GO" ? "check" : r.verdict === "SKIP" ? (safety ? "shield" : "x") : "wave";
-  const ring = h("div", { class: "ring", "aria-hidden": "true" },
-    s("svg", { class: "rsvg", viewBox: "0 0 120 120" }, s("circle", { class: "ring-track", cx: 60, cy: 60, r: 48 }), arc),
-    h("div", { class: "ring-text" }, icon(ringIcon), h("span", {}, VERDICT_SPOKEN[r.verdict]), c.stale ? h("small", {}, "Last known") : null));
+  const qualOn = !!(r.amberQualifier && !c.skip && r.confidenceReasons?.some((x) => x.kind === "live"));
+  // Verdict seal: a discrete GO/MAYBE/SKIP mark, no suitability arc (P2-4). The outline carries certainty: solid = fresh, dashed = qualified, dotted = last known.
+  const cert = c.stale ? "stale" : qualOn ? "soft" : "firm";
+  const sealIcon = r.verdict === "GO" ? "check" : r.verdict === "SKIP" ? (safety ? "shield" : "x") : "wave";
+  const seal = h("div", { class: "seal", "data-cert": cert, "aria-hidden": "true" },
+    s("svg", { class: "seal-edge", viewBox: "0 0 100 100" }, s("rect", { x: 2, y: 2, width: 96, height: 96, rx: 30, pathLength: 100 })),
+    icon(sealIcon), h("span", { class: "seal-word" }, VERDICT_SPOKEN[r.verdict]), c.stale ? h("small", {}, "Last known") : null);
   const reasonRaw = r.reason?.code && SHORT_REASON[r.reason.code] ? SHORT_REASON[r.reason.code] : msg(r.reason?.text ?? r.reason);
   const reason = !c.skip && r.verdict !== "GO" && r.reason?.code !== "provisionalGoThreshold" && reasonRaw ? h("p", { class: "why-line" }, reasonRaw) : null;
-  const qual = r.amberQualifier && !c.skip && r.confidenceReasons?.some((x) => x.kind === "live") ? h("p", { class: "qual" }, icon("warn"), msg(r.amberQualifier)) : null;
+  const qual = qualOn ? h("p", { class: "qual" }, icon("warn"), msg(r.amberQualifier)) : null;
   const eyebrow = h("p", { class: "eyebrow" }, whenOf(c).split(" · ")[0], c.focus ? h("span", { class: "tag" }, `for ${spName(st.species)}`) : null);
   const notes = [];
   if (c.focus && TIER[c.overall.verdict] < TIER[r.verdict]) notes.push(h("p", { class: "note" }, h("b", {}, "Overall today: "), formatVerdictLine(c.run).replace(/, [^,]*$/, "")));
@@ -292,7 +292,7 @@ function verdictCard(c) {
   }
   const bet = c.skip ? nextOption(c) : betRow(c);
   return h("section", { class: `card hero${c.stale ? " dim" : ""}`, id: "verdict", "data-level": lvl, "aria-label": `Verdict: ${VERDICT_SPOKEN[r.verdict]}` },
-    h("div", { class: "hero-main" }, ring, h("div", { class: "hero-copy" }, eyebrow, h("h2", { class: "headline" }, formatHeadline({recommendation:r})), reason, qual)),
+    h("div", { class: "hero-main" }, seal, h("div", { class: "hero-copy" }, eyebrow, h("h2", { class: "headline" }, formatHeadline({recommendation:r})), reason, qual)),
     notes, bet);
 }
 function windowLine(c) {
