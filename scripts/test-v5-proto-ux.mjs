@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import {
-  bestUpcomingCandidate, excludeSpot, formatConfidenceParts, formatCopyMessage,
-  formatHeadline, nearestSlotIndex, nextWindowLabel, rankSpeciesRows,
-  slotIndexAt, sourceSummaries,
+  backupTitle, bestUpcomingCandidate, confidenceDisplay, excludeSpot, factorLine,
+  formatConfidenceParts, formatCopyMessage, formatHeadline, nearestSlotIndex,
+  nextWindowLabel, pickComparison, presentChildren, rankSpeciesRows, scrubWindows,
+  slotHeld, slotInWindow, slotIndexAt, sourceSummaries, windowPhase,
 } from "../site/v5/engine/copy.js";
 
 const now = Date.parse("2026-10-09T07:51:00-04:00");
@@ -55,4 +57,26 @@ assert.equal(best.id, "future");
 const confidence = formatConfidenceParts({ recommendation: { confidenceLevel: "Moderate", confidence: null } });
 assert.equal(confidence.level, "Moderate confidence");
 assert.equal(confidence.score, null);
+
+assert.deepEqual(presentChildren("a", null, false, ["b", null]), ["a", "b"]);
+const protoSource = readFileSync("site/v5/proto/proto.js", "utf8");
+assert.doesNotMatch(protoSource, /readout\.replaceChildren\(/);
+assert.match(protoSource, /fill\(readout,/);
+const phaseWin = { start: "2026-10-05T10:00:00Z", end: "2026-10-05T11:00:00Z" };
+assert.equal(windowPhase(phaseWin, "2026-10-05T09:00:00Z"), "upcoming");
+assert.equal(windowPhase(phaseWin, "2026-10-05T10:30:00Z"), "open");
+assert.equal(windowPhase(phaseWin, "2026-10-05T11:00:00Z"), "ended");
+assert.equal(windowPhase(null, "2026-10-05T10:30:00Z"), "none");
+const skipFixture = JSON.parse(readFileSync("site/v5/proto/sample-skip.json", "utf8"));
+const skipRec = skipFixture.recommendation;
+assert.equal(scrubWindows(skipRec, skipFixture.days, { skip: true }).some(w => w.start === skipRec.window.start), false);
+assert.equal(scrubWindows(skipRec, skipFixture.days, { skip: false }).some(w => w.start === skipRec.window.start), true);
+assert.equal(slotInWindow("2026-10-05T22:00:00Z", [{ start: "2026-10-05T22:55:00Z", end: "2026-10-05T23:30:00Z" }]), false);
+assert.equal(slotHeld("2026-10-05T18:00:00Z", skipRec.window.gates), true);
+assert.equal(factorLine("Thunderstorms", "Thunderstorms 2–6 PM"), "Thunderstorms 2–6 PM");
+assert.equal(factorLine("Wind", "Breezy"), "Wind: Breezy");
+assert.deepEqual(confidenceDisplay({ level: "Moderate confidence", score: 77 }, { stale: true }), { word: "Moderate", suffix: "last known", scoreNote: "Score 77 of 100 when issued" });
+assert.deepEqual(confidenceDisplay({ level: "Moderate confidence", score: 77 }, { stale: false }), { word: "Moderate", suffix: null, scoreNote: "Score 77 of 100" });
+assert.equal(pickComparison(skipRec), "better");
+assert.equal(backupTitle(skipRec.backup, skipRec, "Flagler Beach ICW (Veterans Park)", "7:45 AM–12:45 PM").startsWith("Later here"), false);
 console.log("RESULT V5 prototype UX regression checks passed");

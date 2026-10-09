@@ -33,6 +33,26 @@ const timeRangeText = (start,end) => {
 const prettyPart = (value) => ({ dawn:"morning", morning:"morning", midday:"midday", afternoon:"afternoon", dusk:"evening", evening:"evening" }[value] ?? value ?? "");
 const monthText = (month) => typeof month === "number" ? new Intl.DateTimeFormat("en-US",{month:"long",timeZone:"UTC"}).format(new Date(Date.UTC(2020,month-1,1))) : String(month ?? "");
 
+export const presentChildren = (...kids) => kids.flat().filter(k => k != null && k !== false);
+export function windowPhase(win, now) {
+  const start = Date.parse(win?.start), end = Date.parse(win?.end), current = +new Date(now);
+  if (![start, end, current].every(Number.isFinite)) return "none";
+  return end <= current ? "ended" : start <= current ? "open" : "upcoming";
+}
+export function scrubWindows(rec, days, { skip } = {}) {
+  return [...(skip ? [] : [rec?.window]), ...(days ?? []).flatMap(d => d.windows ?? []).filter(w => w.locationId === rec?.locationId && w.mode === rec?.mode)].filter(Boolean);
+}
+export const slotInWindow = (at, wins) => (wins ?? []).some(w => Number.isFinite(Date.parse(w.start)) && Number.isFinite(Date.parse(w.end)) && Date.parse(at) >= Date.parse(w.start) && Date.parse(at) < Date.parse(w.end));
+export const slotHeld = (at, gates) => (gates ?? []).some(g => Number.isFinite(Date.parse(g.startsAt)) && Number.isFinite(Date.parse(g.endsAt)) && Date.parse(at) >= Date.parse(g.startsAt) && Date.parse(at) < Date.parse(g.endsAt));
+export const factorLine = (label, value) => value.toLowerCase().startsWith(label.toLowerCase()) ? value : `${label}: ${value}`;
+export function confidenceDisplay({ level, score }, { stale }) {
+  return { word: level.replace(" confidence", ""), suffix: stale ? "last known" : null, scoreNote: score == null ? null : stale ? `Score ${score} of 100 when issued` : `Score ${score} of 100` };
+}
+export const pickComparison = rec => rec?.comparison?.kind ?? null;
+export function backupTitle(b, rec, locName, range) {
+  return b.kind === "later-window" && b.locationId === rec.locationId ? `Later here · ${range}` : b.kind === "later-window" ? `${locName ?? b.locationId} · ${range}` : locName ?? b.locationId;
+}
+
 /** Resolve a coded CopyMessage with its stored fallback text. */
 export function formatCopyMessage(message) {
   if (message == null) return "";

@@ -1,7 +1,7 @@
 // V5 app prototype. Renders ONLY from contract-shaped PredictionRun JSON (samples in this folder). No scoring logic here.
 // Numbers and sentences come from the JSON and from ../engine/copy.js (pure formatters); species/spot catalogs
 // (../species.js, ../spots.js) supply names, default setup and access notes. Everything else is layout and state.
-import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfidenceParts, formatCopyMessage, formatHeadline, formatVerdictLine, nextWindowLabel, slotIndexAt, nearestSlotIndex, sourceSummaries, excludeSpot, rankSpeciesRows, bestUpcomingCandidate } from "../engine/copy.js";
+import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfidenceParts, formatCopyMessage, formatHeadline, formatVerdictLine, nextWindowLabel, slotIndexAt, nearestSlotIndex, sourceSummaries, excludeSpot, rankSpeciesRows, bestUpcomingCandidate, presentChildren, windowPhase, scrubWindows, slotInWindow, slotHeld, confidenceDisplay, pickComparison, factorLine, backupTitle } from "../engine/copy.js";
 import { SPECIES } from "../species.js";
 import { SPOTS } from "../spots.js";
 import { loadProtoData } from "./proto-data.js";
@@ -50,6 +50,7 @@ function h(tag, attrs = {}, ...kids) {
   return el;
 }
 function add(el, kids) { for (const k of kids.flat(2)) if (k != null && k !== false) el.append(k.nodeType ? k : document.createTextNode(String(k))); }
+const fill = (el, ...kids) => { el.replaceChildren(...presentChildren(kids)); return el; };
 function s(tag, attrs = {}, ...kids) {
   const el = document.createElementNS(NS, tag);
   for (const [k, v] of Object.entries(attrs)) if (v != null) el.setAttribute(k, v);
@@ -268,15 +269,16 @@ function todayView(c) {
 }
 function verdictCard(c) {
   const { rec: r, run } = c;
+  const todayRun = c.def.live ? D[RICH] : D[c.def.file];
   const safety = r.gates?.length > 0;
   const lvl = LEVEL[r.verdict];
   const qualOn = !!(r.amberQualifier && !c.skip && r.confidenceReasons?.some((x) => x.kind === "live"));
-  // Verdict seal: a discrete GO/MAYBE/SKIP mark, no suitability arc (P2-4). The outline carries certainty: solid = fresh, dashed = qualified, dotted = last known.
-  const cert = c.stale ? "stale" : qualOn ? "soft" : "firm";
+  // Verdict seal: a discrete GO/MAYBE/SKIP mark, no suitability arc (P2-4).
+  const cert = c.stale ? "stale" : "firm", phase = windowPhase(r.window, c.now);
   const sealIcon = r.verdict === "GO" ? "check" : r.verdict === "SKIP" ? (safety ? "shield" : "x") : "wave";
-  const seal = h("div", { class: "seal", "data-cert": cert, "aria-hidden": "true" },
+  const seal = h("div", { class: "seal", "data-cert": cert, "data-phase": phase, "aria-hidden": "true" },
     s("svg", { class: "seal-edge", viewBox: "0 0 100 100" }, s("rect", { x: 2, y: 2, width: 96, height: 96, rx: 30, pathLength: 100 })),
-    icon(sealIcon), h("span", { class: "seal-word" }, VERDICT_SPOKEN[r.verdict]), c.stale ? h("small", {}, "Last known") : null);
+    icon(sealIcon), h("span", { class: "seal-word" }, VERDICT_SPOKEN[r.verdict]), c.stale ? h("small", {}, "Last known") : !c.skip && phase === "ended" ? h("small", {}, "Ended") : null);
   const reasonRaw = r.reason?.code && SHORT_REASON[r.reason.code] ? SHORT_REASON[r.reason.code] : msg(r.reason?.text ?? r.reason);
   const reason = !c.skip && r.verdict !== "GO" && r.reason?.code !== "provisionalGoThreshold" && reasonRaw ? h("p", { class: "why-line" }, reasonRaw) : null;
   const qual = qualOn ? h("p", { class: "qual" }, icon("warn"), msg(r.amberQualifier)) : null;
@@ -287,12 +289,12 @@ function verdictCard(c) {
   else if (st.h === "tomorrow") {
     const cmp = r.comparison?.kind;
     if (cmp) notes.push(h("p", { class: "note" }, h("b", {}, "vs today: "), DELTA[cmp].replace(" tomorrow", "")));
-    const tw = D[RICH]?.recommendation?.window;
+    const tw = todayRun?.recommendation?.window;
     if (tw && Date.parse(tw.end) > c.now) notes.push(h("p", { class: "note" }, `Today's window: ${fmtRange(tw.start, tw.end)}`));
   }
   const bet = c.skip ? nextOption(c) : betRow(c);
   return h("section", { class: `card hero${c.stale ? " dim" : ""}`, id: "verdict", "data-level": lvl, "aria-label": `Verdict: ${VERDICT_SPOKEN[r.verdict]}` },
-    h("div", { class: "hero-main" }, seal, h("div", { class: "hero-copy" }, eyebrow, h("h2", { class: "headline" }, formatHeadline({recommendation:r})), reason, qual)),
+    h("div", { class: "hero-main" }, seal, h("div", { class: "hero-copy" }, eyebrow, h("h2", { class: "headline" }, formatHeadline({recommendation:r})), r.benchmarkLine ? h("p", { class: "bench why-line" }, msg(r.benchmarkLine)) : null, reason, qual)),
     notes, bet);
 }
 function windowLine(c) {
@@ -302,7 +304,7 @@ function windowLine(c) {
   const start = Date.parse(w.start), end = Date.parse(w.end), range = fmtRange(w.start, w.end);
   if (end <= c.now) {
     const next = nextWindowLabel(c.run, c.rec, c.now);
-    return h("p", { class: "win" }, h("s", {}, range), " ", h("span", { class: "muted nowrap" }, "· ", next ?? "No more windows today"));
+    return h("p", { class: "win" }, h("strong", { class: "next" }, next ?? "No more windows today"), " ", h("span", { class: "muted nowrap" }, h("s", {}, range)));
   }
   if (dayKey(w.start) !== dayKey(c.now)) return h("p", { class: "win" }, `${range} · Tomorrow`);
   if (c.now >= start) return h("p", { class: "win" }, h("strong", {}, `Fish now — until ${fmtTime(w.end)}`));
@@ -311,8 +313,9 @@ function windowLine(c) {
 function betRow(c) {
   const r = c.rec;
   const label = c.focus ? "Best for this fish" : st.spot ? "Best window here" : "Best bet";
+  const headline = formatHeadline({ recommendation: r });
   return h("button", { class: "bet", type: "button", "data-fk": "bet", onclick: (e) => openSpotDetail(r.locationId, r.mode, e.currentTarget) },
-    h("div", {}, h("p", { class: "k" }, label), h("div", { class: "nm" }, h("span",{class:"bet-name"},r.displayName), h("span", { class: "mchip" }, modeIcon(r.mode), modeLabel(r.mode))), windowLine(c) ?? h("p", { class: "win muted" }, "Time unavailable")), icon("arrow", "go-i"));
+    h("div", {}, h("p", { class: "k" }, label), h("div", { class: "nm" }, headline.includes(r.displayName) ? null : h("span",{class:"bet-name"},r.displayName), h("span", { class: "mchip" }, modeIcon(r.mode), modeLabel(r.mode))), windowLine(c) ?? h("p", { class: "win muted" }, "Time unavailable")), icon("arrow", "go-i"));
 }
 function nextOption(c) {
   const n = c.rec.nextOption;
@@ -356,14 +359,14 @@ function useCard(c) {
 }
 function confCard(c) {
   const r = c.rec;
-  const { level, score } = formatConfidenceParts({ recommendation: r });
+  const { word, suffix, scoreNote } = confidenceDisplay(formatConfidenceParts({ recommendation: r }), { stale: c.stale });
   const det = h("details", { class: "how", open: session.conf || null });
   det.addEventListener("toggle", () => { session.conf = det.open; });
-  det.append(h("summary", { "data-fk": "conf" }, "Why?"), h("ul", {}, [...(r.confidenceReasons ?? []).map((x) => h("li", {}, msg(x.text))), r.reason?.code === "provisionalGoThreshold" ? h("li",{},SHORT_REASON.provisionalGoThreshold) : null]));
+  det.append(h("summary", { "data-fk": "conf" }, "Why?"), h("ul", {}, [scoreNote ? h("li", {}, scoreNote) : null, ...(r.confidenceReasons ?? []).map((x) => h("li", {}, msg(x.text))), r.reason?.code === "provisionalGoThreshold" ? h("li",{},SHORT_REASON.provisionalGoThreshold) : null]));
   return h("section", { class: "card conf", "aria-label": "Confidence" },
-    h("div", { class: "conf-row" }, h("p", { class: "conf-line" }, "Confidence: ", h("b", {}, level.replace(" confidence", "")), score != null ? h("span", {}, ` · ${score}`) : null),
+    h("div", { class: "conf-row" }, h("p", { class: "conf-line" }, "Confidence: ", h("b", {}, word), suffix ? h("span", { class: "muted" }, ` · ${suffix}`) : null),
       c.partial ? h("span", { class: "vchip amber" }, icon("warn"), "Partial data") : null),
-    r.confidenceReasons?.length ? det : null);
+    scoreNote || r.confidenceReasons?.length ? det : null);
 }
 function glanceCard(c) {
   const targets = targetsCard(c), use = useCard(c), conf = confCard(c);
@@ -377,9 +380,10 @@ function backupCard(c) {
   if (!b?.window || !validDate(b.window.start) || !validDate(b.window.end)) return c.skip ? null : c.rec.nextOption ? nextOption(c) : null;
   const loc = locOf(c.run, b.locationId);
   const outside = b.distanceMi != null && b.distanceMi > 7;
+  const title = backupTitle(b, c.rec, loc?.name, fmtRange(b.window.start, b.window.end));
   return h("button", { class: "bet backup", type: "button", "data-fk": "backup",
     onclick: () => scope({ spot: b.locationId, mode: b.mode }) },
-    h("div", {}, h("p", { class: "k" }, "Backup"), h("div", { class: "nm" }, b.kind === "later-window" ? `Later here · ${fmtRange(b.window.start, b.window.end)}` : loc?.name ?? b.locationId, b.mode ? h("span", { class: "mchip" }, modeIcon(b.mode), modeLabel(b.mode)) : null, h("span", { class: "vchip", "data-v": b.verdict }, VERDICT_SPOKEN[b.verdict])),
+    h("div", {}, h("p", { class: "k" }, "Backup"), h("div", { class: "nm" }, title, b.mode ? h("span", { class: "mchip" }, modeIcon(b.mode), modeLabel(b.mode)) : null, h("span", { class: "vchip", "data-v": b.verdict }, VERDICT_SPOKEN[b.verdict])),
       b.kind !== "later-window" ? h("p", { class: "win" }, fmtRange(b.window.start, b.window.end)) : null, h("p", { class: "fine" }, b.reason), outside && b.area ? h("p", { class: "fine" }, `In ${b.area}`) : null), icon("arrow", "go-i"));
 }
 function effectMark(effect, safety) {
@@ -392,7 +396,7 @@ function whyCard(c) {
   const r = c.rec, factors = c.isBest && !st.species ? (c.run._proto?.factors ?? []) : [];
   const safety = (r.gates?.length ?? 0) > 0;
   const helps = factors.filter((f) => f.effect === "helps").slice(0, 3);
-  const rows0 = [...factors.filter((f)=>f.effect === "hurts" && f.available !== false && !/unavailable|thin|buoy|stale|missing/i.test(`${f.code ?? ""} ${msg(f.humanLabel)}`)).slice(0,1).map((f)=>({e:"hurts",t:`${f.label}: ${msg(f.humanLabel)}`})), ...helps.map((f) => ({ e: "helps", t: `${f.label}: ${msg(f.humanLabel)}` })), ...(r.why ?? []).filter((w) => !/unavailable|thin|buoy|stale|missing/i.test(w.code ?? "")).map((w) => ({ e: w.effect ?? (/unavailable|thin|buoy/i.test(w.code) ? "hurts" : "none"), t: msg(w) }))];
+  const rows0 = [...factors.filter((f)=>f.effect === "hurts" && f.available !== false && !/unavailable|thin|buoy|stale|missing/i.test(`${f.code ?? ""} ${msg(f.humanLabel)}`)).slice(0,1).map((f)=>({e:"hurts",t:factorLine(f.label,msg(f.humanLabel))})), ...helps.map((f) => ({ e: "helps", t: factorLine(f.label,msg(f.humanLabel)) })), ...(r.why ?? []).filter((w) => !/unavailable|thin|buoy|stale|missing/i.test(w.code ?? "")).map((w) => ({ e: w.effect ?? (/unavailable|thin|buoy/i.test(w.code) ? "hurts" : "none"), t: msg(w) }))];
   const rows = [...rows0.filter((w) => w.e === "helps").slice(0,3), ...rows0.filter((w) => w.e === "hurts").slice(0,1)];
   const list = h("ul", { class: "whys" }, rows.map((w) => h("li", {}, effectMark(w.e, safety && w.e === "hurts"), h("span", {}, w.t))));
   let table = null;
@@ -419,7 +423,7 @@ function timesCard(c) {
   if (pts.length < 2) return null;
   const n = pts.length, r = c.rec, light = c.run._proto?.light;
   const t0 = Date.parse(pts[0].at), step = (Date.parse(pts[n - 1].at) - t0) / (n - 1), span = step * n;
-  const wins = [r.window, ...(c.run.days ?? []).flatMap((d) => d.windows ?? []).filter((w) => w.locationId === r.locationId && w.mode === r.mode)].filter(Boolean);
+  const wins = scrubWindows(r, c.run.days ?? [], { skip: c.skip });
   const inWin = (at) => wins.some((w) => Date.parse(at) < Date.parse(w.end) && Date.parse(at) + step > Date.parse(w.start));
   const hasSp = pts.some((p) => p.topSpecies?.length);
   let idx = 0;
@@ -449,15 +453,15 @@ function timesCard(c) {
     strip.setAttribute("aria-valuenow", idx); strip.setAttribute("aria-valuetext", txt);
     const isNow = idx === nowIdx;
     const lightTxt = lightAt(light, p.at);
-    const tide = p.tide?.heightFt != null ? { v: cap(p.tide.direction ?? "—"), d: `${p.tide.heightFt.toFixed(1)} ft` } : null;
-    readout.replaceChildren(
+    const tide = p.tide?.heightFt != null ? { v: p.tide.direction ? cap(p.tide.direction) : "", d: `${p.tide.heightFt.toFixed(1)} ft` } : null;
+    fill(readout,
       h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)),
         isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : nearestSlotIndex(pts, c.now)); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now"),
-        h("span", { class: "vchip", "data-v": null }, inWin(p.at) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows")),
-      h("div", { class: "stats ro-tiles" },
-        h("div", { class: `stat wide${p.suitability == null ? " off" : ""}` }, h("p", { class: "k" }, "Suitability"), h("p", { class: "v" }, p.suitability ?? "—"), h("p", { class: "d" }, "Fit at this hour")),
-        h("div", { class: `stat${tide ? "" : " off"}` }, h("p", { class: "k" }, "Tide"), h("p", { class: "v" }, tide?.v ?? "Unavailable"), tide ? h("p", { class: "d" }, tide.d) : null),
-        h("div", { class: `stat${lightTxt ? "" : " off"}` }, h("p", { class: "k" }, "Light"), h("p", { class: "v" }, lightTxt?.v ?? "—"), lightTxt?.d ? h("p", { class: "d" }, lightTxt.d) : null)),
+        h("span", { class: "vchip", "data-v": null }, c.skip && slotHeld(p.at, r.window?.gates ?? []) ? "On hold" : slotInWindow(p.at, wins) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows")),
+      h("div", { class: "stats ro-tiles" }, [
+        p.suitability == null ? null : h("div", { class: "stat wide" }, h("p", { class: "k" }, "Suitability"), h("p", { class: "v" }, p.suitability), h("p", { class: "d" }, "Fit at this hour")),
+        tide ? h("div", { class: "stat" }, h("p", { class: "k" }, "Tide"), h("p", { class: "v" }, tide.v), h("p", { class: "d" }, tide.d)) : null,
+        lightTxt ? h("div", { class: "stat" }, h("p", { class: "k" }, "Light"), h("p", { class: "v" }, lightTxt.v), lightTxt.d ? h("p", { class: "d" }, lightTxt.d) : null) : null]),
       speciesAt(p));
     if (commit) { st.t = p.at; writeHash(); }
   }
@@ -485,7 +489,7 @@ function timesCard(c) {
   return h("section", { class: "card", "aria-label": "Best times" },
     h("div", { class: "card-h" }, h("h2", {}, "Best times"), h("span", { class: "sub" }, "Drag to see any hour")),
     strip, axis, day,
-    h("div", { class: "legend", "aria-hidden": "true" }, h("span", {}, h("i", {}), "Window"), h("span", {}, h("i", { class: "d" }), "Daylight"), h("span", {}, h("i", { class: "n" }), "No window"), h("span", {}, h("i", { class: "o" }), "Selected")),
+    h("div", { class: "legend", "aria-hidden": "true" }, h("span", {}, h("i", {}), "Window"), h("span", {}, h("i", { class: "d" }), "Daylight"), h("span", {}, h("i", { class: "n" }), "No window"), h("span", {}, h("i", { class: "o" }), "Selected"), heights.length > 1 ? h("span", {}, h("i", { class: "tide" }), "Tide") : null),
     readout, events ? h("p", { class: "fine" }, events) : null);
 }
 function lightAt(light, at) {
@@ -508,14 +512,15 @@ function conditionsCard(c) {
 function tvCard(c) {
   const d = c.run.days ?? [];
   if (d.length < 2) return null;
-  const cmp = D[RICH]?.recommendation.comparison?.kind ?? c.rec.comparison?.kind;
+  const todayRun = c.def.live ? D[RICH] : D[c.def.file];
+  const cmp = pickComparison(st.h === "today" ? c.rec : todayRun.recommendation);
   const card = (label, day, target) => { const w = day.windows?.[0];
     return h("button", { class: "tv-c", type: "button", style: "text-align:left;cursor:pointer;color:inherit", onclick: () => { st.h = target; st.t = null; render({ resetScroll: false }); window.scrollTo({ top: 0 }); } },
       h("p", { class: "k" }, label, h("span", { class: "vchip", "data-v": day.verdict }, VERDICT_SPOKEN[day.verdict])),
       w ? h("p", { class: "w" }, fmtRange(w.start, w.end)) : h("p", { class: "w" }, "No good window"),
-      w ? h("p", { class: "s" }, [w.displayName, partWord(w.start)].filter(Boolean).join(" · ")) : h("p", { class: "s" }, msg(day.reason))); };
+      w ? h("p", { class: "s" }, [w.displayName, cap(partWord(w.start))].filter(Boolean).join(" · ")) : h("p", { class: "s" }, cap(msg(day.reason)))); };
   return h("section", { class: "card", "aria-label": "Today versus tomorrow" }, h("div", { class: "card-h" }, h("h2", {}, "Today vs tomorrow")),
-    h("div", { class: "tv" }, card("Today", d[0], "today"), card("Tomorrow", d[1], "tomorrow")), cmp ? h("p", { class: "delta" }, DELTA[cmp]) : null);
+    cmp ? h("p", { class: "delta" }, DELTA[cmp]) : null, h("div", { class: "tv" }, card("Today", d[0], "today"), card("Tomorrow", d[1], "tomorrow")));
 }
 function spotsTeaser(c) {
   const rows = excludeSpot(spotRows(c.run, "all", c.now, st.h), st.spot ?? c.rec?.locationId).slice(0, 3);
@@ -564,7 +569,7 @@ function spotRowEl(r, c, { star = true, onPick } = {}) {
   return h("li", { class: `row${st.spot === loc.id ? " sel" : ""}${star ? "" : " nostar"}` },
     h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${rec.verdict}, ${rec.mode}, ${fmtRange(rec.window?.start, rec.window?.end)}${r.ended ? ", ended" : ""}${top ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
       h("div", { class: "r1" }, h("span", { class: "nm" }, loc.name), null),
-      h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.map((m) => modeIcon(m))), `${modeLabel(rec.mode)} · ${loc.area} · `, h("span", { class: "when" }, `${fmtRange(rec.window?.start,rec.window?.end)}${r.ended ? " · ended" : ""}`), r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
+      h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.map((m) => modeIcon(m))), `${modeLabel(rec.mode)} · ${loc.area} · `, h("span", { class: "when" }, fmtRange(rec.window?.start,rec.window?.end)), r.ended ? h("span", { class: "ended-tag" }, "Ended") : null, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
       h("p", { class: "r2 r3" }, top ? `${top.name} ${top.suitability}` : "")),
     star ? h("button", { class: "star", type: "button", "data-fk": `star-${loc.id}`, "aria-pressed": String(favs.includes(loc.id)), "aria-label": `Favourite ${loc.name}`, onclick: () => { const f = store.get("favs", []); tick(); store.set("favs", f.includes(loc.id) ? f.filter((x) => x !== loc.id) : [...f, loc.id]); rerenderList(); } }, icon("star")) : null);
 }
@@ -614,7 +619,7 @@ function speciesView(c) {
     h("li", {}, h("button", { class: `sp${suit == null || (!focused && best?.eligibility !== "realistic") ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
       "aria-label": `${sp.name}, ${suit == null ? "no reading" : `suitability ${suit}`}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-      h("div", { class: "big" }, h("b", {}, suit ?? "—"), h("span", {}, suit == null ? "no window" : best?.eligibility !== "realistic" ? "Rare in surveys" : best?.band ?? "")),
+      h("div", { class: "big" }, h("b", {}, suit ?? "—"), h("span", {}, suit == null ? "no window" : best?.eligibility !== "realistic" && best?.band ? (/rare/i.test(best.band) ? best.band : [best.band, h("span", { class: "tag rare" }, "Rare")]) : best?.eligibility !== "realistic" ? "Rare in surveys" : best?.band ?? "")),
       h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${suit ?? 0}%` }))))));
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
     h("div", { class: "card-h" }, h("h2", {}, "Species"), h("span", { class: "sub" }, "Suitability, best first")),
@@ -642,7 +647,7 @@ function planView(c) {
     return [i === 2 ? h("li", { class: "outlook-caption" }, h("h3", {}, "Outlook · days 3–7"), h("p", { class: "fine" }, "Outlook for days 3–7 uses season, tides, moon and the daily forecast. It updates daily.")) : null,
       h("li", {}, h("button", { class: `day-row${i >= 2 ? " outlook" : ""}`, type: "button", "data-fk": `day-${i}`, onclick: (e) => { st.day=i; const pane=document.querySelector(".plan-detail"); if(matchMedia("(min-width:900px)").matches && pane) pane.replaceChildren(h("h2",{},title),dayBody(d,i)); else openSheet(title,dayBody(d,i),e.currentTarget); } },
         h("span", {}, title,h("small",{},wk(d.date,{month:"short",day:"numeric"}))), h("span",{class:`vchip${outlook ? " outline" : ""}`,"data-v":outlook?null:d.verdict,"data-l":d.outlookLabel},outlook?d.outlookLabel:VERDICT_SPOKEN[d.verdict]),
-        h("span", {class:"day-copy"},h("span", {class:"day-line"},line),ended ? h("small",{class:"ended"},`Ended · ${range}`) : null,h("small",{},(d.topSpecies??[]).map((t)=>t.name).slice(0,2).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
+        h("span", {class:"day-copy"},h("span", {class:"day-line"},line),ended ? h("small",{class:"ended"},`Ended · ${range}`) : null,h("small",{},(d.topSpecies??[]).map((t)=>t.name).slice(0,1).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
   }));
   return [h("div",{class:"plan-layout"},h("section",{class:"card"},h("div",{class:"card-h"},h("h2",{},"Next 7 days"),h("p",{class:"eyebrow"},st.species?`for ${spName(st.species)}`:st.spot?locOf(c.run,st.spot)?.name:"Best anywhere")),list),h("section",{class:"card plan-detail desktop-pane"},dayBody(days[st.day],st.day)))];
 }
