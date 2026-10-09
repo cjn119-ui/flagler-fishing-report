@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   backupTitle, bestUpcomingCandidate, confidenceDisplay, excludeSpot, factorLine,
-  formatConfidenceParts, formatCopyMessage, formatHeadline, nearestSlotIndex,
+  formatConfidenceParts, formatCopyMessage, formatHeadline, nearestSlotIndex, defaultSlotIndex,
   nextWindowLabel, pickComparison, presentChildren, rankSpeciesRows, scrubWindows,
   slotHeld, slotInWindow, slotIndexAt, sourceSummaries, windowPhase,
 } from "../site/v5/engine/copy.js";
@@ -79,4 +79,13 @@ assert.deepEqual(confidenceDisplay({ level: "Moderate confidence", score: 77 }, 
 assert.deepEqual(confidenceDisplay({ level: "Moderate confidence", score: 77 }, { stale: false }), { word: "Moderate", suffix: null, scoreNote: "Score 77 of 100" });
 assert.equal(pickComparison(skipRec), "better");
 assert.equal(backupTitle(skipRec.backup, skipRec, "Flagler Beach ICW (Veterans Park)", "7:45 AM–12:45 PM").startsWith("Later here"), false);
+{ // default scrubber selection: current hour on Today, even after the best window ended
+  const hrs = [5,6,7,8,9,10,11].map((hh) => ({ at: `2026-10-09T${String(hh+4).padStart(2,"0")}:00:00Z` })); // 5–11 AM EDT
+  const win = (at) => at === hrs[1].at || at === hrs[2].at; // 6–8 AM window
+  assert.equal(defaultSlotIndex(hrs, "2026-10-09T13:30:00Z", true, win), 4);  // 9:30 AM, window over -> 9 AM, not 6 AM
+  assert.equal(defaultSlotIndex(hrs, "2026-10-09T10:15:00Z", true, win), 1);  // 6:15 AM, inside window -> now
+  assert.equal(defaultSlotIndex(hrs, "2026-10-09T07:00:00Z", true, win), 1);  // 3 AM, before series -> next window
+  assert.equal(defaultSlotIndex(hrs, "2026-10-09T20:00:00Z", true, win), 6);  // 4 PM, after series -> last slot
+  assert.equal(defaultSlotIndex(hrs, "2026-10-09T13:30:00Z", false, win), 1); // Tomorrow tab -> first window
+}
 console.log("RESULT V5 prototype UX regression checks passed");

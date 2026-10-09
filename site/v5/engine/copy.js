@@ -113,6 +113,16 @@ export function slotIndexAt(slots, now) {
   for(let i=0;i<times.length;i++)if(t>=times[i]&&(i===times.length-1||t<times[i+1]))return i;
   return -1;
 }
+// Default scrubber selection: today -> the current hour (or the next window before the series, the last slot after it); other days -> first window.
+export function defaultSlotIndex(slots, now, isToday, inWindow=()=>false) {
+  const n=(slots??[]).length; if(!n)return 0;
+  const first=Math.max(0,slots.findIndex(x=>inWindow(x.at)));
+  if(!isToday)return first;
+  const i=slotIndexAt(slots,now); if(i>=0)return i;
+  const t=+new Date(now);
+  if(Number.isFinite(t)&&t<Date.parse(slots[0].at)){ const up=slots.findIndex(x=>Date.parse(x.at)>=t&&inWindow(x.at)); return up>=0?up:0; }
+  return n-1;
+}
 export function nearestSlotIndex(slots, now) {
   const t=+new Date(now), times=(slots??[]).map(x=>Date.parse(x.at));
   if(!Number.isFinite(t)||!times.length)return -1;

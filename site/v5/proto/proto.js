@@ -1,7 +1,7 @@
 // V5 app prototype. Renders ONLY from contract-shaped PredictionRun JSON (samples in this folder). No scoring logic here.
 // Numbers and sentences come from the JSON and from ../engine/copy.js (pure formatters); species/spot catalogs
 // (../species.js, ../spots.js) supply names, default setup and access notes. Everything else is layout and state.
-import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfidenceParts, formatCopyMessage, formatHeadline, formatVerdictLine, nextWindowLabel, slotIndexAt, nearestSlotIndex, sourceSummaries, excludeSpot, rankSpeciesRows, bestUpcomingCandidate, presentChildren, windowPhase, scrubWindows, slotInWindow, slotHeld, confidenceDisplay, pickComparison, factorLine, backupTitle } from "../engine/copy.js";
+import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfidenceParts, formatCopyMessage, formatHeadline, formatVerdictLine, nextWindowLabel, slotIndexAt, nearestSlotIndex, defaultSlotIndex, sourceSummaries, excludeSpot, rankSpeciesRows, bestUpcomingCandidate, presentChildren, windowPhase, scrubWindows, slotInWindow, slotHeld, confidenceDisplay, pickComparison, factorLine, backupTitle } from "../engine/copy.js";
 import { SPECIES } from "../species.js";
 import { SPOTS } from "../spots.js";
 import { loadProtoData } from "./proto-data.js";
@@ -428,7 +428,7 @@ function timesCard(c) {
   const hasSp = pts.some((p) => p.topSpecies?.length);
   let idx = 0;
   if (st.t) idx = Math.max(0, pts.findIndex((p) => p.at === st.t));
-  else { const ni = pts.findIndex((p, i) => c.now >= Date.parse(p.at) && (i === n - 1 || c.now < Date.parse(pts[i + 1].at))); idx = ni >= 0 && wins.some((w) => c.now >= Date.parse(w.start) && c.now < Date.parse(w.end)) ? ni : Math.max(0, pts.findIndex((p) => inWin(p.at))); }
+  else idx = defaultSlotIndex(pts, c.now, st.h === "today", inWin);
   const nowIdx = slotIndexAt(pts, c.now);
 
   const strip = h("div", { class: "scrub", role: "slider", tabindex: "0", "aria-orientation": "horizontal", "aria-label": "Time of day", "aria-valuemin": 0, "aria-valuemax": n - 1, "data-fk": "scrub" });
