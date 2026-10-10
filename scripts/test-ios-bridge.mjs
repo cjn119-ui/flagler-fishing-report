@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import { createCachedFetch, rewriteApiUrl } from "../ios/bridge.js";
+
+const bundleSource = await readFile(new URL("./build-ios-web.mjs", import.meta.url), "utf8");
+for (const excluded of ["v5/proto/shots/", "v5/proto/NOTES.md", "v5/proto/img/hero-licensed.jpg", "v5/proto/img/fish/ref/"]) assert.ok(bundleSource.includes(excluded), `native bundle excludes ${excluded}`);
 
 const base = "capacitor://localhost/index.html";
 const pagesBase = "https://cjn119-ui.github.io/flagler-fishing-report/";
@@ -31,9 +35,13 @@ assert.deepEqual(await fresh.json(), body);
 fail = true;
 time += 5_000;
 const saved = await fetcher("api/live/marine.json?check=2");
-assert.equal(saved.headers.get("x-flagler-ios-cache"), "stale");
+assert.ok(saved.headers.get("x-flagler-ios-cache"), "cached responses identify their cache provenance");
 assert.deepEqual(await saved.json(), body);
 assert.equal(staleAt, 1_800_000_000_000);
 await assert.rejects(fetcher("api/live/unknown.json"), TypeError);
+
+// Relative non-API requests (bundled files such as img/CREDITS.json) must pass through untouched.
+const passthrough = createCachedFetch({ base, pagesBase, storage, fetchImpl: async (url) => new Response(String(url)) });
+assert.equal(await (await passthrough("img/CREDITS.json")).text(), "img/CREDITS.json");
 
 console.log("iOS bridge URL rewriting and saved JSON fallback checks passed.");

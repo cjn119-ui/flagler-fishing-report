@@ -8,7 +8,7 @@ import { ACTIVE_SPOTS } from "../site/v5/spots.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const liveMode = process.env.UX_LIVE === "1";
-const out = join(root, `.agent-handoff/shots/afix/${liveMode ? "live" : "sample"}`);
+const out = join(root, `.agent-handoff/shots/r/${liveMode ? "live" : "sample"}`);
 await mkdir(out, { recursive: true });
 const require = createRequire(import.meta.url);
 const { webkit, chromium, firefox, devices } = require("/opt/homebrew/lib/node_modules/playwright");
@@ -16,13 +16,9 @@ const sampleToday = await readFile(join(root, "ios-www/v5/proto/sample-rich.json
 const sampleTomorrow = await readFile(join(root, "ios-www/v5/proto/sample-rich-tomorrow.json"), "utf8");
 let todayBody = sampleToday, tomorrowBody = sampleTomorrow;
 if (liveMode) {
-  const [today, tomorrow] = await Promise.all(["today", "tomorrow"].map(async (horizon) => {
-    const response = await fetch(`https://cjn119-ui.github.io/flagler-fishing-report/api/v5/${horizon}.json`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`Live ${horizon} report returned HTTP ${response.status}`);
-    return response.text();
-  }));
+  const [today, tomorrow] = await Promise.all(["today", "tomorrow"].map(horizon => readFile(join(root, `ios-www/api/v5/${horizon}.json`), "utf8")));
   todayBody = today; tomorrowBody = tomorrow;
-  console.log("ux-ios: running against live API reports fetched from Pages.");
+  console.log("ux-ios: running against live API reports copied into scratch ios-www/api/v5.");
 }
 const server = createServer(async (request, response) => {
   try {
@@ -64,7 +60,7 @@ const consoleErrors = [];
 page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
 page.on("pageerror", (error) => consoleErrors.push(error.message));
 page.on("requestfailed", (request) => consoleErrors.push(`request failed: ${request.url()} (${request.failure()?.errorText ?? "unknown"})`));
-await page.clock.install({ time: new Date("2026-10-07T12:00:00-04:00") });
+await page.clock.install({ time: new Date(liveMode ? `${JSON.parse(todayBody).targetDate}T08:00:00-04:00` : "2026-10-07T12:00:00-04:00") });
 
 async function openApp(hash = "") {
   await page.goto(`${base}${hash ? `#${hash}` : ""}`, { waitUntil: "domcontentloaded" });
@@ -107,14 +103,17 @@ async function touchSwipe(selector, dx, dy = 0) {
       el.dispatchEvent(new TouchEvent("touchend", { bubbles: true, cancelable: true, touches: [], targetTouches: [], changedTouches: [mk(x + delta.dx, y + delta.dy)] }));
     }, { dx, dy, ...coords });
   }
-  await page.waitForTimeout(410);
+  await page.waitForTimeout(650);
 }
 async function dragTabbar(fromIndex, toIndex) {
   const box = await page.locator(".tabs").boundingBox();
   const x = (index) => box.x + box.width * ((index + .5) / 5), y = box.y + box.height / 2;
   await page.mouse.move(x(fromIndex), y); await page.mouse.down();
   for (let step = 1; step <= 5; step++) await page.mouse.move(x(fromIndex + (toIndex - fromIndex) * step / 5), y);
-  await page.mouse.up(); await page.waitForTimeout(360);
+  await page.mouse.up();
+  const target = ["today", "spots", "species", "plan", "log"][toIndex];
+  await page.waitForFunction((tab) => document.querySelector('.tab[aria-current="page"]')?.dataset.tab === tab, target, { timeout: 3000 });
+  await page.waitForTimeout(360);
 }
 async function dragSegment(fromIndex, toIndex) {
   const box=await page.locator(".seg.day").boundingBox(), x=(index)=>box.x+box.width*((index+.5)/2), y=box.y+box.height/2;
@@ -178,7 +177,14 @@ try {
   assert.equal(await page.evaluate(() => localStorage.getItem("v5proto.theme")), null, "auto default must not write a preference");
   assert.equal(await page.locator("#spot-label").innerText(), "Best anywhere", "default spot pill label must remain complete at 375px");
   assert.doesNotMatch(await page.locator("#verdict .bet .mchip").innerText().catch(()=>""), /^Pier$/i, "default verdict must not recommend closed pier fishing");
+  await page.locator(".why-verdict > summary").click();
+  const openDisclosureCount = await page.locator("#view details[open]").count();
+  await page.clock.fastForward(60_000);
+  assert.equal(await page.locator("#view details[open]").count(), openDisclosureCount, "minute re-render preserves open disclosures");
   await page.locator(".seg.day").waitFor();
+  assert.equal(await page.locator(".today-hero .condition-cell").count(), 4, "Today keeps all four compact hero condition cells visible");
+  const heroGeometry = await page.evaluate(() => { const v = document.querySelector("#verdict").getBoundingClientRect(); return [...document.querySelectorAll(".today-hero .condition-cell")].map(el => ({ label: el.querySelector("small")?.textContent, bottom: el.getBoundingClientRect().bottom, verdictTop: v.top })); });
+  assert.ok(heroGeometry.every(x => x.bottom <= x.verdictTop + 3), `hero conditions remain visible above the verdict: ${JSON.stringify(heroGeometry)}`);
   await dragSegment(0,1); assert.equal(await page.locator(".seg.day button[aria-pressed=true]").innerText(),"Tomorrow","report-day indicator drag commits the nearer option");
   await dragSegment(1,0); assert.equal(await page.locator(".seg.day button[aria-pressed=true]").innerText(),"Today","report-day drag snaps back to Today");
   const headerMetrics = await page.evaluate(() => Object.fromEntries([".bar", ".brand", "#spot-pill", ".tools", "#refresh", "#more"].map((s) => { const e = document.querySelector(s), r = e.getBoundingClientRect(); return [s, { left: r.left, right: r.right, width: r.width }]; })));
@@ -197,6 +203,19 @@ try {
   await page.evaluate(() => localStorage.removeItem("v5proto.theme"));
   await page.clock.resume();
   await openApp();
+  if (liveMode) {
+    await page.goto(`${base}#spot=staug-pier&mode=pier&tab=today`, { waitUntil: "domcontentloaded" }); await page.locator("#view[aria-busy=false]").waitFor();
+    assert.equal(new URLSearchParams(new URL(page.url()).hash.slice(1)).get("mode"), "surf", "closed mode in the hash is coerced to an open mode");
+    await page.evaluate(() => { history.replaceState(null,"",location.pathname); localStorage.setItem("v5proto.spot", JSON.stringify({spot:"staug-pier",mode:"pier"})); });
+    await reloadApp();
+    assert.equal(new URLSearchParams(new URL(page.url()).hash.slice(1)).get("mode"), "surf", "saved closed mode is coerced to an open mode");
+    await page.goto(`${base}#tab=species`, { waitUntil: "domcontentloaded" }); await page.locator("#view[aria-busy=false]").waitFor();
+    await page.locator('[data-fk="sp-sheepshead"]').click(); await page.locator(".species-detail").waitFor();
+    assert.equal(await page.getByRole("button", { name: "Target this" }).isDisabled(), true, "closed St Augustine Pier focus cannot target sheepshead");
+    await page.locator(".xbtn[aria-label=Close]").click(); await page.locator(".sheet").waitFor({state:"detached",timeout:1000});
+    await page.evaluate(() => localStorage.removeItem("v5proto.spot"));
+    await openApp();
+  }
 
   await touchSwipe("#view", -130);
   assert.equal(await page.locator(".tab[aria-current=page]").getAttribute("data-tab"), "spots");
@@ -241,12 +260,17 @@ try {
   await page.evaluate(() => { location.hash = "tab=log"; });
   await page.waitForFunction(() => document.querySelector(".tab[aria-current=page]")?.dataset.tab === "log", null, { timeout: 3000 });
   await page.locator(".log-card").waitFor({ timeout: 3000 });
-  await page.getByRole("button", { name: "Log a catch" }).click();
+  await page.getByRole("button", { name: "Log your first catch" }).click();
   await page.getByRole("button", { name: "Save catch" }).click();
   assert.ok(await page.locator(".field-error:not(:empty)").count(), "empty form should show inline validation errors");
   await page.locator("#catch-species").selectOption("whiting");
+  const catchRun = JSON.parse(liveMode ? todayBody : sampleToday);
+  await page.locator("#catch-occurredAt").fill(`${catchRun.targetDate}T08:00`);
   await page.getByRole("button", { name: "Save catch" }).click();
   await page.locator(".log-entry").waitFor();
+  const savedCatch = await page.evaluate(() => JSON.parse(localStorage.getItem("v5proto.catches"))[0]);
+  assert.equal(savedCatch.occurredAt, `${catchRun.targetDate}T12:00:00.000Z`, "datetime-local catch time is interpreted as America/New_York");
+  assert.equal(savedCatch.context.runGeneratedAt, catchRun.generatedAt, "catch context uses the report whose targetDate matches the catch date");
   await page.locator(".log-entry").first().click();
   await page.getByRole("button", { name: "Edit" }).click();
   await page.locator("#catch-count").fill("3");
@@ -279,13 +303,18 @@ try {
         const height=await page.evaluate(()=>document.documentElement.scrollHeight);
         assert.ok(height<=2.3*812,`live Today height ${height}px exceeds 2.3 screen heights`);
       }
+      if(tab==="plan") {
+        const metrics=await page.locator(".hourly-scroll").count() ? await page.locator(".hourly-scroll").evaluate(el=>({client:el.clientWidth,scroll:el.scrollWidth,labels:[...el.querySelectorAll("th")].map(x=>x.innerText)})) : null;
+        if(metrics) { assert.ok(metrics.scroll<=metrics.client+1,`hourly forecast fits viewport: ${JSON.stringify(metrics)}`); assert.deepEqual(metrics.labels,["Time","Sky","Conditions","Outlook"]); }
+      }
       if(tab==="spots"){
         await page.evaluate(()=>{location.hash="spot=flagler-pier&tab=spots";});
         await page.waitForFunction(()=>location.hash.includes("flagler-pier"));
-        assert.ok(await page.getByText("Pier closed · rebuilding",{exact:true}).count(),"Flagler closure badge appears on the spot picker/card");
-        assert.ok(await page.getByText("Photo: 2016, before Hurricane Ian",{exact:true}).count(),"Flagler photo carries its historical caption");
+        assert.ok(await page.getByText("Closed · est. reopen Jan 2027",{exact:true}).count(),"Flagler closure badge appears beside the title");
+        assert.equal(await page.getByText("Photo: 2016, before Hurricane Ian",{exact:true}).count(),0,"historical caption is hidden outside detail");
         await page.locator(".spot-feature .btn").click();
         await page.locator(".closure-detail").waitFor();
+        assert.ok(await page.getByText("Photo: 2016, before Hurricane Ian",{exact:true}).count(),"historical caption appears in detail");
         assert.ok((await page.locator(".closure-detail").innerText()).includes("January 2027"),"Flagler detail explains its estimated reopening month");
         assert.ok(await page.locator('.closure-detail a[href="https://www.cityofflaglerbeach.com/thepier"]').count(),"Flagler detail includes the source link");
         await page.locator(".xbtn[aria-label=Close]").click();

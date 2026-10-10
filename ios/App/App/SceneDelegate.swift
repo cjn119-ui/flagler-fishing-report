@@ -1,7 +1,10 @@
 import UIKit
 import Capacitor
+import WebKit
 
 final class FlaglerBridgeViewController: CAPBridgeViewController {
+    private var debugLaunchHandled = false
+
     private var loadingOverlay: UIView?
     private var pageLoadObservation: NSKeyValueObservation?
 
@@ -61,6 +64,33 @@ final class FlaglerBridgeViewController: CAPBridgeViewController {
         loadingOverlay = nil
         pageLoadObservation = nil
     }
+
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(FFMapPlugin())
+    }
+
+    #if DEBUG
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        guard !debugLaunchHandled, let webView else { return }
+        let args = ProcessInfo.processInfo.arguments
+        let debugCommand = ProcessInfo.processInfo.environment["FLAGLER_IOS_DEBUG"] ?? args.first(where: { $0.hasPrefix("--flagler-") })
+        guard debugCommand != nil else { return }
+        debugLaunchHandled = true
+        let runCycles = debugCommand == "cycles" || debugCommand == "--flagler-map-cycles"
+        let openSheet = debugCommand == "sheet" || debugCommand == "--flagler-sheet"
+        let scrollUnderHeader = debugCommand == "under-header" || debugCommand == "--flagler-map-under-header"
+        let script = """
+        (async()=>{for(let n=0;n<200&&(!document.querySelector('.tab[data-tab=spots]')||!window.FFNativeMap);n++)await new Promise(r=>setTimeout(r,100));if(!window.FFNativeMap){console.error('Flagler map bridge unavailable');return;}document.querySelector('.tab[data-tab=spots]')?.click();await new Promise(r=>setTimeout(r,700));const slot=document.querySelector('#spots-map');if(slot)slot.scrollIntoView({block:'start',behavior:'instant'});await new Promise(r=>setTimeout(r,300));\(runCycles ? "const m=window.FFNativeMap,p={spots:[{id:'debug-spot',name:'Map lifecycle check',lat:29.901,lon:-81.312,verdict:'GO',favorite:true,closureBadge:null}],selectedId:'debug-spot',mode:'surf'};for(let i=0;i<30;i++){await m.show(p);await new Promise(r=>setTimeout(r,180));await m.hide();await new Promise(r=>setTimeout(r,180));}console.log('Flagler map lifecycle completed 30 show/hide cycles');document.querySelector('.tab[data-tab=spots]')?.click();await new Promise(r=>setTimeout(r,500));const s=document.querySelector('#spots-map');if(s)s.scrollIntoView({block:'start',behavior:'instant'});" : "")\(scrollUnderHeader ? "if(slot)window.scrollBy(0,slot.getBoundingClientRect().top-80);" : "")\(openSheet ? "await new Promise(r=>setTimeout(r,250));document.querySelector('#more')?.click();" : "")})()
+        """
+        webView.evaluateJavaScript(script)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak webView] in
+            webView?.evaluateJavaScript("JSON.stringify({url:location.href,tab:document.querySelector('.tab[aria-current]')?.dataset.tab,nativeMap:!!window.FFNativeMap,plugin:window.Capacitor?.isPluginAvailable?.('FFMap'),slot:!!document.querySelector('#spots-map'),slotRect:(()=>{const r=document.querySelector('#spots-map')?.getBoundingClientRect();return r&&{x:r.x,y:r.y,width:r.width,height:r.height}})(),body:document.body.innerText.slice(0,240)})") { result, error in
+                NSLog("FLAGLER_IOS_DEBUG state=%@ error=%@", String(describing: result), String(describing: error))
+            }
+        }
+    }
+    #endif
 }
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {

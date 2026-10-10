@@ -24,7 +24,7 @@ export function validateCatch(value, { now = Date.now(), spotById = () => null }
 export function loadCatches(storage = globalThis.localStorage) {
   try {
     const parsed = JSON.parse(storage?.getItem(CATCH_STORAGE_KEY) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((x) => x && x.schemaVersion === CATCH_SCHEMA_VERSION && x.id) : [];
+    return Array.isArray(parsed) ? parsed.filter((x) => x && x.schemaVersion === CATCH_SCHEMA_VERSION && x.id && Number.isFinite(Date.parse(x.occurredAt))) : [];
   } catch { return []; }
 }
 
@@ -47,7 +47,11 @@ export function summarizeCatches(rows, { now = Date.now(), timeZone = "America/N
     bestSpotName: top(countBy(rows, "spot")) ? spotName(top(countBy(rows, "spot"))) : null };
 }
 
-const csvCell = (x) => `"${String(x ?? "").replaceAll('"', '""')}"`;
+const csvCell = (x) => {
+  const value = String(x ?? "");
+  const safe = /^[=+\-@\t]/.test(value) ? `'${value}` : value;
+  return `"${safe.replaceAll('"', '""')}"`;
+};
 export function catchesToCsv(rows) {
   const cols = ["date_time", "species", "spot", "mode", "count", "disposition", "length_inches", "bait_lure", "notes", "run_generated_at", "verdict", "fit"];
   return [cols.join(","), ...rows.map((x) => [x.occurredAt, x.species === "other" ? x.otherSpecies : x.speciesName, x.spotName, x.mode, x.count, x.disposition, x.lengthIn, x.bait, x.notes, x.context?.runGeneratedAt, x.context?.verdict, x.context?.fit].map(csvCell).join(","))].join("\r\n");

@@ -1004,3 +1004,60 @@ button:not(:disabled),summary,a { transition:transform 180ms var(--ease-spring);
   #verdict { padding:12px; }
   .target-species-item { flex-basis:82px; }
 }
+
+/* iOS review corrections: keep the compact hero readable and let narrow tables wrap safely. */
+#verdict { margin-top:-10px; }
+#verdict { margin-bottom:4px; }
+.today-hero { height:180px; min-height:180px; }
+.target-species { margin-bottom:8px; }
+.hourly-card { overflow:hidden; }
+.hourly-scroll { overflow-x:hidden; }
+.hourly-card table { table-layout:fixed; }
+.hourly-card th,.hourly-card td { white-space:normal; overflow-wrap:anywhere; padding-inline:4px; }
+.hourly-card th:first-child,.hourly-card td:first-child { width:17%; }
+.hourly-card th:nth-child(2),.hourly-card td:nth-child(2) { width:10%; text-align:center; }
+.hourly-card th:nth-child(3),.hourly-card td:nth-child(3) { width:43%; }
+.hourly-card th:last-child,.hourly-card td:last-child { width:30%; }
+.sky-icon { display:inline-grid; width:22px; height:22px; place-items:center; border-radius:50%; background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent-ink); font-size:15px; }
+.outlook-word[data-fit="poor"] { color:var(--muted); font-weight:650; }
+.outlook-word[data-fit="low"] { color:var(--muted); font-weight:650; }
+.hour-conditions { line-height:1.25; }
+.quiet .t-num { opacity:1; color:var(--muted); }
+.species-thumb { object-fit:contain; padding:8px; background:linear-gradient(145deg,#12435A,#177D9B,#E28B5B); }
+.plan-conditions { grid-template-columns:repeat(4,minmax(0,1fr)); }
+.plan-conditions > div { padding:6px 3px; }
+.plan-conditions b,.plan-conditions small { white-space:normal; overflow-wrap:anywhere; }
+.tide-chart svg { overflow:visible; }
+.tide-chart svg[viewBox="0 0 100 100"] { overflow:visible; }
+.closure-badge { flex:none; max-width:calc(100vw - 72px); white-space:normal; }
+.row .r1 { align-items:flex-start; flex-wrap:wrap; }
+.row .nm { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; }
+.row .closure-badge { margin-left:0; }
+.photo-caption { display:none; }
+.sheet.out { animation:sheet-down 280ms cubic-bezier(.32,.72,0,1) forwards; }
+.scrim,.scrim.out { animation:none; }
+.seg::before { background:color-mix(in srgb,var(--accent) 14%,var(--surface)); }
+@media(max-width:600px) { .plan-conditions { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+* { -webkit-touch-callout:none; }
+button, .card, .row, img, svg, .tab, .pill, .chip, .fchip { -webkit-user-select:none; user-select:none; }
+input,textarea,select,[contenteditable="true"],.fine,.muted,.why-line,.day-summary,.closure-detail p { -webkit-user-select:text; user-select:text; }
+.tools { gap:5px; }
+#header-fresh { min-width:0; }
+.bar #fresh { max-width:116px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin:0; padding:4px; }
+.bar #fresh .lbl { display:inline; }
+.bar #fresh .fresh-time { overflow:hidden; text-overflow:ellipsis; }
+#refresh,#more { border-radius:50%; }
+.species-browser { padding:0; border:0; background:transparent; box-shadow:none; }
+.species-browser .tag.eligibility { letter-spacing:normal; text-transform:none; white-space:normal; }
+.eligibility-legend { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.tide-chart svg[viewBox="0 0 100 100"] { overflow:visible; }
+.tide-chart text { paint-order:stroke; stroke:var(--bg); stroke-width:.7px; stroke-linejoin:round; }
+.tide-chart polyline { vector-effect:non-scaling-stroke; }
+.hero .bet .win .nowrap { white-space:nowrap; }
+.row .r3 { overflow:visible; text-overflow:clip; white-space:normal; overflow-wrap:anywhere; }
+.ended-verdict { margin-top:3px; color:var(--muted); font-size:var(--fs-sm); }
+.photo-placeholder { width:100%; height:100%; min-height:inherit; }
+@media(max-width:380px) { .bar #fresh { max-width:76px; } .bar .tools { gap:2px; } }
+:root[data-theme="light"] .tab[aria-current="page"] { background:color-mix(in srgb,var(--accent) 14%,transparent); }
+:root[data-theme="light"] .seg::before { background:color-mix(in srgb,var(--accent) 14%,var(--surface)); }
+.condition-icon { display:block; color:var(--accent-ink); font-size:14px; line-height:1; font-style:normal; }
