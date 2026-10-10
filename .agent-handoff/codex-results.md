@@ -134,3 +134,40 @@ Playwright WebKit binaries were not installed. The UX script used the existing `
 - Root: `/Users/christiannunez/flagler-fishing-ios`; branch `feature/capacitor-ios`; HEAD `df29eaea55c41d5e90ad0156619e908c3539bb78`.
 - All implementation and report changes are uncommitted. No commit was created. `.agent-handoff/tasks-2.md` remains untracked as supplied. A separate untracked `.agent-handoff/tasks-3.md` appeared during this work and was left untouched.
 - Independent review should check native Share-sheet and haptic behavior on a physical iPhone; simulator evidence verifies build, install, launch, and rendered UI only.
+
+## Imagery
+
+| Area | Result | Attribution / caveat |
+|---|---|---|
+| Fish | 19/19 `SPECIES` IDs now have transparent 900px-wide WebP illustrations in `site/v5/proto/img/fish/`; each is below 120 KB. | Generated as a consistent natural-history illustration set. The 12 existing licensed fish images were retained under `fish/ref/` with their original file-page attribution; they serve as references only. `sharks-rays` uses a representative southern stingray, and `panfish-misc` uses a representative pinfish, so these broad categories are not fully described by one image. |
+| Active spots | 11/11 active spots have images; 10 retain verified licensed photos and `flagler-icw.jpg` is a generated representative ICW dock scene. | Generated dock is explicitly marked `generated: true, representative: true`; no identifiable sign or landmark is claimed. All spot JPEGs are at most 1200px wide and under 200 KB. |
+| Hero | `hero.jpg` is a generated sunrise pier image, 1600×666 and 275 KB. | Open sky at upper left leaves room for overlay text. The previous licensed daytime pier photo remains as `hero-licensed.jpg` with attribution. |
+| Missing | None for the current `SPECIES` or `ACTIVE_SPOTS` catalogs. | Species uncertainty is limited to the two broad catalog groups noted above. |
+
+`CREDITS.json` has 44 entries for 44 image files, with no missing-file or uncited-file discrepancies. The complete imagery directory is 5,428 KiB (about 5.3 MiB), including retained reference photos. No code/build/simulator work was performed for this imagery task.
+
+## Task A — concept mesh implementation (2026-10-10)
+
+- Implemented the concept styling over the existing V5 flows, including the conditions strip, hero, spot card/map slot, favorites, species carousel and eligibility copy, tide curve, seven-day plan, More/Credits sheets, and catch log. Added `.agent-handoff/mesh-map.md` before code changes to map existing V5 information and interactions into the redesign.
+- Added the native map and notification hooks per the Job B contract; iOS-only viewport scaling and header overflow protection are in place. Kept edits within the task’s allowed paths; the protected root, catalog, and engine files were not changed. Existing concurrent image work under `site/v5/proto/img/` was left untouched.
+- Fixed sheet close animation timing and removed a literal `null` from non-success toasts. Added `species-presentation.js` with a focused regression fixture for realistic-first selection, reason labels, fit copy, and historical trip rate.
+
+### Verification
+
+| Command / check | Exit | Result |
+| --- | ---: | --- |
+| All `scripts/test-*.mjs` required by the task, including V5 suites, `test-ios-bridge`, and `test-v5-catch-log` | 0 except noted | Passed; V5 model 62/62, run 23/23, sources 15/15, catch log 9 assertions, integration 111/111 for each injected-failure scenario. Hindcast script skipped because `.cache/hindcast` is absent. |
+| `node scripts/test-generated-output.mjs` | 1 | Could not validate generated live outputs: `site/api/report.json`, `next-day-report.json`, and `site/live/{weather,marine,tides}.json` are absent. The existing hourly output passed. No live data was generated. |
+| `node scripts/ux-ios.mjs` | 0 | Chromium fallback (Playwright WebKit binary unavailable): theme persistence, hash override, 10 content swipes, tab-bar drags, longest spot name at 320/375/430 px across five tabs, 25 sheet close cycles, close-during-open, catch add/edit/delete/validation/export, and 15 screenshots passed with zero console errors. Frame sample: p95 19 ms; 49 frames exceeded 25 ms (1,090 samples). |
+| `npm run ios:web`; `npm run ios:sync` | 0 | Web bundle generated and six Capacitor plugins synced. |
+| `xcodebuild -quiet -project ios/App/App.xcodeproj -scheme App -destination 'id=A488F352-DB47-40AE-8C25-D256D90FB728' -derivedDataPath /tmp/flagler-fishing-ios-derived-20261010 CODE_SIGNING_ALLOWED=NO build` | 0 | Simulator build succeeded; Xcode printed a destination-platform diagnostic. |
+| `xcrun simctl terminate`, `install`, `launch`, and screenshot on simulator `A488F352-DB47-40AE-8C25-D256D90FB728` | 0 | Installed over the existing app without uninstalling and launched PID 46133. WebKit logs show page navigation and subresource loads, but `native-today.png` is still a blank gradient. Native visual rendering is therefore unresolved. |
+| `git diff --check` | 0 | No whitespace errors. |
+
+Browser screenshots are in `.agent-handoff/shots/redesign/` (`{today,spots,species,plan,log}-{dark,night,light}-375.png`); native capture is `.agent-handoff/shots/redesign/native-today.png`. Node 22 was unavailable because its configured binary cannot load `libsimdjson.29.dylib`; checks used the configured Node 26.8.1 runtime.
+
+### Git state
+
+- Root: `/Users/christiannunez/flagler-fishing-ios`; branch `feature/capacitor-ios`; HEAD `4ca425e1f201aa4b2ef49ccf1350e6bc9fde22ff`.
+- All work remains uncommitted. No commit was created and the simulator app was not uninstalled. Pre-existing WIP and concurrent untracked task/image artifacts were preserved.
+- Independent review should resolve why the simulator capture stays on the gradient despite successful WebKit page-load records, and inspect the full-page screenshots where fixed navigation overlays long content.

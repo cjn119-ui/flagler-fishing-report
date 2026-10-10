@@ -41,6 +41,10 @@ const bridgeTags = (prefix) => [
 ].join("\n");
 function inject(file, prefix) {
   let html = readFileSync(file, "utf8");
+  html = html.replace(/<meta name="viewport" content="([^"]*)">/i, (tag, content) => {
+    const viewport = content.includes("maximum-scale=") ? content : `${content}, maximum-scale=1`;
+    return `<meta name="viewport" content="${viewport}">`;
+  });
   if (!html.includes("ios/bridge.js")) {
     if (!html.includes("</head>")) throw new Error(`${file} has no closing </head> tag`);
     html = html.replace("</head>", `${bridgeTags(prefix)}\n</head>`);

@@ -47,9 +47,7 @@ body.ios-keyboard-open main {
     padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
   }
 
-  .brand {
-    flex-basis: 100%;
-  }
+  .brand { flex: 1 1 auto; min-width: 0; max-width: calc(100% - 104px); }
 
   .brand p {
     max-width: none;
@@ -84,7 +82,7 @@ body.ios-keyboard-open main {
 :root[data-night="1"] {
   --depth-1: 0 1px 1px rgba(0,0,0,.8), 0 6px 14px -4px rgba(0,0,0,.9);
   --depth-2: 0 1px 1px rgba(0,0,0,.9), 0 10px 22px -4px rgba(0,0,0,.95);
-  --depth-edge: inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(0,0,0,.6);
+  --depth-edge: inset 0 1px 0 rgba(255,255,255,.12), inset 0 -1px 0 rgba(0,0,0,.6);
 }
 .card, .bet.backup { box-shadow: var(--depth-edge), var(--depth-1) !important; }
 .hero { box-shadow: var(--depth-edge), var(--depth-2) !important; }
@@ -95,6 +93,6 @@ body.ios-keyboard-open main {
 .seg::before { box-shadow: var(--depth-edge), var(--depth-1); }
 .sheet { box-shadow: var(--depth-edge), 0 -24px 60px -18px rgba(0,0,0,.55) !important; }
 .seal { filter: drop-shadow(0 6px 10px rgba(15,30,45,.18)); }
-.card, .btn, .btn-s, .pill, .tab, .sp, .row, .bet { transition: transform .14s ease, box-shadow .14s ease; }
+.card, .btn, .btn-s, .pill, .tab, .sp, .row, .bet { transition: transform .18s cubic-bezier(.32,.72,0,1); }
 .btn:active, .btn-s:active, .pill:active, .mark:active, #refresh:active, .tab:active, .sp:active, .row:active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .card, .btn, .btn-s, .pill, .tab, .sp, .row, .bet { transition: none; } .btn:active, .btn-s:active, .pill:active, .tab:active, .mark:active, #refresh:active, .sp:active, .row:active { transform: none; } }

@@ -7,6 +7,7 @@ import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
 import { loadProtoData } from "./proto-data.js";
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
+import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesTripRate } from "./species-presentation.js";
 
 const TZ = "America/New_York";
 const RICH = "live-today", TOMORROW = "live-tomorrow";
@@ -31,14 +32,16 @@ const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 const tick = (kind = "select") => navigator.vibrate?.(kind === "select" ? 6 : 12);
 
 /* ---------- state ---------- */
-const st = { tab: "today", h: "today", spot: null, mode: null, species: null, t: null, state: "live", day: 0, f: "all" };
+const st = { tab: "today", h: "today", spot: null, mode: null, species: null, t: null, state: "live", day: 0, f: "all", search: "" };
 const session = { history: false, factors: false, use: false, conf: false, sources: false, hint: true, near: null, scroll: {} };
 const D = {};            // loaded JSON by file
 let lastSpoken = "";
 let dataSource = "sample", dataOffline = false;
 let refreshError = "";
 /* motion bookkeeping: entrances run once per view, value changes only on user input */
-const motion = { shown: null, seen: new Set(), seal: null, seg: null };
+const motion = { shown: null, seen: new Set(), counted: new Set(), filled: new Set(), seal: null, seg: null };
+let imageCredits = [], sheetAnimation = null, tabDrag = null;
+const FISH_IMAGE = Object.fromEntries(SPECIES.map((sp) => [sp.id, sp.id]));
 
 /* ---------- tiny DOM helpers ---------- */
 const NS = "http://www.w3.org/2000/svg";
@@ -73,6 +76,17 @@ const PATHS = {
 };
 function icon(name, cls = "") { return s("svg", { viewBox: "0 0 24 24", "aria-hidden": "true", class: cls }, s("path", { d: PATHS[name] })); }
 const modeIcon = (m) => icon(m === "pier" ? "pier" : m === "inshore" ? "inshore" : "wave");
+const creditFor = (file) => imageCredits.find((x) => x.file === file);
+function image(file, cls, alt = "") {
+  const el = h("img", { class: `photo ${cls ?? ""}`, alt, loading: file === "hero.jpg" ? "eager" : "lazy", decoding: "async" });
+  const credit = creditFor(file);
+  if (credit) el.src = `img/${file}`;
+  el.addEventListener("error", () => { el.removeAttribute("src"); el.classList.add("photo-placeholder"); el.setAttribute("role", "img"); el.setAttribute("aria-label", alt || "Image unavailable"); }, { once: true });
+  return el;
+}
+function fishImage(id, cls = "") { const slug = FISH_IMAGE[id]; return slug ? image(`fish/${slug}.webp`, cls, spName(id)) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": spName(id) }); }
+function spotImage(id, cls = "", alt = "") { const file = `spots/${id}.jpg`; return creditFor(file) ? image(file, cls, alt) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": alt || "Fishing spot" }); }
+function searchBox(label, value, oninput) { const id = label.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, ""); return h("label", { class: "search-box" }, icon("pin"), h("span", { class: "sr-only" }, label), h("input", { id, type: "search", placeholder: label, value, "data-fk": id, oninput })); }
 
 /* ---------- formatting (display only) ---------- */
 const validDate = (d) => d != null && d !== "" && Number.isFinite(+new Date(d));
@@ -197,11 +211,19 @@ async function refreshLiveData() {
   const data = await loadProtoData({ storage: safeStorage(), online: navigator.onLine !== false });
   D[RICH] = data.today; D[TOMORROW] = data.tomorrow;
   dataSource = data.source; dataOffline = navigator.onLine === false || data.offline;
+  syncNotifications(D[RICH]);
   return data;
+}
+function syncNotifications(run = ctx().run) {
+  const notify = window.FFNotify;
+  if (!notify?.sync) return;
+  try { notify.sync({ favorites: store.get("favs", []), run }); }
+  catch (error) { console.warn("Flagler notification sync failed", error); }
 }
 
 /* ---------- render orchestrator ---------- */
 function render({ resetScroll = false } = {}) {
+  if (resetScroll) window.scrollTo({ top: session.scroll[st.tab] ?? 0, behavior: "instant" });
   const fk = document.activeElement?.dataset?.fk;
   const c = ctx();
   st.t = st.t && c.run.slots?.length ? st.t : null;
@@ -213,16 +235,15 @@ function render({ resetScroll = false } = {}) {
   view.setAttribute("aria-busy", "false");
   document.querySelectorAll(".tab").forEach((b) => b.dataset.tab === st.tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   syncReview(); writeHash();
-  if (resetScroll) {
-    const top = session.scroll[st.tab] ?? 0; window.scrollTo({ top });
-    if (top === 0) requestAnimationFrame(() => { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; });
-  }
+  if (resetScroll && (session.scroll[st.tab] ?? 0) === 0) { document.documentElement.scrollTop = 0; document.body.scrollTop = 0; }
   if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true });
   if (st.tab === "today") announce(c);
+  syncNativeSpots(c);
 }
 function animateView(view) {
   const key = `${st.tab}|${st.h}`, seal = view.querySelector(".seal"), sealKey = seal && `${seal.parentElement.closest("#verdict")?.dataset.level}|${seal.dataset.cert}|${seal.dataset.phase}|${seal.textContent}`;
   if (seal && motion.seal && sealKey !== motion.seal) seal.classList.add("swap");
+  if (seal && !motion.seen.has(`seal:${sealKey}`)) { motion.seen.add(`seal:${sealKey}`); seal.classList.add("intro"); }
   motion.seal = sealKey ?? motion.seal;
   if (key === motion.shown) return;
   const first = motion.shown == null; motion.shown = key;
@@ -231,20 +252,75 @@ function animateView(view) {
     [...view.querySelectorAll(".col-a > :not(#verdict), .col-b > *, .spotlist .list > li, .grid > li, .days > li, .plan-layout > .card")].slice(0, 12)
       .forEach((el, i) => { el.classList.add("stagger"); el.style.setProperty("--i", Math.min(i, 4)); });
   }
+  animateFirstValues(view);
+  const selected = `${st.tab}|${st.spot ?? "any"}|${st.mode ?? "all"}|${st.species ?? "all"}`;
+  view.querySelectorAll(".bar-m > i").forEach((bar, i) => {
+    const key = `${selected}|bar|${i}`;
+    if (motion.filled.has(key)) return;
+    motion.filled.add(key); bar.style.transform = "scaleX(0)"; bar.style.transformOrigin = "left center";
+    requestAnimationFrame(() => { if (bar.isConnected) { bar.style.transition = matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "transform 360ms cubic-bezier(.32,.72,0,1)"; bar.style.transform = "scaleX(1)"; } });
+  });
   if (first) return;
   view.classList.remove("v-in"); void view.offsetWidth; view.classList.add("v-in");
+}
+function animateFirstValues(view) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const scope = `${st.tab}|${st.spot ?? "any"}|${st.mode ?? "all"}|${st.species ?? "all"}`;
+  view.querySelectorAll(".stat .v,.t-num,.big b,.stat-big").forEach((el, i) => {
+    const value = Number(el.textContent.trim());
+    if (!Number.isFinite(value) || !el.textContent.trim()) return;
+    const key = `${scope}|${el.className}|${i}`;
+    if (motion.counted.has(key)) return;
+    motion.counted.add(key);
+    const start = performance.now(), duration = 360;
+    const frame = (now) => {
+      if (!el.isConnected) return;
+      const progress = Math.min(1, (now - start) / duration);
+      el.textContent = String(Math.round(value * (1 - Math.pow(1 - progress, 3))));
+      if (progress < 1) requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
 }
 function announce(c) {
   const r = c.rec, focus = c.focus ? ` for ${r.targets?.[0]?.name ?? spName(st.species)}` : "";
   const text = `${VERDICT_SPOKEN[r.verdict]}${focus}. ${c.skip ? formatHeadline({recommendation:r}) : `${r.displayName}, ${r.mode}, ${fmtRange(r.window?.start, r.window?.end)}`}.${c.stale ? " Last known report." : ""}`;
   if (text !== lastSpoken) { lastSpoken = text; $("live").textContent = text; }
 }
-function go(tab, opts) { session.scroll[st.tab] = window.scrollY; closeSheet(); const changed = st.tab !== tab; st.tab = tab; render({ resetScroll: true, ...opts }); if (changed) document.dispatchEvent(new CustomEvent("v5:tab", { detail: { tab } })); }
+function go(tab, opts) {
+  if (!TAB_ORDER.includes(tab) || tab === st.tab) return;
+  if (sheet) { closeSheet().then(() => go(tab, opts)); return; }
+  session.scroll[st.tab] = window.scrollY;
+  const before = st.tab, oldIndex = TAB_ORDER.indexOf(before), newIndex = TAB_ORDER.indexOf(tab), view = $("view");
+  document.documentElement.style.setProperty("--tab-dir", newIndex > oldIndex ? "1" : "-1");
+  st.tab = tab;
+  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (document.startViewTransition && !reduced) {
+    view.style.viewTransitionName = "view-content";
+    document.startViewTransition(() => render({ resetScroll: true, ...opts }));
+  } else {
+    render({ resetScroll: true, ...opts });
+    if (view.animate) view.animate(reduced ? [{ opacity: .7 }, { opacity: 1 }] : [{ opacity: 0, transform: `translateX(${newIndex > oldIndex ? "18px" : "-18px"})` }, { opacity: 1, transform: "translateX(0)" }], { duration: reduced ? 120 : 300, easing: "cubic-bezier(.32,.72,0,1)" });
+  }
+  setTimeout(() => document.documentElement.style.removeProperty("--tab-dir"), 360);
+  document.dispatchEvent(new CustomEvent("v5:tab", { detail: { tab } }));
+  const selectedButton = document.querySelector(`.tab[data-tab="${tab}"]`);
+  selectedButton?.classList.remove("pop"); if (selectedButton) { void selectedButton.offsetWidth; selectedButton.classList.add("pop"); setTimeout(() => selectedButton.classList.remove("pop"), 220); }
+}
 function scope({ spot = null, mode = null, species = null, persist = false, tab = "today" } = {}) {
+  if (sheet) { closeSheet().then(() => scope({ spot, mode, species, persist, tab })); return; }
   closeSheet(); st.spot = spot; st.mode = mode; st.species = species; st.t = null; st.h = st.h;
   if (persist) store.set("spot", spot ? { spot, mode } : null);
   session.scroll[st.tab] = window.scrollY; st.tab = tab; session.scroll[tab] = 0;
   render({ resetScroll: true });
+}
+
+function syncNativeSpots(c = ctx()) {
+  const nativeMap = window.FFNativeMap;
+  if (!nativeMap) return;
+  if (st.tab !== "spots") { nativeMap.hide?.(); return; }
+  const rows = spotRows(c.run, st.f, c.now, st.h);
+  nativeMap.show?.({ spots: rows.map(({ loc, rec, fav }) => ({ id: loc.id, name: loc.name, lat: loc.lat, lon: loc.lon, verdict: rec.verdict, favorite: fav })), selectedId: st.spot, mode: st.mode ?? c.rec.mode ?? "all" });
 }
 
 /* ---------- header, control row, banner ---------- */
@@ -309,6 +385,9 @@ function renderBanner(c) {
 function whenOf(c) { if (!c.skip && (!validDate(c.rec.window?.start) || !validDate(c.rec.window?.end))) return "Time unavailable"; return c.skip ? msg(c.rec.whenLabel) : formatWhenLabel({ recommendation: c.rec }, c.now); }
 function todayView(c) {
   const out = [];
+  const heroSpot = st.spot ? (locOf(c.run, st.spot)?.id ?? c.rec.locationId) : c.rec.locationId;
+  out.push(h("section", { class: "today-hero", "aria-label": "Current fishing location" }, image("hero.jpg", "today-hero-photo", "Flagler Beach pier at the water"),
+    h("div", { class: "today-hero-shade" }), h("button", { class: "today-hero-place", type: "button", onclick: (e) => openSpotSheet(e.currentTarget) }, icon("pin"), h("span", {}, locOf(c.run, heroSpot)?.name ?? "Flagler Beach"), h("small", {}, wk(c.run.targetDate, { weekday: "long", month: "short", day: "numeric" }))), conditionsStrip(c)));
   if (c.focusMissing) out.unshift(h("p", { class: "notice", role: "status" }, `${spName(st.species)} has no usable window in this run, so Today shows the overall best. Remove the chip to clear it.`));
   out.push(h("div", { class: "today-grid" }, h("div", { class: "col-a" }, verdictCard(c), glanceCard(c), backupCard(c)), h("div", { class: "col-b" }, timesCard(c), conditionsCard(c), whyCard(c), tvCard(c), spotsTeaser(c), sourcesCard(c))));
   return out.filter(Boolean);
@@ -557,6 +636,22 @@ function conditionsCard(c) {
       h("p", { class: "k" }, effectMark(x.effect, x.limiting && safety), x.label), h("p", { class: "v" }, x.available === false ? "Unavailable" : msg(x.humanLabel)),
       h("p", { class: "d" }, x.value == null || typeof x.value === "string" ? "" : `${+x.value.toFixed(1)} ${x.unit ?? ""}`.trim())))));
 }
+function conditionsStrip(c) {
+  const spotId = c.rec.locationId, factors = c.run._proto?.factors ?? [];
+  const hourly = observationRows(c.run, "hourlyForecast", spotId).find((x) => dayKey(x.startTime ?? x.validFrom) === c.run.targetDate);
+  const tempValue = Number(hourly?.temperature), unit = hourly?.temperatureUnit;
+  const tempF = Number.isFinite(tempValue) ? unit === "C" ? tempValue * 9 / 5 + 32 : tempValue : null;
+  const windFactor = factors.find((x) => x.key === "wind");
+  const windRaw = hourly?.windSpeed;
+  const windValue = windRaw != null ? `${hourly.windDirection ?? ""} ${String(windRaw).replace(/\s*mph$/i, "")} mph`.trim() : windFactor?.value != null ? `${windFactor.value} ${windFactor.unit ?? ""}`.trim() : msg(windFactor?.humanLabel ?? "");
+  const water = factors.find((x) => x.key === "waterTemp");
+  const rows = [
+    tempF != null ? [`${Math.round(tempF)}°F`, hourly?.shortForecast ?? "Air"] : null,
+    windValue ? [windValue, "Wind"] : null,
+    water?.value != null ? [`${(+water.value).toFixed(0)}°F`, "Water"] : null,
+  ].filter(Boolean);
+  return rows.length ? h("section", { class: "card conditions-strip", "aria-label": "Conditions strip" }, rows.map(([value, label]) => h("div", { class: "condition-cell" }, h("b", {}, value), h("small", {}, label)))) : null;
+}
 function tvCard(c) {
   const d = c.run.days ?? [];
   if (d.length < 2) return null;
@@ -607,7 +702,7 @@ function spotRows(run, filter, now = Date.now(), horizon = st.h) {
     rows.push({ loc, rec, order, fav: favs.includes(loc.id), dist, ended, bucket: Math.floor(rec.suitability / 5) });
   });
   // Display order: verdict tier, active before ended, 5-point buckets, then Near me, favourite, catalog.
-  return rows.sort((a, b) => TIER[a.rec.verdict] - TIER[b.rec.verdict] || Number(a.ended) - Number(b.ended) || b.bucket - a.bucket || (a.dist != null && b.dist != null ? a.dist - b.dist : 0) || Number(b.fav) - Number(a.fav) || a.order - b.order);
+  return rows.sort((a, b) => Number(b.fav) - Number(a.fav) || TIER[a.rec.verdict] - TIER[b.rec.verdict] || Number(a.ended) - Number(b.ended) || b.bucket - a.bucket || (a.dist != null && b.dist != null ? a.dist - b.dist : 0) || a.order - b.order);
 }
 function spotRowEl(r, c, { star = true, onPick } = {}) {
   const { loc, rec } = r;
@@ -616,6 +711,7 @@ function spotRowEl(r, c, { star = true, onPick } = {}) {
   const favs = store.get("favs", []);
   return h("li", { class: `row${st.spot === loc.id ? " sel" : ""}${star ? "" : " nostar"}` },
     h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${rec.verdict}, ${rec.mode}, ${fmtRange(rec.window?.start, rec.window?.end)}${r.ended ? ", ended" : ""}${top ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
+      spotImage(loc.id, "spot-row-photo", loc.name),
       h("div", { class: "r1" }, h("span", { class: "nm" }, loc.name), null),
       h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.map((m) => modeIcon(m))), `${modeLabel(rec.mode)} · ${loc.area} · `, h("span", { class: "when" }, fmtRange(rec.window?.start,rec.window?.end)), r.ended ? h("span", { class: "ended-tag" }, "Ended") : null, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
       h("p", { class: "r2 r3" }, top ? `${top.name} ${top.suitability}` : "")),
@@ -626,7 +722,7 @@ function rerenderList() { if (listHost) { const fk = document.activeElement?.dat
 function spotList(c, { onPick } = {}) {
   const el = h("div", { class: "spotlist" });
   const rebuild = () => {
-    const rows = spotRows(c.run, st.f, c.now, st.h);
+    const rows = spotRows(c.run, st.f, c.now, st.h).filter((r) => !st.search || r.loc.name.toLowerCase().includes(st.search.toLowerCase()));
     const best = c.run.recommendation;
     const anyRow = h("li", { class: `row any nostar${!st.spot ? " sel" : ""}` }, h("button", { class: "main", type: "button", "data-fk": "spot-any", "aria-label": `Best anywhere, ${best.verdict}, currently ${best.displayName}`, onclick: () => (onPick ?? (() => scope({ persist: true })))(null, null) },
       h("div", { class: "r1" }, h("span", { class: "nm" }, "Best anywhere"), h("span", { class: "vchip", "data-v": best.verdict }, VERDICT_SPOKEN[best.verdict])),
@@ -647,7 +743,30 @@ function spotList(c, { onPick } = {}) {
   return el;
 }
 function spotsView(c) {
-  return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "card-h" }, h("h2", {}, "Spots"), h("span", { class: "sub" }, "Ranked by verdict, then fit (close scores tie)")), spotList(c))];
+  const map = window.FFNativeMap ? h("div", { id: "spots-map", class: "native-map-slot", "aria-label": "Map of fishing spots" }) : h("div", { class: "web-map-placeholder" }, h("span", {}, "Explore nearby spots"), h("span", { class: "fine" }, "Choose a spot from the list below"));
+  const list = spotList(c);
+  const featured = c.run.locations?.find((x) => x.id === (st.spot ?? c.rec.locationId));
+  const rec = featured && (st.mode ? c.run.scopeViews?.byLocation?.[`${featured.id}:${st.mode}`]?.recommendation : bestModeRec(c.run, featured.id)) || c.rec;
+  const favs = store.get("favs", []);
+  const featureCard = featured ? h("section", { class: "card spot-feature" }, spotImage(featured.id, "spot-feature-photo", featured.name),
+    h("div", { class: "spot-feature-head" }, h("div", {}, h("p", { class: "eyebrow" }, "Selected spot"), h("h2", {}, featured.name)),
+      h("button", { class: "star", type: "button", "aria-pressed": String(favs.includes(featured.id)), "aria-label": `Favourite ${featured.name}`, onclick: () => { store.set("favs", favs.includes(featured.id) ? favs.filter((x) => x !== featured.id) : [...favs, featured.id]); render(); } }, icon("star"))),
+    h("p", {}, h("span", { class: "vchip", "data-v": rec.verdict }, `${rec.verdict} · ${formatHeadline({ recommendation: rec })}`)),
+    h("p", { class: "fine" }, (rec.targets ?? []).slice(0, 3).map((x) => x.name).join(" · ")),
+    spotMiniStats(c, featured.id),
+    h("button", { class: "btn", type: "button", onclick: (e) => openSpotDetail(featured.id, rec.mode, e.currentTarget) }, "View details")) : null;
+  return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "page-heading" }, h("h1", {}, "Spots"), h("div", { class: "page-actions" }, h("button", { class: "icon-button", type: "button", "aria-label": "Search spots", onclick: () => $("search-spots")?.focus() }, "⌕"), h("button", { class: "icon-button", type: "button", "aria-label": "Manage favorites", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "♥"))),
+    searchBox("Search spots", st.search, (e) => { st.search = e.target.value; listHost?.rebuild(); }), map, featureCard, list)];
+}
+function spotMiniStats(c, locationId) {
+  const waves = [...observationRows(c.run, "waves", locationId), ...observationRows(c.run, "waveForecast", locationId)];
+  const wave = waves.find((x) => x.waveHeightM != null && Number.isFinite(+x.waveHeightM));
+  const hourly = observationRows(c.run, "hourlyForecast", locationId)[0];
+  const tides = observationRows(c.run, "tidePredictions", locationId).filter((x) => x.time && Number.isFinite(+x.heightFt)).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
+  const now = Date.now(), ti = tides.findIndex((x) => Date.parse(x.time) >= now), a = tides[Math.max(0, ti - 1)], b = tides[ti];
+  const rising = a && b ? +b.heightFt > +a.heightFt : null;
+  const stats = [wave ? [`${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`, "Waves"] : null, rising == null ? null : [rising ? "Rising" : "Falling", "Tide"], hourly?.windSpeed != null ? [`${hourly.windDirection ?? ""} ${hourly.windSpeed} mph`.trim(), "Wind"] : null].filter(Boolean);
+  return stats.length ? h("div", { class: "spot-mini-stats" }, stats.map(([value, label]) => h("div", {}, h("b", {}, value), h("small", {}, label)))) : null;
 }
 
 /* ---------- SPECIES ---------- */
@@ -655,9 +774,10 @@ function speciesRows(c) {
   const run = c.run;
   const rows = SPECIES.map((sp) => {
     const cands = (run.candidates ?? []).filter((x) => x.speciesId === sp.id && (st.f === "all" || x.mode === st.f));
-    const best = cands.sort((a, b) => (b.suitability ?? -1) - (a.suitability ?? -1))[0] ?? null;
+    const best = bestSpeciesCandidate(cands);
     const focused = run.scopeViews?.bySpecies?.[sp.id]?.focused ?? null;
-    return { sp, best, focused, suit: focused?.suitability ?? best?.suitability ?? null };
+    const focusedCandidate = focused && cands.find((x) => x.locationId === focused.locationId && x.mode === focused.mode);
+    return { sp, best: focusedCandidate ?? best, focused, suit: focused?.suitability ?? best?.suitability ?? null };
   }).filter((x) => st.f === "all" || x.sp.modes.includes(st.f));
   return rankSpeciesRows(rows);
 }
@@ -666,13 +786,18 @@ function speciesView(c) {
   const tiles = (items) => h("ul", { class: "grid" }, items.map(({ sp, best, suit, focused }) =>
     h("li", {}, h("button", { class: `sp${suit == null || (!focused && best?.eligibility !== "realistic") ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
       "aria-label": `${sp.name}, ${suit == null ? "no reading" : `suitability ${suit}`}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
-      h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-      h("div", { class: "big" }, h("b", {}, suit ?? "—"), h("span", {}, suit == null ? "no window" : best?.eligibility !== "realistic" && best?.band ? (/rare/i.test(best.band) ? best.band : [best.band, h("span", { class: "tag rare" }, "Rare")]) : best?.eligibility !== "realistic" ? "Rare in surveys" : best?.band ?? "")),
+      fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
+      h("div", { class: "big" }, h("b", {}, suit ?? "—"), h("span", {}, speciesFitBand(suit))),
+      best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
+      best?.historicalRate ? h("small", { class: "trip-rate" }, speciesTripRate(best)) : null,
       h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${suit ?? 0}%` }))))));
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
-    h("div", { class: "card-h" }, h("h2", {}, "Species"), h("span", { class: "sub" }, "Suitability, best first")),
+    h("div", { class: "page-heading" }, h("h1", {}, "Species"), h("button", { class: "icon-button", type: "button", "aria-label": "Search species", onclick: () => $("species-search")?.focus() }, "⌕")),
+    searchBox("Search species", st.search, (e) => { st.search = e.target.value; render(); }),
+    h("p", { class: "fine" }, "Realistic targets first · ranked by today's conditions fit"), h("p", { class: "fine eligibility-legend" }, "Dimmed means the fish is less commonly caught, off-list, or needs structure; conditions fit is still shown."),
+    h("div", { class: "species-carousel" }, rows.filter((x) => !x.sp.bycatch && (st.search === "" || x.sp.name.toLowerCase().includes(st.search.toLowerCase()))).slice(0, 12).map(({ sp }) => h("button", { class: `species-avatar${st.species === sp.id ? " on" : ""}`, type: "button", "aria-label": sp.name, onclick: (e) => openSpecies(sp.id, e.currentTarget) }, fishImage(sp.id), h("span", {}, sp.name)))),
     st.species ? h("p", { class: "notice" }, `Targeting ${spName(st.species)}. Today is re-ranked for it.`) : null,
-    h("div", { class: "tools-row" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })), tiles(rows.filter((x)=>!x.sp.bycatch)), h("details",{class:"also",open:session.also||null,ontoggle:(e)=>{session.also=e.currentTarget.open;}},h("summary",{},"Also biting (bycatch)"),tiles(rows.filter((x)=>x.sp.bycatch))))];
+    h("div", { class: "tools-row" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })), tiles(rows.filter((x)=>!x.sp.bycatch && (!st.search || x.sp.name.toLowerCase().includes(st.search.toLowerCase())))), h("details",{class:"also",open:session.also||null,ontoggle:(e)=>{session.also=e.currentTarget.open;}},h("summary",{},"Also biting (bycatch)"),tiles(rows.filter((x)=>x.sp.bycatch && (!st.search || x.sp.name.toLowerCase().includes(st.search.toLowerCase()))))))];
 }
 
 /* ---------- PLAN ---------- */
@@ -682,10 +807,52 @@ function dayBody(d, i) {
     /planner.forecast|forecastDay/.test(d.reason?.code ?? "") ? null : h("p", { class: "fine" }, msg(d.reason)),
     outlook ? h("p", {}, [cap(bw.partOfDay), bw.tidePhase ? `${bw.tidePhase} tide` : null].filter(Boolean).join(" · ")) : h("ul", { class: "wins" }, (d.windows ?? []).map((w) => h("li", {}, [w.displayName, modeLabel(w.mode)].filter(Boolean).join(" · "), fmtRange(w.start,w.end)))),
     h("ul", { class: "targets" }, (d.topSpecies ?? []).slice(0,3).map((t) => h("li", {}, h("button", { class: "t-btn", type: "button", onclick: (e) => openSpecies(t.speciesId,e.currentTarget) }, t.name, h("span", {}, t.suitability ?? ""))))),
-    !outlook ? h("button", { class: "btn", type: "button", onclick: () => { closeSheet(); st.h = i === 0 ? "today" : "tomorrow"; st.t = null; go("today"); } }, `Open ${i === 0 ? "Today" : "Tomorrow"}`) : null);
+    !outlook ? h("button", { class: "btn", type: "button", onclick: () => closeSheet().then(() => { st.h = i === 0 ? "today" : "tomorrow"; st.t = null; go("today"); }) }, `Open ${i === 0 ? "Today" : "Tomorrow"}`) : null);
+}
+function observationRows(run, kind, locationId) {
+  const rows = (run.inputs?.observations ?? []).filter((x) => x?.kind === kind && x?.ok && (!x.locationId || x.locationId === locationId)).flatMap((x) => x.values?.rows ?? []);
+  return rows;
+}
+function planTideChart(c, locationId, date) {
+  const rows = observationRows(c.run, "tidePredictions", locationId).filter((x) => x.time && dayKey(x.time) === date && x.heightFt != null && Number.isFinite(+x.heightFt));
+  if (rows.length < 2) return null;
+  const heights = rows.map((x) => +x.heightFt), lo = Math.min(...heights), hi = Math.max(...heights), span = Math.max(.1, hi - lo);
+  const pts = rows.map((x, i) => `${(i / (rows.length - 1)) * 100},${88 - ((+x.heightFt - lo) / span) * 68}`).join(" ");
+  return h("section", { class: "card tide-chart", "aria-label": "Tide chart" }, h("div", { class: "card-h" }, h("h2", {}, "Tide chart"), h("span", { class: "sub" }, "Predicted highs and lows")),
+    s("svg", { viewBox: "0 0 100 100", preserveAspectRatio: "none", role: "img", "aria-label": "Predicted tide height through the day" }, s("polyline", { points: pts, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }), rows.map((x, i) => s("circle", { cx: (i / (rows.length - 1)) * 100, cy: 88 - ((+x.heightFt - lo) / span) * 68, r: 2, fill: "var(--accent)" }))),
+    h("div", { class: "tide-events" }, rows.map((x) => h("div", {}, h("b", {}, x.type === "H" ? "High" : x.type === "L" ? "Low" : cap(x.type ?? "Tide")), h("span", {}, fmtTime(x.time)), h("small", {}, `${(+x.heightFt).toFixed(1)} ft`)))));
+}
+function planHourlyTable(c, locationId, date, mode) {
+  const hourly = observationRows(c.run, "hourlyForecast", locationId).filter((x) => (x.startTime ?? x.validFrom) && dayKey(x.startTime ?? x.validFrom) === date);
+  const waves = [...observationRows(c.run, "waves", locationId), ...observationRows(c.run, "waveForecast", locationId)];
+  if (!hourly.length) return null;
+  const slots = (c.run.slots ?? []).find((x) => x.locationId === locationId && x.mode === mode)?.slots ?? [];
+  const rows = hourly.filter((x) => new Date(x.startTime ?? x.validFrom).getMinutes() === 0).slice(0, 12);
+  return h("section", { class: "card hourly-card", "aria-label": "Hourly fishing forecast" }, h("div", { class: "card-h" }, h("h2", {}, "Hourly fishing forecast")),
+    h("div", { class: "hourly-scroll" }, h("table", {}, h("thead", {}, h("tr", {}, ["Time", "Sky", "Conditions", "Outlook"].map((x) => h("th", { scope: "col" }, x)))), h("tbody", {}, rows.map((x) => {
+      const at = x.startTime ?? x.validFrom, slot = slots.reduce((best, p) => !best || Math.abs(Date.parse(p.at) - Date.parse(at)) < Math.abs(Date.parse(best.at) - Date.parse(at)) ? p : best, null);
+      const wave = waves.find((w) => Math.abs(Date.parse(w.time ?? w.validFrom ?? w.startTime) - Date.parse(at)) < 5400000);
+      const mph = x.windSpeed != null ? `${x.windDirection ?? ""} ${x.windSpeed} mph`.trim() : "";
+      const ft = wave?.waveHeightM != null && Number.isFinite(+wave.waveHeightM) ? `${(+wave.waveHeightM * 3.28084).toFixed(0)}–${(+wave.waveHeightM * 3.28084 + .5).toFixed(0)} ft` : "";
+      return h("tr", {}, h("td", {}, fmtTime(at)), h("td", {}, x.shortForecast ?? ""), h("td", {}, [mph, ft].filter(Boolean).join(", ")), h("td", { class: "outlook-word", "data-fit": slot?.suitability == null ? "none" : slot.suitability >= 70 ? "good" : slot.suitability >= 50 ? "fair" : "low" }, slot?.suitability == null ? "—" : slot.suitability >= 70 ? "Great" : slot.suitability >= 50 ? "Good" : "Fair"));
+    })))));
 }
 function planView(c) {
   const days = c.run.days ?? D[RICH].days;
+  st.day = Math.max(0, Math.min(st.day, days.length - 1));
+  const selected = days[st.day] ?? days[0], selectedLoc = st.spot ?? c.rec.locationId, selectedMode = st.mode ?? c.rec.mode;
+  const observations = ["hourlyForecast", "waves", "waveForecast", "waterTemperature"].flatMap((kind) => observationRows(c.run, kind, selectedLoc));
+  const firstHour = observations.find((x) => x.startTime || x.validFrom);
+  const temperature = observations.find((x) => x.temperature != null && Number.isFinite(+x.temperature));
+  const selectedOutlook = selected?.kind === "outlook" ? selected.outlookLabel : VERDICT_SPOKEN[selected?.verdict] ?? "Outlook";
+  const selectedCopy = selected?.reason?.text ?? selected?.reason ?? "";
+  const tide = selected?.date === c.run.targetDate ? planTideChart(c, selectedLoc, selected.date) : null;
+  const hourlyTable = selected?.date === c.run.targetDate ? planHourlyTable(c, selectedLoc, selected.date, selectedMode) : null;
+  const summary = h("section", { class: "card daily-outlook" }, h("div", { class: "card-h" }, h("span", { class: "vchip", "data-v": selected?.kind === "outlook" ? null : selected?.verdict }, selectedOutlook), h("h2", {}, "Daily outlook")), h("p", {}, msg(selectedCopy)),
+    observations.length ? h("div", { class: "plan-conditions" }, temperature ? h("div", {}, h("b", {}, `${temperature.temperature}°`), h("small", {}, temperature.shortForecast ?? "Air")) : null,
+      firstHour?.windSpeed ? h("div", {}, h("b", {}, `${firstHour.windDirection ?? ""} ${firstHour.windSpeed}`), h("small", {}, "Wind")) : null,
+      (() => { const wave = observations.find((x) => x.waveHeightM != null && Number.isFinite(+x.waveHeightM)); return wave ? h("div", {}, h("b", {}, `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`), h("small", {}, "Waves")) : null; })(),
+      (() => { const water = observations.find((x) => x.temperatureF != null && Number.isFinite(+x.temperatureF)); return water ? h("div", {}, h("b", {}, `${water.temperatureF}°`), h("small", {}, "Water")) : null; })()) : null);
   const list = h("ul", { class: "days" }, days.flatMap((d,i) => {
     const outlook = d.kind === "outlook", w = d.windows?.[0], bw = d.bestWindow ?? {};
     const title = i === 0 ? "Today" : wk(d.date,{weekday:"short"});
@@ -697,7 +864,9 @@ function planView(c) {
         h("span", {}, title,h("small",{},wk(d.date,{month:"short",day:"numeric"}))), h("span",{class:`vchip${outlook ? " outline" : ""}`,"data-v":outlook?null:d.verdict,"data-l":d.outlookLabel},outlook?d.outlookLabel:VERDICT_SPOKEN[d.verdict]),
         h("span", {class:"day-copy"},h("span", {class:"day-line"},line),ended ? h("small",{class:"ended"},`Ended · ${range}`) : null,h("small",{},(d.topSpecies??[]).map((t)=>t.name).slice(0,1).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
   }));
-  return [h("div",{class:"plan-layout"},h("section",{class:"card"},h("div",{class:"card-h"},h("h2",{},"Next 7 days"),h("p",{class:"eyebrow"},st.species?`for ${spName(st.species)}`:st.spot?locOf(c.run,st.spot)?.name:"Best anywhere")),list),h("section",{class:"card plan-detail desktop-pane"},dayBody(days[st.day],st.day)))];
+  const chips = h("div", { class: "plan-day-chips", role: "tablist", "aria-label": "Plan day" }, days.map((d, i) => h("button", { class: "day-chip", type: "button", role: "tab", "aria-selected": String(i === st.day), "data-fk": `plan-day-${i}`, onclick: () => { st.day = i; render(); } }, h("b", {}, i === 0 ? "Today" : wk(d.date, { weekday: "short" })), h("small", {}, wk(d.date, { month: "short", day: "numeric" })))));
+  return [h("section", { class: "plan-page" }, h("div", { class: "page-heading" }, h("h1", {}, "Plan")), chips, summary, tide, hourlyTable,
+    h("div", { class: "plan-layout" }, h("section", { class: "card" }, h("div", { class: "card-h" }, h("h2", {}, "Next 7 days"), h("p", { class: "eyebrow" }, st.species ? `for ${spName(st.species)}` : st.spot ? locOf(c.run, st.spot)?.name : "Best anywhere")), list), h("section", { class: "card plan-detail desktop-pane" }, dayBody(selected, st.day))))];
 }
 
 /* ---------- catch log ---------- */
@@ -731,7 +900,7 @@ function logView(c) {
     h("div", { class: "card-h" }, h("h2", {}, "Catch log"), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
     h("p", { class: "fine" }, "Saved on this device only."), summary,
     h("button", { class: "btn log-add", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log a catch"),
-    rows.length ? entries : h("div", { class: "log-empty" }, h("p", {}, "Your catch log starts here."), h("p", { class: "fine" }, "Log your first catch to get started.")))];
+    rows.length ? entries : h("div", { class: "log-empty" }, s("svg", { class: "empty-fish", viewBox: "0 0 120 64", role: "img", "aria-label": "A fish on a fishing line" }, s("path", { d: "M16 36c13-17 35-20 55-9l18-13v41L71 43c-20 11-42 8-55-7Zm-8 0h7m67-12 13-7m-13 31 13 7M51 27v18m7-18v18" }), s("circle", { cx: 42, cy: 33, r: 2 })), h("p", {}, "Your catch log starts here."), h("p", { class: "fine" }, "Log your first catch to get started."), h("button", { class: "btn", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log your first catch")))];
 }
 function openCatchForm(existing, opener, c = ctx()) {
   const spotId = existing?.spot ?? st.spot ?? c.rec.locationId ?? ACTIVE_SPOTS[0]?.id;
@@ -774,7 +943,7 @@ function openCatchForm(existing, opener, c = ctx()) {
       bait: values.bait, notes: values.notes, context: reportSnapshot(c, values.spot, values.mode, at) };
     const next = existing ? rows.map((x) => x.id === existing.id ? record : x) : [...rows, record];
     if (!saveCatches(next)) { errors.hidden = false; errors.textContent = "Couldn't save on this device. Check available storage and try again."; return; }
-    closeSheet(); render(); toast(existing ? "Catch updated" : "Catch saved");
+    closeSheet().then(() => { render(); toast(existing ? "Catch updated" : "Catch saved"); });
   });
   openSheet(existing ? "Edit catch" : "Log a catch", form, opener);
 }
@@ -789,8 +958,8 @@ function openCatchDetail(id, opener) {
 }
 function confirmDeleteCatch(row) {
   const body = h("div", {}, h("p", {}, "Delete this catch from this device?"), h("div", { class: "cta" },
-    h("button", { class: "btn alt", type: "button", onclick: () => { closeSheet(); toast("Catch kept"); } }, "Keep catch"),
-    h("button", { class: "btn danger", type: "button", onclick: () => { saveCatches(sortedCatches().filter((x) => x.id !== row.id)); closeSheet(); render(); toast("Catch deleted"); } }, "Delete catch")));
+    h("button", { class: "btn alt", type: "button", onclick: () => closeSheet().then(() => toast("Catch kept")) }, "Keep catch"),
+    h("button", { class: "btn danger", type: "button", onclick: () => { saveCatches(sortedCatches().filter((x) => x.id !== row.id)); closeSheet().then(() => { render(); toast("Catch deleted"); }); } }, "Delete catch")));
   openSheet("Delete catch?", body);
 }
 async function exportCatchLog() {
@@ -818,10 +987,23 @@ function openSheet(title, body, opener) {
   $("sheet-root").replaceChildren(scrim, panel);
   $("app").inert = true; $("tabbar").inert = true; $("review").inert = true;
   sheet = { panel, prev, prevFk: prev?.dataset?.fk };
+  if (!matchMedia("(prefers-reduced-motion: reduce)").matches && panel.animate) {
+    const desktop = matchMedia("(min-width:768px)").matches;
+    sheetAnimation = panel.animate(desktop ? [{ opacity: 0, transform: "translate(-50%,-48%) scale(.97)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)" }] : [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }], { duration: 280, easing: "cubic-bezier(.2,.8,.2,1)" });
+    scrim.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: "ease-out" });
+  }
   const hd = panel.querySelector(".sheet-h"); let y0 = null, dy = 0;
-  hd.addEventListener("pointerdown", (e) => { y0 = e.clientY; hd.setPointerCapture(e.pointerId); panel.classList.add("drag"); });
+  let dragAt = 0;
+  hd.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button,input,select,textarea,a")) return;
+    y0 = e.clientY; dragAt = performance.now(); hd.setPointerCapture(e.pointerId); panel.classList.add("drag"); panel.style.willChange = "transform"; sheetAnimation?.cancel();
+  });
   hd.addEventListener("pointermove", (e) => { if (y0 == null) return; dy = Math.max(0, e.clientY - y0); panel.style.transform = `translateY(${dy}px)`; });
-  const rel = () => { if (y0 == null) return; y0 = null; panel.classList.remove("drag"); if (dy > 90) closeSheet(); else panel.style.transform = ""; dy = 0; };
+  const rel = () => { if (y0 == null) return; const velocity = dy / Math.max(1, performance.now() - dragAt); y0 = null; panel.classList.remove("drag"); panel.style.willChange = ""; if (velocity > .5 || dy > panel.getBoundingClientRect().height * .3) closeSheet(); else {
+    const desktop = matchMedia("(min-width:768px)").matches;
+    sheetAnimation = panel.animate([{ transform: `translateY(${dy}px)` }, { transform: desktop ? "translate(-50%,-50%)" : "translateY(0)" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
+    sheetAnimation.finished.finally(() => { if (sheet?.panel === panel) panel.style.transform = ""; }).catch(() => {});
+  } dy = 0; };
   hd.addEventListener("pointerup", rel); hd.addEventListener("pointercancel", rel);
   panel.addEventListener("keydown", trap);
   panel.querySelector(".xbtn").focus();
@@ -835,19 +1017,37 @@ function trap(e) {
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
 function closeSheet(silent) {
-  if (!sheet) return;
+  if (!sheet) return Promise.resolve();
   tick("close"); sheet.observer?.disconnect();
-  const { prev, prevFk } = sheet; sheet = null;
-  const leaving = [...$("sheet-root").children];
-  if (silent) $("sheet-root").replaceChildren();
-  else { // slide + fade out, then detach; reduced motion has no animations, so this resolves at once
-    leaving.forEach((n) => { n.inert = true; n.classList.add("out"); });
-    Promise.allSettled(leaving.flatMap((n) => n.getAnimations().map((a) => a.finished))).then(() => leaving.forEach((n) => n.remove()));
+  const current = sheet, { panel, prev, prevFk } = current;
+  if (silent) { sheet = null; sheetAnimation?.cancel(); $("sheet-root").replaceChildren(); current.resolveClose?.(); }
+  else {
+    if (current.closing) return current.closePromise;
+    current.closing = true;
+    current.closePromise = new Promise((resolve) => { current.resolveClose = resolve; });
+    const root = $("sheet-root"), scrim = root.querySelector(".scrim"), reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    [panel, scrim].filter(Boolean).forEach((el) => { el.inert = true; el.classList.add("out"); });
+    const desktop = matchMedia("(min-width:768px)").matches, computed = getComputedStyle(panel).transform;
+    const from = panel.style.transform && panel.style.transform !== "none" ? panel.style.transform : computed && computed !== "none" ? computed : desktop ? "translate(-50%,-50%)" : "translateY(0)";
+    sheetAnimation?.cancel();
+    const animation = !reduce && panel.animate ? panel.animate([{ transform: from, opacity: 1 }, { transform: desktop ? "translate(-50%,-48%) scale(.97)" : "translateY(100%)", opacity: 0 }], { duration: 200, easing: "cubic-bezier(.4,0,1,1)" }) : null;
+    scrim?.animate?.([{ opacity: 1 }, { opacity: 0 }], { duration: reduce ? 0 : 180, easing: "ease-in" });
+    const closeStarted = performance.now(); let minExitTimer;
+    const remove = () => {
+      const remaining = 180 - (performance.now() - closeStarted);
+      if (remaining > 0) { clearTimeout(minExitTimer); minExitTimer = setTimeout(remove, remaining); return; }
+      if (sheet === current) sheet = null; panel.remove(); scrim?.remove(); if (sheetAnimation === animation) sheetAnimation = null; current.resolveClose?.();
+    };
+    if (animation) {
+      const fallback = setTimeout(remove, 280);
+      animation.finished.then(() => { clearTimeout(fallback); remove(); }).catch(() => {});
+    } else remove();
   }
   $("app").inert = false; $("tabbar").inert = false; $("review").inert = false;
-  if (silent) return;
+  if (silent) return Promise.resolve();
   const target = prev?.isConnected ? prev : prevFk ? document.querySelector(`[data-fk="${prevFk}"]`) : null;
   (target ?? $("view")).focus?.({ preventScroll: true });
+  return current.closePromise;
 }
 async function shareReport() {
   const url = new URL(location.href); url.hash = location.hash;
@@ -857,10 +1057,40 @@ async function shareReport() {
   } catch (error) { if (error?.name !== "AbortError") toast("Couldn't share the report link"); }
 }
 function openMoreSheet(opener) {
-  const body = h("div", { class: "more-sheet" }, h("section", { class: "block" }, h("h3", {}, "Appearance"),
-    segment("Appearance", THEMES, store.get("theme", "auto"), setTheme, "appearance"), h("p", { class: "fine" }, "Auto uses Dark by day and Night after sunset.")),
-    h("section", { class: "block" }, h("h3", {}, "Share"), h("button", { class: "btn", type: "button", onclick: shareReport }, "Share report")));
+  const blocks = [h("section", { class: "block" }, h("h3", {}, "Appearance"),
+    segment("Appearance", THEMES, store.get("theme", "auto"), setTheme, "appearance"), h("p", { class: "fine" }, "Auto uses Dark by day and Night after sunset."))];
+  if (window.FFNotify) {
+    const enabled = store.get("notifications", false);
+    blocks.push(h("section", { class: "block notify-block" }, h("h3", {}, "Notifications"),
+      h("button", { class: "notify-toggle", type: "button", role: "switch", "aria-checked": String(enabled), onclick: (e) => {
+        const next = e.currentTarget.getAttribute("aria-checked") !== "true";
+        store.set("notifications", next); e.currentTarget.setAttribute("aria-checked", String(next));
+        try { window.FFNotify.toggle?.(next); window.FFNotify.sync?.({ favorites: store.get("favs", []), run: ctx().run }); } catch (error) { console.warn("Flagler notification preference failed", error); }
+      } }, h("span", {}, "Notify me about favorite spots"), h("i", {}, enabled ? "On" : "Off")),
+      h("p", { class: "fine" }, "Local alerts follow your favorite spots.")));
+  }
+  blocks.push(h("section", { class: "block" }, h("h3", {}, "Favorites"), h("button", { class: "btn alt", type: "button", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "Manage favorite spots")));
+  blocks.push(h("section", { class: "block" }, h("h3", {}, "Share"), h("button", { class: "btn", type: "button", onclick: shareReport }, "Share report")));
+  blocks.push(h("section", { class: "block" }, h("h3", {}, "Credits & data"), h("button", { class: "btn alt", type: "button", onclick: (e) => openCreditsSheet(e.currentTarget) }, "Image credits"),
+    h("p", { class: "fine" }, "Fishing outlooks use the report's weather, tide, wave, and local history inputs. See Data & Sources on Today for provider and freshness details.")));
+  const body = h("div", { class: "more-sheet" }, blocks);
   openSheet("More", body, opener);
+}
+function openFavoritesSheet(opener) {
+  const favs = store.get("favs", []), list = h("ul", { class: "favorite-list" });
+  const rows = ACTIVE_SPOTS.filter((spot) => favs.includes(spot.id));
+  list.append(...(rows.length ? rows.map((spot) => h("li", { class: "favorite-row" }, spotImage(spot.id, "favorite-photo", spot.name), h("b", {}, spot.name),
+    h("button", { class: "star", type: "button", "aria-label": `Remove ${spot.name} from favorites`, onclick: () => { store.set("favs", store.get("favs", []).filter((id) => id !== spot.id)); openFavoritesSheet(opener); } }, icon("star")))) : [h("li", { class: "fine" }, "No favorite spots yet. Add one from the Spots tab.")]));
+  openSheet("Favorite spots", list, opener);
+}
+function openCreditsSheet(opener) {
+  const list = h("ul", { class: "credits-list" }, imageCredits.map((entry) => {
+    const title = entry.generated ? "Illustration generated with OpenAI image_gen" : `${entry.title ?? entry.subject} · ${entry.author ?? "Credit pending"}`;
+    const license = entry.generated ? "Generated illustration" : `${entry.license ?? "License"}`;
+    return h("li", {}, h("b", {}, entry.subject ?? entry.file), h("span", {}, title), h("small", {}, license),
+      entry.source_url && !entry.generated ? h("a", { href: entry.source_url, target: "_blank", rel: "noopener noreferrer" }, "View source") : null);
+  }));
+  openSheet("Image credits", list, opener);
 }
 function openSpotSheet(opener) {
   const c = ctx();
@@ -885,7 +1115,7 @@ function openSpecies(id, opener) {
   const focused = run.scopeViews?.bySpecies?.[id]?.focused ?? null;
   const cands = (run.candidates ?? []).filter((x) => x.speciesId === id);
   const focusedCandidate = focused && cands.find((x) => x.locationId === focused.locationId && x.mode === focused.mode);
-  const best = focusedCandidate && (!focusedCandidate.window?.end || Date.parse(focusedCandidate.window.end) > c.now) ? focusedCandidate : bestUpcomingCandidate(cands, c.now);
+  const best = focusedCandidate && (!focusedCandidate.window?.end || Date.parse(focusedCandidate.window.end) > c.now) ? focusedCandidate : bestSpeciesCandidate(cands) ?? bestUpcomingCandidate(cands, c.now);
   const useFocused = !!focused && best?.locationId === focused.locationId && best?.mode === focused.mode;
   const ended = !!best?.window?.end && Date.parse(best.window.end) <= c.now;
   const suit = useFocused ? focused.suitability : best?.suitability ?? null;
@@ -895,11 +1125,20 @@ function openSpecies(id, opener) {
   const setup = useFocused ? focused.setup : sp.setup, byMode = best && sp.byMode?.[best.mode] ? { ...setup, ...sp.byMode[best.mode] } : setup;
   const place = useFocused ? focused : best && { displayName: locOf(run, best.locationId)?.name, locationId: best.locationId, mode: best.mode, window: best.window };
   const realistic = useFocused || best?.eligibility === "realistic";
-  const reason = best && best.eligibility !== "realistic" && best.eligibilityReason ? msg({ kind: "reason", ...best.eligibilityReason }) : "";
-  const body = h("div", {},
+  const reason = best && best.eligibility !== "realistic" ? speciesEligibilityLabel(best) : "";
+  const monthName = best?.historicalRate?.month ? new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2020, best.historicalRate.month - 1, 1))) : "Seasonal pattern";
+  const body = h("div", { class: "species-detail" }, fishImage(id, "species-detail-photo"),
+    h("p", { class: "species-season" }, `${monthName} · ${sp.modes.map(modeLabel).join(" / ")}`),
+    h("nav", { class: "species-tabs", "aria-label": "Species details" }, ["Overview", "Techniques", "Bait & Gear", "Best Times"].map((label) => h("button", { type: "button", class: "species-tab", onclick: (e) => {
+      const targets = { Overview: "Best place and time", Techniques: "Use", "Bait & Gear": "Use", "Best Times": "Local history" };
+      const section = [...body.querySelectorAll(":scope > .block")].find((x) => x.querySelector("h3")?.textContent === targets[label]);
+      section?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+      body.querySelectorAll(".species-tab").forEach((b) => b.setAttribute("aria-current", String(b === e.currentTarget)));
+    } }, label))),
     sp.alt ? h("p", { class: "muted" }, sp.alt) : null,
     h("div", { class: "kv", style: "margin-top:10px" }, h("span", { class: "stat-big" }, suit ?? "—"), h("span", { class: "muted" }, suit == null ? "No fishing window in this run" : `Suitability${best?.band ? ` · ${best.band}` : ""}`), sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-    !realistic && reason ? h("p", { class: "fine" }, reason) : null,
+    !realistic && reason ? h("p", { class: "fine eligibility" }, reason) : null,
+    best?.historicalRate ? h("p", { class: "fine trip-rate" }, speciesTripRate(best)) : null,
     place?.displayName ? h("div", { class: "block" }, h("h3", {}, "Best place and time"), h("p", { style: "font-weight:600" }, place.displayName, " ", h("span", { class: "mchip" }, modeIcon(place.mode), modeLabel(place.mode))), place.window ? h("p", { class: "muted" }, fmtRange(place.window.start, place.window.end)) : null) : null,
     curve.length === 12 ? h("div", { class: "block" }, h("h3", {}, "Season by month"),
       h("div", { class: "season", role: "img", "aria-label": `Seasonal pattern by month, ${sp.name}. Strongest ${MONTHS.map((_, i) => i).filter((i) => curve[i] === Math.max(...curve.filter((v) => v != null)))?.map((i) => new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2020, i, 1)))).join(", ")}.` },
@@ -939,7 +1178,11 @@ function openSpecies(id, opener) {
 
 /* ---------- toast, review ---------- */
 let toastTimer;
-function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 2600); }
+function toast(m) {
+  const t = $("toast"), success = /^(Catch saved|Catch updated)$/.test(m);
+  t.replaceChildren(...(success ? [icon("check", "toast-check")] : []), h("span", {}, m));
+  t.classList.toggle("success", success); t.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 2600);
+}
 function setTheme(t) {
   if (!["auto", "dark", "night", "light"].includes(t)) return;
   store.set("theme", t);
@@ -972,16 +1215,68 @@ async function init() {
   $("home").addEventListener("click", () => go("today"));
   $("spot-pill").addEventListener("click", (e) => openSpotSheet(e.currentTarget));
   $("more").addEventListener("click", (e) => openMoreSheet(e.currentTarget));
+  document.addEventListener("ffmap:select", (event) => {
+    const id = event.detail?.id;
+    if (!locOf(ctx().run, id)) return;
+    st.spot = id; st.species = null; st.t = null;
+    if (st.mode && !modesOf(ctx().run, id).includes(st.mode)) st.mode = null;
+    render();
+  });
+  const tabs = document.querySelector(".tabs"), tabButtons = [...document.querySelectorAll(".tab")];
+  let swipePreview = null, swipePreviewTab = null;
+  const makeTabPreview = (tab) => {
+    const previous = st.tab, previousHost = listHost; let nodes;
+    try {
+      st.tab = tab;
+      const c = ctx(); nodes = tab === "today" ? todayView(c) : tab === "spots" ? spotsView(c) : tab === "species" ? speciesView(c) : tab === "plan" ? planView(c) : logView(c);
+    } finally { st.tab = previous; listHost = previousHost; }
+    const preview = h("div", { class: "tab-peek", "aria-hidden": "true" }, ...nodes);
+    preview.inert = true; document.body.append(preview); return preview;
+  };
+  const tabIndexAt = (x) => Math.max(0, Math.min(tabButtons.length - 1, Math.floor((x - tabs.getBoundingClientRect().left) / (tabs.getBoundingClientRect().width / tabButtons.length))));
+  const tabTick = () => { tick("select"); window.Capacitor?.Plugins?.Haptics?.impact?.({ style: "LIGHT" })?.catch?.(() => {}); };
+  tabs.addEventListener("pointerdown", (event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const index = tabIndexAt(event.clientX); tabDrag = { pointerId: event.pointerId, index, startX: event.clientX, moved: false };
+    tabs.setPointerCapture(event.pointerId); tabs.classList.add("dragging"); tabs.style.setProperty("--tab-i", index);
+  });
+  tabs.addEventListener("pointermove", (event) => {
+    if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
+    const index = tabIndexAt(event.clientX); tabDrag.moved ||= Math.abs(event.clientX - tabDrag.startX) > 8;
+    const box = tabs.getBoundingClientRect(), step = box.width / tabButtons.length;
+    tabs.style.setProperty("--tab-i", Math.max(0, Math.min(tabButtons.length - 1, (event.clientX - box.left) / step - .5)));
+    if (index !== tabDrag.index) { tabDrag.index = index; tabTick(); }
+  });
+  const finishTabDrag = (event) => {
+    if (!tabDrag || (event && event.pointerId !== tabDrag.pointerId)) return;
+    const target = tabButtons[tabDrag.index]?.dataset.tab, moved = tabDrag.moved; tabDrag = null;
+    tabs.classList.remove("dragging");
+    if (moved && target) go(target);
+    setTimeout(() => tabs.style.removeProperty("--tab-i"), 360);
+  };
+  tabs.addEventListener("pointerup", finishTabDrag); tabs.addEventListener("pointercancel", finishTabDrag);
   $("refresh").addEventListener("click", () => {
     const chip = $("fresh"), rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     chip.replaceChildren(rm ? "" : h("span", { class: "spin" }), "Updating…");
     refreshLiveData().then(() => { refreshError = ""; tick("refresh"); }).catch(error => { console.warn("V5 live refresh failed", error); refreshError = `Couldn't refresh — showing ${fmtTime(ctx().run.generatedAt)} data`; }).finally(() => { render(); $("pull-refresh")?.remove(); });
   });
   if (matchMedia("(display-mode: standalone)").matches) document.body.style.overscrollBehaviorY = "contain";
-  let pullStart = null, pulled = false;
-  document.addEventListener("touchstart", (e) => { pullStart = st.tab === "today" && scrollY === 0 && !sheet ? e.touches[0].clientY : null; }, {passive:true});
-  document.addEventListener("touchmove", (e) => { if (pullStart != null && e.touches[0].clientY-pullStart > 64 && !cOffline()) { pulled=true; if (!$("pull-refresh")) $("ctl").append(h("div",{id:"pull-refresh",role:"status"},"Updating…")); } },{passive:true});
-  document.addEventListener("touchend", () => { if(pulled) $("refresh").click(); pullStart=null; pulled=false; });
+  let pullStart = null, pulled = false, pullDistance = 0;
+  document.addEventListener("touchstart", (e) => { pullStart = st.tab === "today" && scrollY === 0 && !sheet ? e.touches[0].clientY : null; pullDistance = 0; }, {passive:true});
+  document.addEventListener("touchmove", (e) => {
+    if (pullStart == null || cOffline()) return;
+    const distance = Math.max(0, e.touches[0].clientY - pullStart);
+    if (!distance) return;
+    pullDistance = Math.min(92, distance * .48);
+    if (distance > 18) $("main").style.transform = `translateY(${pullDistance}px)`;
+    if (distance > 64) { pulled = true; let indicator = $("pull-refresh"); if (!indicator) { indicator = h("div", { id: "pull-refresh", role: "status" }, h("span", { class: "pull-spinner", "aria-hidden": "true" }), h("span", {}, "Release to refresh")); $("ctl").append(indicator); } indicator.style.setProperty("--pull-progress", Math.min(1, distance / 92)); }
+  }, {passive:true});
+  document.addEventListener("touchend", () => {
+    const main = $("main"), reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (main.animate && main.style.transform) main.animate([{ transform: main.style.transform }, { transform: "translateY(0)" }], { duration: reduce ? 0 : 240, easing: "cubic-bezier(.32,.72,0,1)" }).finished.finally(() => { main.style.transform = ""; }).catch(() => {});
+    if (pulled) $("refresh").click();
+    $("pull-refresh")?.remove(); pullStart=null; pulled=false; pullDistance=0;
+  });
   const cOffline = () => ctx().offline;
   const nav = $("tabbar"), wide = matchMedia("(min-width:900px)"); const placeNav = () => { if(wide.matches) document.querySelector(".bar").append(nav); else document.body.insertBefore(nav,$("sheet-root")); }; placeNav(); wide.addEventListener("change",placeNav);
   initReview();
@@ -989,7 +1284,8 @@ async function init() {
   try {
     const first = new URLSearchParams(location.hash.slice(1));
     const wanted = STATES.find((x) => x.id === first.get("state"));
-    await Promise.all([load(RICH_SAMPLE), load(TOMORROW_SAMPLE), ...(wanted ? [load(wanted.file)] : []), refreshLiveData()]);
+    const [credits] = await Promise.all([load("img/CREDITS.json"), load(RICH_SAMPLE), load(TOMORROW_SAMPLE), ...(wanted ? [load(wanted.file)] : []), refreshLiveData()]);
+    imageCredits = Array.isArray(credits) ? credits.filter((entry) => !entry.file.startsWith("fish/ref/")) : [];
     const p = readHash();
     if (!location.hash) { const saved = store.get("spot", null); if (saved && locOf(D[RICH], saved.spot)) { st.spot = saved.spot; st.mode = saved.mode ?? null; } }
     render({ resetScroll: true });
@@ -1019,16 +1315,27 @@ async function init() {
     if (!swipe) return;
     const t = e.touches[0]; swipe.dx = t.clientX - swipe.x; swipe.dy = t.clientY - swipe.y;
     if (Math.abs(swipe.dx) > Math.abs(swipe.dy) * 1.5) {
-      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) swipe.view.style.transform = `translateX(${swipe.dx}px)`;
+      const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (swipe.dx < 0 ? 1 : -1)], atEdge = !next, dx = atEdge ? swipe.dx * .28 : swipe.dx;
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        swipe.view.style.willChange = "transform"; swipe.view.style.transform = `translateX(${dx}px)`;
+        if (next && next !== swipePreviewTab) { swipePreview?.remove(); swipePreview = makeTabPreview(next); swipePreviewTab = next; }
+        if (swipePreview) swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`;
+        if (!next) { swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; }
+      }
       e.preventDefault();
     }
   }, { passive: false });
   const finishSwipe = () => {
     if (!swipe) return;
     const { dx, dy, at, view } = swipe; swipe = null;
+    swipePreview?.remove(); swipePreview = null; swipePreviewTab = null;
     const elapsed = Math.max(1, performance.now() - at), velocity = Math.abs(dx) / elapsed;
-    view.classList.add("tab-snap"); view.style.transform = ""; setTimeout(() => view.classList.remove("tab-snap"), 260);
-    if (Math.abs(dx) <= Math.abs(dy) * 1.5 || !(Math.abs(dx) >= 60 || Math.abs(dx) >= 24 && velocity >= .45)) return;
+    if (Math.abs(dx) <= Math.abs(dy) * 1.5 || !(Math.abs(dx) >= 60 || Math.abs(dx) >= 24 && velocity >= .45)) {
+      if (view.animate && view.style.transform) view.animate([{ transform: view.style.transform }, { transform: "translateX(0)" }], { duration: 240, easing: "cubic-bezier(.32,.72,0,1)" }).finished.finally(() => { view.style.transform = ""; view.style.willChange = ""; }).catch(() => {});
+      else { view.style.transform = ""; view.style.willChange = ""; }
+      return;
+    }
+    view.style.transform = ""; view.style.willChange = "";
     const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (dx < 0 ? 1 : -1)]; if (next) go(next);
   };
   document.addEventListener("touchend", finishSwipe, { passive: true }); document.addEventListener("touchcancel", finishSwipe, { passive: true });
