@@ -106,8 +106,16 @@ if (native && globalThis.fetch) {
       tools.append(share);
     }
     const statusBar = plugins.StatusBar;
-    statusBar?.setBackgroundColor?.({ color: "#0B1117" }).catch?.(() => {});
-    statusBar?.setStyle?.({ style: "LIGHT" }).catch?.(() => {});
+    // Capacitor naming: style "DARK" = light status-bar text (for dark pages), "LIGHT" = dark text.
+    const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
+    const syncStatusBar = () => {
+      const forced = document.documentElement.getAttribute("data-theme");
+      const dark = forced === "dark" || (forced !== "light" && !!media?.matches);
+      statusBar?.setStyle?.({ style: dark ? "DARK" : "LIGHT" })?.catch?.(() => {});
+    };
+    syncStatusBar();
+    media?.addEventListener?.("change", syncStatusBar);
+    new MutationObserver(syncStatusBar).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
   }, { once: true });
 
   const keyboardClass = (open) => document.body?.classList.toggle("ios-keyboard-open", open);
