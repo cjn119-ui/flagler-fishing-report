@@ -16,7 +16,8 @@ class Element {
 }
 const nodes = new Map();
 const get = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
-const now = new Date();
+// Pin the minute so clock strings in the rendered stats (tides are now-relative) can never contain "32".
+const now = new Date(Math.floor(Date.now() / 3600e3) * 3600e3 + 7 * 60e3);
 const hourly = Array.from({length: 36}, (_, i) => ({startTime: new Date(+now + (i-1)*3600e3).toISOString(), endTime: new Date(+now + i*3600e3).toISOString(), windSpeed:'8 mph', probabilityOfPrecipitation:{value:10}}));
 const day = logic.localDay(now);
 const tides = Array.from({length:16},(_,i)=>({t:new Date(+now+(i-4)*6*3600e3).toISOString().slice(0,16).replace('T',' '), v:String(i%2),type:i%2?'H':'L'}));

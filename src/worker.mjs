@@ -421,7 +421,10 @@ async function fetchTidesLive(now = new Date()) {
   const end = new Date(now.getTime() + 26 * 60 * 60 * 1000);
   const beginDate = localDate(now);
   const endDate = localDate(end);
-  const predictions = tideEvents(await fetchTidePredictions(beginDate, endDate));
+  // NOAA reads begin/end_date in GMT (time_zone=gmt); the local-date endDate can end up to a day short of
+  // now+26h in UTC (evening ET), which returned only 3 events. Query through the UTC date of the window end.
+  const queryEnd = end.toISOString().slice(0, 10);
+  const predictions = tideEvents(await fetchTidePredictions(beginDate, queryEnd > endDate ? queryEnd : endDate));
   const events = tideEventsInWindow(predictions, now.getTime());
   if (events.length < 4) throw new UpstreamError(`NOAA tide predictions returned only ${events.length} events in the next 26 hours.`);
   return {

@@ -3,7 +3,8 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: "*/30 * * * *"
+    # Off the :00/:30 marks, which GitHub throttles hardest; still every 30 minutes.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       force:
@@ -38,6 +39,8 @@ jobs:
           node scripts/test-calculations.mjs
           node scripts/test-validator.mjs
           node scripts/test-restore-last-good-api.mjs
+          node scripts/test-refresh-status.mjs
+          node scripts/test-tide-window.mjs
       - uses: actions/configure-pages@v5
         id: pages
       - name: Generate report and live data
@@ -53,12 +56,44 @@ jobs:
       - name: Validate generated output
         id: output_validation
         continue-on-error: true
-        run: node scripts/test-generated-output.mjs
-      - name: Restore deployed root API data after validation failure
+        shell: bash
+        env:
+          MAX_LIVE_AGE_MIN: "90"
+          MAX_REPORT_AGE_MIN: "240"
+        run: node scripts/test-generated-output.mjs 2>&1 | tee validation.log
+      # Upstream feeds (NWS/NDBC/NOAA) are sometimes briefly stale or short; one delayed forced retry
+      # clears most of those. Thresholds are NOT loosened: a retry that is still stale is not deployed as fresh.
+      - name: Retry once after a short delay when validation failed
+        id: retry
         if: steps.output_validation.outcome == 'failure'
+        continue-on-error: true
+        shell: bash
+        env:
+          SITE_URL: ${{ steps.pages.outputs.base_url }}
+          FORCE_REFRESH: "true"
+          MAX_LIVE_AGE_MIN: "90"
+          MAX_REPORT_AGE_MIN: "240"
+        run: |
+          sleep 150
+          node scripts/generate.mjs
+          node scripts/test-generated-output.mjs 2>&1 | tee validation.log
+      - name: Restore deployed root API data after validation failure
+        if: steps.output_validation.outcome == 'failure' && steps.retry.outcome != 'success'
         env:
           SITE_URL: ${{ steps.pages.outputs.base_url }}
         run: node scripts/restore-last-good-api.mjs
+      - name: Record freshness status (explicit stale marker)
+        if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
+        env:
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "${{ steps.output_validation.outcome }}" = "success" ] || [ "${{ steps.retry.outcome }}" = "success" ]; then
+            node scripts/refresh-status.mjs write fresh validation.log
+          else
+            node scripts/refresh-status.mjs write stale-last-good validation.log
+          fi
       - uses: actions/upload-pages-artifact@v3
         if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
         with:
@@ -66,11 +101,13 @@ jobs:
       - id: deployment
         uses: actions/deploy-pages@v4
         if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
-      - name: Mark refresh as failed when validation blocked root data
-        if: steps.output_validation.outcome == 'failure'
-        run: |
-          echo "Root data validation failed; deployed last-good root API data and current V5 files."
-          exit 1
+      # last-good data was deployed and is marked stale in api/refresh-status.json; only fail (and open the
+      # issue) when that data is also older than STALE_FAIL_MIN, i.e. a real outage rather than one late feed.
+      - name: Fail when deployed last-good data is too old
+        if: steps.output_validation.outcome == 'failure' && steps.retry.outcome != 'success'
+        env:
+          STALE_FAIL_MIN: "360"
+        run: node scripts/refresh-status.mjs check
       - name: Open an issue if the refresh failed
         if: failure() && github.event_name == 'schedule'
         env:
