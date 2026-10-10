@@ -3,8 +3,10 @@
 // (../species.js, ../spots.js) supply names, default setup and access notes. Everything else is layout and state.
 import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfidenceParts, formatCopyMessage, formatHeadline, formatVerdictLine, nextWindowLabel, slotIndexAt, nearestSlotIndex, defaultSlotIndex, sourceSummaries, excludeSpot, rankSpeciesRows, bestUpcomingCandidate, presentChildren, windowPhase, scrubWindows, slotInWindow, slotHeld, confidenceDisplay, pickComparison, factorLine, backupTitle } from "../engine/copy.js";
 import { SPECIES } from "../species.js";
-import { SPOTS } from "../spots.js";
+import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
+import { solarEvents } from "../engine/astro.js";
 import { loadProtoData } from "./proto-data.js";
+import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
 
 const TZ = "America/New_York";
 const RICH = "live-today", TOMORROW = "live-tomorrow";
@@ -17,7 +19,8 @@ const STATES = [
   { id: "offline", label: "Sample: offline",     file: "sample-go.json",      nowOffsetMin: 38, offline: true },
   { id: "partial", label: "Sample: partial",     file: "sample-partial.json", nowOffsetMin: 20 },
 ];
-const THEMES = [["auto", "Auto"], ["light", "Light"], ["dark", "Dark"]];
+const THEMES = [["auto", "Auto"], ["dark", "Dark"], ["night", "Night"], ["light", "Light"]];
+const TAB_ORDER = ["today", "spots", "species", "plan", "log"];
 const AGING_MIN = 90, STALE_MIN = 360;
 const TIER = { GO: 0, MAYBE: 1, SKIP: 2 };
 const LEVEL = { GO: 0, MAYBE: 1, SKIP: 2 };
@@ -142,7 +145,7 @@ function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const rich = D[RICH];
   const spot = p.get("spot"), mode = p.get("mode"), sp = p.get("species");
-  st.tab = ["today", "spots", "species", "plan"].includes(p.get("tab")) ? p.get("tab") : "today";
+  st.tab = TAB_ORDER.includes(p.get("tab")) ? p.get("tab") : "today";
   st.h = p.get("h") === "tomorrow" ? "tomorrow" : "today";
   st.spot = spot && locOf(rich, spot) ? spot : null;
   st.mode = st.spot && mode && modesOf(rich, st.spot).includes(mode) ? mode : null;
@@ -150,8 +153,7 @@ function readHash() {
   st.t = p.get("t") && !Number.isNaN(Date.parse(p.get("t"))) ? p.get("t") : null;
   st.state = STATES.some((x) => x.id === p.get("state")) ? p.get("state") : "live";
   st.day = Math.min(6, Math.max(0, Number(p.get("day")) || 0));
-  const th = p.get("theme");
-  if (th === "light" || th === "dark") document.documentElement.dataset.theme = th; else delete document.documentElement.dataset.theme;
+  applyThemePreference(store.get("theme", "auto"), p.get("theme"));
   return p;
 }
 function writeHash() {
@@ -164,7 +166,7 @@ function writeHash() {
   if (st.t) p.set("t", st.t);
   if (st.state !== "live") p.set("state", st.state);
   if (st.tab === "plan" && st.day) p.set("day", st.day);
-  const th = document.documentElement.dataset.theme; if (th) p.set("theme", th);
+  const th = new URLSearchParams(location.hash.slice(1)).get("theme"); if (["light", "dark", "night"].includes(th)) p.set("theme", th);
   try { history.replaceState(null, "", `#${p}`); } catch { /* sandboxed */ }
 }
 const store = {
@@ -172,6 +174,25 @@ const store = {
   set(k, v) { try { localStorage.setItem(`v5proto.${k}`, JSON.stringify(v)); } catch { /* private mode */ } },
 };
 function safeStorage() { try { return localStorage; } catch { return null; } }
+function autoTheme(now = Date.now()) {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(now)).map((x) => [x.type, x.value]));
+  try {
+    const events = solarEvents(`${p.year}-${p.month}-${p.day}`, 29.4738, -81.131);
+    const sunrise = Date.parse(events.sunrise), sunset = Date.parse(events.sunset);
+    if (Number.isFinite(sunrise) && Number.isFinite(sunset)) return now < sunrise || now >= sunset ? "night" : "dark";
+  } catch { /* keep the no-flash approximation until solar data is available */ }
+  const hour = Number(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "2-digit", hourCycle: "h23" }).format(new Date(now)));
+  return hour < 7 || hour >= 19 ? "night" : "dark";
+}
+function applyThemePreference(preference = store.get("theme", "auto"), override = new URLSearchParams(location.hash.slice(1)).get("theme")) {
+  const selected = ["auto", "dark", "night", "light"].includes(preference) ? preference : "auto";
+  const resolved = ["light", "dark", "night"].includes(override) ? override : selected === "auto" ? autoTheme() : selected;
+  const root = document.documentElement;
+  root.dataset.theme = resolved === "light" ? "light" : "dark";
+  if (resolved === "night") root.dataset.night = "1"; else delete root.dataset.night;
+  root.dataset.themePreference = selected;
+}
+function syncTheme() { applyThemePreference(store.get("theme", "auto")); }
 async function refreshLiveData() {
   const data = await loadProtoData({ storage: safeStorage(), online: navigator.onLine !== false });
   D[RICH] = data.today; D[TOMORROW] = data.tomorrow;
@@ -186,13 +207,16 @@ function render({ resetScroll = false } = {}) {
   st.t = st.t && c.run.slots?.length ? st.t : null;
   renderCtl(c); renderHeader(c); renderBanner(c);
   const view = $("view");
-  const nodes = st.tab === "today" ? todayView(c) : st.tab === "spots" ? spotsView(c) : st.tab === "species" ? speciesView(c) : planView(c);
-  view.replaceChildren(h("h1", { class: "sr-only" }, { today: "Today", spots: "Spots", species: "Species", plan: "Plan" }[st.tab]), ...nodes);
+  const nodes = st.tab === "today" ? todayView(c) : st.tab === "spots" ? spotsView(c) : st.tab === "species" ? speciesView(c) : st.tab === "plan" ? planView(c) : logView(c);
+  view.replaceChildren(h("h1", { class: "sr-only" }, { today: "Today", spots: "Spots", species: "Species", plan: "Plan", log: "Log" }[st.tab]), ...nodes);
   animateView(view);
   view.setAttribute("aria-busy", "false");
   document.querySelectorAll(".tab").forEach((b) => b.dataset.tab === st.tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   syncReview(); writeHash();
-  if (resetScroll) window.scrollTo({ top: session.scroll[st.tab] ?? 0 });
+  if (resetScroll) {
+    const top = session.scroll[st.tab] ?? 0; window.scrollTo({ top });
+    if (top === 0) requestAnimationFrame(() => { window.scrollTo(0, 0); document.documentElement.scrollTop = 0; document.body.scrollTop = 0; });
+  }
   if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true });
   if (st.tab === "today") announce(c);
 }
@@ -215,7 +239,7 @@ function announce(c) {
   const text = `${VERDICT_SPOKEN[r.verdict]}${focus}. ${c.skip ? formatHeadline({recommendation:r}) : `${r.displayName}, ${r.mode}, ${fmtRange(r.window?.start, r.window?.end)}`}.${c.stale ? " Last known report." : ""}`;
   if (text !== lastSpoken) { lastSpoken = text; $("live").textContent = text; }
 }
-function go(tab, opts) { session.scroll[st.tab] = window.scrollY; closeSheet(); st.tab = tab; render({ resetScroll: true, ...opts }); }
+function go(tab, opts) { session.scroll[st.tab] = window.scrollY; closeSheet(); const changed = st.tab !== tab; st.tab = tab; render({ resetScroll: true, ...opts }); if (changed) document.dispatchEvent(new CustomEvent("v5:tab", { detail: { tab } })); }
 function scope({ spot = null, mode = null, species = null, persist = false, tab = "today" } = {}) {
   closeSheet(); st.spot = spot; st.mode = mode; st.species = species; st.t = null; st.h = st.h;
   if (persist) store.set("spot", spot ? { spot, mode } : null);
@@ -241,6 +265,7 @@ function renderHeader(c) {
   rb.setAttribute("aria-label", offline ? "Refresh unavailable while offline" : "Refresh report");
   const name = st.spot ? (locOf(run, st.spot)?.name ?? "Spot") : "Best anywhere";
   $("spot-label").textContent = name;
+  $("spot-pill").dataset.scope = st.spot ? "spot" : "best";
   $("spot-pill").setAttribute("aria-label", `Scope: ${name}. Change spot`);
 }
 function segment(label, items, cur, on, cls = "") {
@@ -675,6 +700,110 @@ function planView(c) {
   return [h("div",{class:"plan-layout"},h("section",{class:"card"},h("div",{class:"card-h"},h("h2",{},"Next 7 days"),h("p",{class:"eyebrow"},st.species?`for ${spName(st.species)}`:st.spot?locOf(c.run,st.spot)?.name:"Best anywhere")),list),h("section",{class:"card plan-detail desktop-pane"},dayBody(days[st.day],st.day)))];
 }
 
+/* ---------- catch log ---------- */
+const activeSpot = (id) => ACTIVE_SPOTS.find((x) => x.id === id);
+const wallNow = (ms = Date.now()) => { const d = new Date(ms), z = d.getTimezoneOffset(); return new Date(ms - z * 60000).toISOString().slice(0, 16); };
+function reportSnapshot(c, spot, mode, at) {
+  const day = (x) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(x));
+  const coversDay = (c.run.days ?? []).some((x) => x.date === day(at)) || !!c.run.generatedAt && day(at) === day(c.run.generatedAt);
+  if (!coversDay || !locOf(c.run, spot)) return null;
+  const rec = c.run.scopeViews?.byLocation?.[`${spot}:${mode}`]?.recommendation;
+  return rec ? { runGeneratedAt: c.run.generatedAt, verdict: rec.verdict, fit: rec.suitability } : null;
+}
+function sortedCatches() { return loadCatches().sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt)); }
+function logView(c) {
+  const rows = sortedCatches();
+  const stats = summarizeCatches(rows, { now: Date.now(), spotName: (id) => activeSpot(id)?.name ?? id, speciesName: (id) => id === "other" ? "Other" : spName(id) });
+  const summary = h("div", { class: "log-summary" },
+    h("div", { class: "stat" }, h("p", { class: "k" }, "Catches this month"), h("p", { class: "v" }, stats.catchesThisMonth)),
+    h("div", { class: "stat" }, h("p", { class: "k" }, "Top species"), h("p", { class: "v log-stat-label" }, stats.topSpeciesName ?? "—")),
+    h("div", { class: "stat" }, h("p", { class: "k" }, "Best spot"), h("p", { class: "v log-stat-label" }, stats.bestSpotName ?? "—")));
+  const grouped = new Map();
+  for (const row of rows) { const key = new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(row.occurredAt)); if (!grouped.has(key)) grouped.set(key, []); grouped.get(key).push(row); }
+  const entries = [...grouped].map(([day, list]) => {
+    const heading = h("h3", {}, new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(`${day}T12:00:00-04:00`)));
+    const items = list.map((row) => h("li", {}, h("button", { class: "log-entry", type: "button", onclick: (e) => openCatchDetail(row.id, e.currentTarget) },
+      h("span", { class: "log-entry-main" }, h("b", {}, row.species === "other" ? row.otherSpecies : row.speciesName), h("span", {}, `${row.count} · ${row.disposition} · ${row.spotName}`)),
+      h("span", { class: "muted" }, fmtTime(row.occurredAt)), icon("arrow"))));
+    return h("section", { class: "log-day" }, heading, h("ul", { class: "log-list" }, items));
+  });
+  return [h("section", { class: "card log-card", "aria-label": "Catch log" },
+    h("div", { class: "card-h" }, h("h2", {}, "Catch log"), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
+    h("p", { class: "fine" }, "Saved on this device only."), summary,
+    h("button", { class: "btn log-add", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log a catch"),
+    rows.length ? entries : h("div", { class: "log-empty" }, h("p", {}, "Your catch log starts here."), h("p", { class: "fine" }, "Log your first catch to get started.")))];
+}
+function openCatchForm(existing, opener, c = ctx()) {
+  const spotId = existing?.spot ?? st.spot ?? c.rec.locationId ?? ACTIVE_SPOTS[0]?.id;
+  const spot = activeSpot(spotId) ?? ACTIVE_SPOTS[0];
+  const form = h("form", { class: "catch-form", novalidate: "" });
+  const field = (name, label, control, errorId = `error-${name}`) => h("div", { class: "field" }, h("label", { for: `catch-${name}` }, label), control, h("p", { class: "field-error", id: errorId, "aria-live": "polite" }));
+  const species = h("select", { id: "catch-species", name: "species", required: "" }, h("option", { value: "" }, "Choose a species"), SPECIES.map((x) => h("option", { value: x.id }, x.name)), h("option", { value: "other" }, "Other"));
+  species.value = existing?.species ?? "";
+  const other = h("input", { id: "catch-other", name: "otherSpecies", type: "text", maxlength: "80", placeholder: "Enter species", hidden: existing?.species !== "other", autocomplete: "off" }); other.value = existing?.otherSpecies ?? "";
+  const spotSelect = h("select", { id: "catch-spot", name: "spot" }, ACTIVE_SPOTS.map((x) => h("option", { value: x.id }, x.name))); spotSelect.value = spot.id;
+  const modeSelect = h("select", { id: "catch-mode", name: "mode" });
+  const updateModes = (selected) => { const s = activeSpot(spotSelect.value); modeSelect.replaceChildren(...(s?.modes ?? []).map((m) => h("option", { value: m }, modeLabel(m)))); modeSelect.value = s?.modes.includes(selected) ? selected : s?.modes[0] ?? ""; };
+  updateModes(existing?.mode ?? st.mode ?? "");
+  const when = h("input", { id: "catch-occurredAt", name: "occurredAt", type: "datetime-local", max: wallNow(), required: "" }); when.value = existing?.occurredAt ? wallNow(Date.parse(existing.occurredAt)) : wallNow();
+  const count = h("input", { id: "catch-count", name: "count", type: "number", min: "1", max: "99", step: "1", inputmode: "numeric", required: "" }); count.value = existing?.count ?? "1";
+  const disposition = segment("Kept or released", [["kept", "Kept"], ["released", "Released"]], existing?.disposition ?? "released", (v) => { form.dataset.disposition = v; }, "catch-disposition"); form.dataset.disposition = existing?.disposition ?? "released";
+  const length = h("input", { id: "catch-lengthIn", name: "lengthIn", type: "number", min: "1", max: "80", step: "0.1", inputmode: "decimal", placeholder: "Optional" }); length.value = existing?.lengthIn ?? "";
+  const bait = h("input", { id: "catch-bait", name: "bait", type: "text", maxlength: "120", placeholder: "Optional" }); bait.value = existing?.bait ?? "";
+  const notes = h("textarea", { id: "catch-notes", name: "notes", maxlength: "500", rows: "3", placeholder: "Optional · up to 500 characters" }); notes.value = existing?.notes ?? "";
+  const errors = h("div", { class: "form-errors", role: "alert", hidden: "" });
+  const otherField = h("div", { class: "field other-species", hidden: existing?.species !== "other" }, h("label", { for: "catch-other" }, "Species name"), other);
+  form.append(field("species", "Species", species), otherField, field("spot", "Spot", spotSelect), field("mode", "Mode", modeSelect), field("occurredAt", "Date and time", when),
+    field("count", "Count", count), h("div", { class: "field" }, h("span", { class: "field-label" }, "Kept or released"), disposition, h("p", { class: "field-error", id: "error-disposition" })),
+    field("lengthIn", "Length in inches", length), field("bait", "Bait or lure", bait), field("notes", "Notes", notes), errors,
+    h("button", { class: "btn", type: "submit" }, existing ? "Save changes" : "Save catch"));
+  species.addEventListener("change", () => { otherField.hidden = species.value !== "other"; });
+  spotSelect.addEventListener("change", () => updateModes(""));
+  form.addEventListener("focusin", (e) => setTimeout(() => e.target.scrollIntoView?.({ block: "nearest", behavior: "smooth" }), 80));
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const values = { species: species.value, otherSpecies: other.value, spot: spotSelect.value, mode: modeSelect.value, occurredAt: when.value, count: count.value, disposition: form.dataset.disposition, lengthIn: length.value, bait: bait.value.trim(), notes: notes.value };
+    const problems = validateCatch(values, { spotById: activeSpot });
+    form.querySelectorAll(".field-error").forEach((x) => { x.textContent = ""; });
+    for (const [key, message] of Object.entries(problems)) { const target = form.querySelector(`#error-${key}`); if (target) target.textContent = message; else errors.hidden = false; }
+    if (Object.keys(problems).length) { errors.hidden = !Object.keys(problems).some((key) => !form.querySelector(`#error-${key}`)); if (!errors.hidden) errors.textContent = "Check the highlighted fields."; return; }
+    const rows = sortedCatches(), at = new Date(values.occurredAt).toISOString(), pickedSpot = activeSpot(values.spot), pickedSpecies = spCat(values.species);
+    const record = { schemaVersion: 1, id: existing?.id ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`), species: values.species,
+      speciesName: pickedSpecies?.name ?? values.otherSpecies.trim(), otherSpecies: values.species === "other" ? values.otherSpecies.trim() : "", spot: values.spot, spotName: pickedSpot.name,
+      mode: values.mode, occurredAt: at, count: Number(values.count), disposition: values.disposition, lengthIn: values.lengthIn ? Number(values.lengthIn) : null,
+      bait: values.bait, notes: values.notes, context: reportSnapshot(c, values.spot, values.mode, at) };
+    const next = existing ? rows.map((x) => x.id === existing.id ? record : x) : [...rows, record];
+    if (!saveCatches(next)) { errors.hidden = false; errors.textContent = "Couldn't save on this device. Check available storage and try again."; return; }
+    closeSheet(); render(); toast(existing ? "Catch updated" : "Catch saved");
+  });
+  openSheet(existing ? "Edit catch" : "Log a catch", form, opener);
+}
+function openCatchDetail(id, opener) {
+  const row = sortedCatches().find((x) => x.id === id); if (!row) return;
+  const body = h("div", { class: "catch-detail" }, h("p", {}, `${row.count} · ${row.disposition}`), h("p", {}, `${row.spotName} · ${modeLabel(row.mode)}`),
+    h("p", {}, new Intl.DateTimeFormat("en-US", { dateStyle: "full", timeStyle: "short", timeZone: TZ }).format(new Date(row.occurredAt))),
+    row.lengthIn ? h("p", {}, `${row.lengthIn} in`) : null, row.bait ? h("p", {}, `Bait or lure: ${row.bait}`) : null, row.notes ? h("p", {}, row.notes) : null,
+    row.context ? h("p", { class: "fine" }, `Report context: ${row.context.verdict} · fit ${row.context.fit ?? "—"} · ${fmtTime(row.context.runGeneratedAt)}`) : null,
+    h("div", { class: "cta" }, h("button", { class: "btn", type: "button", onclick: () => openCatchForm(row, opener) }, "Edit"), h("button", { class: "btn alt", type: "button", onclick: () => confirmDeleteCatch(row) }, "Delete")));
+  openSheet(row.species === "other" ? row.otherSpecies : row.speciesName, body, opener);
+}
+function confirmDeleteCatch(row) {
+  const body = h("div", {}, h("p", {}, "Delete this catch from this device?"), h("div", { class: "cta" },
+    h("button", { class: "btn alt", type: "button", onclick: () => { closeSheet(); toast("Catch kept"); } }, "Keep catch"),
+    h("button", { class: "btn danger", type: "button", onclick: () => { saveCatches(sortedCatches().filter((x) => x.id !== row.id)); closeSheet(); render(); toast("Catch deleted"); } }, "Delete catch")));
+  openSheet("Delete catch?", body);
+}
+async function exportCatchLog() {
+  const csv = catchesToCsv(sortedCatches()), file = new File([csv], "flagler-catch-log.csv", { type: "text/csv" });
+  try {
+    if (navigator.share && (!navigator.canShare || navigator.canShare({ files: [file] }))) {
+      await navigator.share(navigator.canShare?.({ files: [file] }) ? { title: "Flagler Fishing catch log", files: [file] } : { title: "Flagler Fishing catch log", text: csv });
+      return;
+    }
+  } catch (error) { if (error?.name === "AbortError") return; }
+  const url = URL.createObjectURL(file), a = h("a", { href: url, download: file.name }); document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url); toast("CSV exported");
+}
+
 /* ---------- sheets ---------- */
 let sheet = null;
 function openSheet(title, body, opener) {
@@ -719,6 +848,19 @@ function closeSheet(silent) {
   if (silent) return;
   const target = prev?.isConnected ? prev : prevFk ? document.querySelector(`[data-fk="${prevFk}"]`) : null;
   (target ?? $("view")).focus?.({ preventScroll: true });
+}
+async function shareReport() {
+  const url = new URL(location.href); url.hash = location.hash;
+  try {
+    if (navigator.share) { await navigator.share({ title: document.title, text: "Flagler Fishing conditions and outlook", url: url.href }); return; }
+    await navigator.clipboard.writeText(url.href); toast("Report link copied");
+  } catch (error) { if (error?.name !== "AbortError") toast("Couldn't share the report link"); }
+}
+function openMoreSheet(opener) {
+  const body = h("div", { class: "more-sheet" }, h("section", { class: "block" }, h("h3", {}, "Appearance"),
+    segment("Appearance", THEMES, store.get("theme", "auto"), setTheme, "appearance"), h("p", { class: "fine" }, "Auto uses Dark by day and Night after sunset.")),
+    h("section", { class: "block" }, h("h3", {}, "Share"), h("button", { class: "btn", type: "button", onclick: shareReport }, "Share report")));
+  openSheet("More", body, opener);
 }
 function openSpotSheet(opener) {
   const c = ctx();
@@ -798,10 +940,17 @@ function openSpecies(id, opener) {
 /* ---------- toast, review ---------- */
 let toastTimer;
 function toast(m) { const t = $("toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 2600); }
-function setTheme(t) { if (t === "auto") delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t; writeHash(); syncReview(); }
+function setTheme(t) {
+  if (!["auto", "dark", "night", "light"].includes(t)) return;
+  store.set("theme", t);
+  const p = new URLSearchParams(location.hash.slice(1)); p.delete("theme"); history.replaceState(null, "", `#${p}`);
+  applyThemePreference(t, null);
+  document.querySelectorAll('[data-fk^="Appearance-"]').forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.fk === `Appearance-${t}`)));
+  syncReview();
+}
 function syncReview() {
   document.querySelectorAll("#review-states button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === st.state)));
-  const t = document.documentElement.dataset.theme ?? "auto";
+  const t = store.get("theme", "auto");
   document.querySelectorAll("#review-themes button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === t)));
 }
 async function setState(id) { const def = STATES.find((x) => x.id === id); await load(def.file); st.state = id; st.tab = "today"; st.h = "today"; st.spot = null; st.mode = null; st.species = null; st.t = null; lastSpoken = ""; closeSheet(true); render({ resetScroll: true }); }
@@ -822,6 +971,7 @@ async function init() {
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.tab)));
   $("home").addEventListener("click", () => go("today"));
   $("spot-pill").addEventListener("click", (e) => openSpotSheet(e.currentTarget));
+  $("more").addEventListener("click", (e) => openMoreSheet(e.currentTarget));
   $("refresh").addEventListener("click", () => {
     const chip = $("fresh"), rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     chip.replaceChildren(rm ? "" : h("span", { class: "spin" }), "Updating…");
@@ -851,11 +1001,36 @@ async function init() {
     $("view").setAttribute("aria-busy", "false");
   }
   addEventListener("focus", () => { refreshLiveData().then(() => render()).catch(error => console.warn("V5 focus refresh failed", error)); });
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) refreshLiveData().then(() => render()).catch(error => console.warn("V5 visibility refresh failed", error)); });
-  addEventListener("online", () => { refreshLiveData().then(() => render()).catch(error => console.warn("V5 online refresh failed", error)); });
-  addEventListener("offline", () => { dataOffline = true; refreshLiveData().then(() => render()).catch(error => console.warn("V5 offline restore failed", error)); });
-  setInterval(() => { refreshLiveData().then(() => render()).catch(error => console.warn("V5 scheduled refresh failed", error)); }, 5 * 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { syncTheme(); refreshLiveData().then(() => render()).catch(error => console.warn("V5 visibility refresh failed", error)); } });
+  addEventListener("focus", () => syncTheme());
+  addEventListener("online", () => { syncTheme(); refreshLiveData().then(() => render()).catch(error => console.warn("V5 online refresh failed", error)); });
+  addEventListener("offline", () => { dataOffline = true; syncTheme(); refreshLiveData().then(() => render()).catch(error => console.warn("V5 offline restore failed", error)); });
+  setInterval(() => { syncTheme(); refreshLiveData().then(() => render()).catch(error => console.warn("V5 scheduled refresh failed", error)); }, 5 * 60 * 1000);
   setInterval(() => render(), 60 * 1000);
   addEventListener("hashchange", async () => { closeSheet(true); const p = new URLSearchParams(location.hash.slice(1)); const d = STATES.find((x) => x.id === p.get("state")); if (d) await load(d.file); readHash(); render(); });
+  let swipe = null;
+  const scrollsHorizontally = (target) => { for (let el = target; el && el !== $("view"); el = el.parentElement) { const style = getComputedStyle(el); if (el.matches(".scrub,.seg,input,select,textarea,[contenteditable=true]") || /(auto|scroll)/.test(`${style.overflowX} ${style.overflow}`) && el.scrollWidth > el.clientWidth + 1) return true; } return false; };
+  document.addEventListener("touchstart", (e) => {
+    const t = e.touches[0], target = e.target;
+    if (!$("view").contains(target) || sheet || t.clientX < 20 || t.clientX > innerWidth - 20 || scrollsHorizontally(target)) { swipe = null; return; }
+    swipe = { x: t.clientX, y: t.clientY, at: performance.now(), dx: 0, dy: 0, view: $("view") };
+  }, { passive: true });
+  document.addEventListener("touchmove", (e) => {
+    if (!swipe) return;
+    const t = e.touches[0]; swipe.dx = t.clientX - swipe.x; swipe.dy = t.clientY - swipe.y;
+    if (Math.abs(swipe.dx) > Math.abs(swipe.dy) * 1.5) {
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) swipe.view.style.transform = `translateX(${swipe.dx}px)`;
+      e.preventDefault();
+    }
+  }, { passive: false });
+  const finishSwipe = () => {
+    if (!swipe) return;
+    const { dx, dy, at, view } = swipe; swipe = null;
+    const elapsed = Math.max(1, performance.now() - at), velocity = Math.abs(dx) / elapsed;
+    view.classList.add("tab-snap"); view.style.transform = ""; setTimeout(() => view.classList.remove("tab-snap"), 260);
+    if (Math.abs(dx) <= Math.abs(dy) * 1.5 || !(Math.abs(dx) >= 60 || Math.abs(dx) >= 24 && velocity >= .45)) return;
+    const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (dx < 0 ? 1 : -1)]; if (next) go(next);
+  };
+  document.addEventListener("touchend", finishSwipe, { passive: true }); document.addEventListener("touchcancel", finishSwipe, { passive: true });
 }
 init();

@@ -79,3 +79,58 @@ The first screenshot was taken before the app's initial network refresh complete
 - No `site/` files were edited. No commit or push was made. The simulator was restarted once to clear launch state before recapturing.
 - This follow-up edits `ios/bridge.css`, `capacitor.config.json`, `ios/App/App/Base.lproj/LaunchScreen.storyboard`, and `ios/App/App/SceneDelegate.swift`; the screenshots are in `shots/`.
 - Existing unrelated uncommitted/untracked work was preserved. The repository remains on `feature/capacitor-ios` at HEAD `c331db7cbbe5912f59e94c4777ebef52135eb8fe`.
+
+## Follow-up: themes, catch log, swipe navigation, polish, and UX — 2026-10-10
+
+### Outcome
+
+Implemented the task in `.agent-handoff/tasks-2.md`. Prototype preferences now own Auto/Dark/Night/Light appearance; the header has More and Share; the fifth Log tab saves catches locally and exports CSV; touch swipes switch adjacent tabs; responsive controls, focus states, and confirmations are covered by browser tests. The iOS bridge no longer injects theme/share buttons and now supplies the Capacitor Share fallback and tab haptic.
+
+### Files changed
+
+- `site/v5/proto/index.html`, `proto.js`, `proto.css`; added `site/v5/proto/catch-log.js`.
+- `ios/bridge.js`, `ios/bridge.css`; deleted `ios/theme-init.js`.
+- `scripts/build-ios-web.mjs`; added `scripts/test-v5-catch-log.mjs` and `scripts/ux-ios.mjs`.
+- Browser screenshots: `.agent-handoff/shots/ux/{today,spots,species,plan,log}-{dark,night,light}-375.png`.
+- Native screenshot: `.agent-handoff/shots/ux/native-today.png`, captured 12 seconds after simulator launch.
+- Protected `site/` files were not modified.
+
+### Verification (commands and exit codes)
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node scripts/test-logic.mjs` | 0 | Logic, audit regression, and next-hours tests passed. |
+| `node scripts/test-app.mjs` | 0 | App failure-state and offline shell tests passed. |
+| `node scripts/test-catch.mjs` | 0 | Bite outlook, habitat, and confidence tests passed. |
+| `node scripts/test-calculations.mjs` | 0 | Independent calculation checks passed. |
+| `node scripts/test-validator.mjs` | 0 | Generated-output validator tests passed. |
+| `node scripts/test-restore-last-good-api.mjs` | 0 | Last-good API restore checks passed. |
+| `node scripts/test-refresh-status.mjs` | 0 | Refresh-status tests passed. |
+| `node scripts/test-tide-window.mjs` | 0 | Tide-window tests passed. |
+| `node scripts/test-ios-bridge.mjs` | 0 | URL rewrite and saved JSON fallback checks passed. |
+| `node scripts/test-v5-contracts.mjs` | 0 | 11 contract groups passed. |
+| `node scripts/test-v5-hindcast.mjs` | 0 | Skipped: `.cache/hindcast` inputs are absent. |
+| `node scripts/test-v5-integration.mjs` | 0 | Integration checks passed; both 111-observation failure scenarios satisfied the contract. |
+| `node scripts/test-v5-model.mjs` | 0 | 62 passed, 0 failed. |
+| `node scripts/test-v5-proto-data.mjs` | 0 | Live-first, offline-cache, and sample-fallback tests passed. |
+| `node scripts/test-v5-proto-ux.mjs` | 0 | Prototype UX regression checks passed. |
+| `node scripts/test-v5-run.mjs` | 0 | 23 passed, 0 failed. |
+| `node scripts/test-v5-sources.mjs` | 0 | 15 passed, 0 failed. |
+| `node scripts/test-v5-catch-log.mjs` | 0 | 9 assertions passed, including New York month-boundary handling. |
+| `node --check site/v5/proto/proto.js && node --check site/v5/proto/catch-log.js && node --check ios/bridge.js && node --check scripts/ux-ios.mjs` | 0 | Syntax checks passed. |
+| `npm run ios:web` | 0 | Generated the native web bundle. |
+| `node scripts/ux-ios.mjs` | 0 | Installed Chrome fallback; 4 theme preferences persisted, hash override preserved preference, 10 swipes passed, catch add/edit/delete/confirm/validation/export passed, 15 screenshots saved, 20 tab/viewport overflow checks passed at 320/375/393/430, no console errors. |
+| `npm run ios:sync` | 0 | Copied the updated bundle and synced six Capacitor plugins. |
+| `xcodebuild -quiet -project ios/App/App.xcodeproj -scheme App -destination 'id=A488F352-DB47-40AE-8C25-D256D90FB728' -derivedDataPath /tmp/flagler-fishing-ios-derived-20261010 CODE_SIGNING_ALLOWED=NO build` | 0 | Simulator build succeeded. Xcode printed its benign destination-platform diagnostic. |
+| `xcrun simctl terminate A488F352-DB47-40AE-8C25-D256D90FB728 com.trointelligence.flaglerfishing && xcrun simctl install A488F352-DB47-40AE-8C25-D256D90FB728 /tmp/flagler-fishing-ios-derived-20261010/Build/Products/Debug-iphonesimulator/App.app` | 0 | Updated the installed simulator app. |
+| `xcrun simctl launch A488F352-DB47-40AE-8C25-D256D90FB728 com.trointelligence.flaglerfishing` | 0 | Launched the app. |
+| `sleep 12 && xcrun simctl io A488F352-DB47-40AE-8C25-D256D90FB728 screenshot .agent-handoff/shots/ux/native-today.png` | 0 | Captured Today after the 12-second wait; screenshot shows the rendered report and the complete four-control header. |
+| `git diff --check` | 0 | No whitespace errors. |
+
+Playwright WebKit binaries were not installed. The UX script used the existing `/Applications/Google Chrome.app` binary with iPhone 15 Pro-sized touch emulation and did not download a browser. Hindcast behavior remains unverified because its cached inputs are unavailable.
+
+### Git state
+
+- Root: `/Users/christiannunez/flagler-fishing-ios`; branch `feature/capacitor-ios`; HEAD `df29eaea55c41d5e90ad0156619e908c3539bb78`.
+- All implementation and report changes are uncommitted. No commit was created. `.agent-handoff/tasks-2.md` remains untracked as supplied. A separate untracked `.agent-handoff/tasks-3.md` appeared during this work and was left untouched.
+- Independent review should check native Share-sheet and haptic behavior on a physical iPhone; simulator evidence verifies build, install, launch, and rendered UI only.

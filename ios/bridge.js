@@ -76,9 +76,12 @@ if (native && globalThis.fetch) {
   try { if (navigator.serviceWorker) navigator.serviceWorker.register = async () => ({ scope: location.origin }); } catch {}
 
   const plugins = globalThis.Capacitor?.Plugins ?? {};
+  if (!navigator.share && plugins.Share?.share) {
+    try { Object.defineProperty(navigator, "share", { configurable: true, value: (data = {}) => plugins.Share.share({ ...data, url: PAGES_BASE, dialogTitle: data.title ?? "Share Flagler Fishing" }) }); } catch {}
+  }
   document.addEventListener("click", (event) => {
     const button = event.target?.closest?.("button");
-    if (button && !button.disabled) plugins.Haptics?.impact?.({ style: "LIGHT" }).catch?.(() => {});
+    if (button && !button.disabled && !button.matches(".tab")) plugins.Haptics?.impact?.({ style: "LIGHT" }).catch?.(() => {});
 
     const link = event.target?.closest?.("a[href]");
     if (!link) return;
@@ -89,49 +92,15 @@ if (native && globalThis.fetch) {
     plugins.Browser?.open?.({ url: url.href }).catch?.(() => globalThis.open(url.href, "_system"));
   });
 
+  document.addEventListener("v5:tab", () => plugins.Haptics?.impact?.({ style: "LIGHT" }).catch?.(() => {}));
+
   document.addEventListener("DOMContentLoaded", () => {
-    const tools = document.querySelector(".tools");
-    const themeApi = globalThis.FFTheme;
-    if (tools && themeApi) {
-      const themeButton = document.createElement("button");
-      themeButton.type = "button";
-      themeButton.className = "ios-theme-button";
-      const labels = { dark: "Dark", night: "Night", light: "Light" };
-      const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
-      const icons = {
-        dark: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/>'),
-        night: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor"/><path d="M17 3v3M15.5 4.5h3"/>'),
-        light: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
-      };
-      const paint = () => {
-        const t = themeApi.get();
-        themeButton.innerHTML = icons[t];
-        themeButton.setAttribute("aria-label", `Theme: ${labels[t]}. Tap to change.`);
-      };
-      themeButton.addEventListener("click", () => { themeApi.next(); paint(); });
-      paint();
-      tools.append(themeButton);
-    }
-    if (tools && plugins.Share) {
-      const share = document.createElement("button");
-      share.type = "button";
-      share.className = "ios-share-button";
-      share.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
-      share.setAttribute("aria-label", "Share Flagler Fishing report");
-      share.addEventListener("click", () => plugins.Share.share({
-        title: document.title,
-        text: "Flagler Fishing conditions and outlook",
-        url: PAGES_BASE,
-        dialogTitle: "Share Flagler Fishing",
-      }).catch?.(() => {}));
-      tools.append(share);
-    }
     const statusBar = plugins.StatusBar;
     // Capacitor naming: style "DARK" = light status-bar text (for dark pages), "LIGHT" = dark text.
     const media = globalThis.matchMedia?.("(prefers-color-scheme: dark)");
     const syncStatusBar = () => {
       const forced = document.documentElement.getAttribute("data-theme");
-      const dark = forced === "dark" || (forced !== "light" && !!media?.matches);
+      const dark = forced !== "light";
       statusBar?.setStyle?.({ style: dark ? "DARK" : "LIGHT" })?.catch?.(() => {});
     };
     syncStatusBar();
