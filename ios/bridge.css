@@ -1,0 +1,75 @@
+:root {
+  color-scheme: dark;
+  --ios-top-inset: env(safe-area-inset-top, 0px);
+  --ios-bottom-inset: env(safe-area-inset-bottom, 0px);
+}
+
+html {
+  min-height: 100%;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding-bottom: calc(var(--ios-bottom-inset) + 12px);
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input,
+textarea,
+select {
+  scroll-margin-bottom: 32vh;
+}
+
+body.ios-keyboard-open main {
+  scroll-margin-bottom: 40vh;
+}
+
+.ios-saved-data-banner {
+  position: sticky;
+  z-index: 20;
+  top: var(--ios-top-inset);
+  margin: 0 auto 0.75rem;
+  padding: 0.7rem 1rem;
+  max-width: 72rem;
+  color: #fff;
+  background: #344762;
+  border: 1px solid #91b7e2;
+  border-radius: 0.75rem;
+  font: 600 0.9rem/1.35 system-ui, sans-serif;
+}
+
+.ios-share-button {
+  width: 52px;
+  min-width: 52px;
+  min-height: 44px;
+  margin-left: 0.35rem;
+  padding: 0 4px;
+  flex: none;
+  color: inherit;
+  background: transparent;
+  border: 1px solid currentColor;
+  border-radius: 0.75rem;
+  font: inherit;
+}
+
+@media (max-width: 420px) {
+  .bar {
+    padding-inline: max(16px, env(safe-area-inset-left)) max(16px, env(safe-area-inset-right));
+  }
+
+  .brand {
+    flex-basis: 100%;
+  }
+
+  .brand p {
+    max-width: none;
+  }
+
+  .tools {
+    margin-left: auto;
+  }
+}

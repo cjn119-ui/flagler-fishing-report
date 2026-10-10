@@ -1,4 +1,7 @@
 node_modules
+ios-www/
+ios/App/Pods/
+DerivedData/
 .DS_Store
 site/api/
 .cache/

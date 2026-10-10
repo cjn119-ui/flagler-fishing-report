@@ -1,0 +1,10 @@
+{
+  "appId": "com.trointelligence.flaglerfishing",
+  "appName": "Flagler Fishing",
+  "webDir": "ios-www",
+  "bundledWebRuntime": false,
+  "ios": {
+    "backgroundColor": "#0B1117",
+    "contentInset": "never"
+  }
+}
