@@ -7,12 +7,23 @@ import { fileURLToPath } from "node:url";
 import { ACTIVE_SPOTS } from "../site/v5/spots.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const out = join(root, ".agent-handoff/shots/redesign");
+const liveMode = process.env.UX_LIVE === "1";
+const out = join(root, `.agent-handoff/shots/afix/${liveMode ? "live" : "sample"}`);
 await mkdir(out, { recursive: true });
 const require = createRequire(import.meta.url);
 const { webkit, chromium, firefox, devices } = require("/opt/homebrew/lib/node_modules/playwright");
 const sampleToday = await readFile(join(root, "ios-www/v5/proto/sample-rich.json"), "utf8");
 const sampleTomorrow = await readFile(join(root, "ios-www/v5/proto/sample-rich-tomorrow.json"), "utf8");
+let todayBody = sampleToday, tomorrowBody = sampleTomorrow;
+if (liveMode) {
+  const [today, tomorrow] = await Promise.all(["today", "tomorrow"].map(async (horizon) => {
+    const response = await fetch(`https://cjn119-ui.github.io/flagler-fishing-report/api/v5/${horizon}.json`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Live ${horizon} report returned HTTP ${response.status}`);
+    return response.text();
+  }));
+  todayBody = today; tomorrowBody = tomorrow;
+  console.log("ux-ios: running against live API reports fetched from Pages.");
+}
 const server = createServer(async (request, response) => {
   try {
     const pathname = decodeURIComponent(new URL(request.url, "http://localhost").pathname);
@@ -44,7 +55,7 @@ if (browserName !== "WebKit") console.log(`WebKit unavailable; using installed $
 const descriptor = devices["iPhone 15 Pro"] ?? { viewport: { width: 393, height: 852 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true };
 const context = await browser.newContext({ ...descriptor, viewport: { width: 375, height: 812 }, reducedMotion: "no-preference" });
 await context.route("**/api/**", async (route) => {
-  const body = route.request().url().includes("tomorrow") ? sampleTomorrow : sampleToday;
+  const body = route.request().url().includes("tomorrow") ? tomorrowBody : todayBody;
   await route.fulfill({ status: 200, contentType: "application/json", body });
 });
 const page = await context.newPage();
@@ -69,16 +80,19 @@ async function reloadApp() {
 }
 async function setAppearance(name) {
   await page.locator("#more").click();
-  await page.locator(".more-sheet .appearance").getByRole("button", { name, exact: true }).click();
+  await page.locator(".more-sheet .appearance").getByRole("button", { name, exact: true }).evaluate((button) => button.click());
   const values = { Auto: "auto", Dark: "dark", Night: "night", Light: "light" };
-  await page.waitForFunction((v) => localStorage.getItem("v5proto.theme") === JSON.stringify(v), values[name]);
+  await page.waitForFunction((v) => localStorage.getItem("v5proto.theme") === JSON.stringify(v), values[name], { timeout: 5000 }).catch(async (error) => {
+    console.log("appearance debug", { requested: name, stored: await page.evaluate(() => localStorage.getItem("v5proto.theme")), preference: await page.locator("html").getAttribute("data-theme-preference"), buttons: await page.locator(".more-sheet .appearance button").evaluateAll((items) => items.map((button) => [button.textContent, button.getAttribute("aria-pressed")])), errors: consoleErrors }); throw error;
+  });
   await page.locator(".xbtn[aria-label=Close]").evaluate((button) => button.click());
   await page.waitForTimeout(250);
 }
 async function touchSwipe(selector, dx, dy = 0) {
   if (selector !== "#view") await page.locator(selector).scrollIntoViewIfNeeded();
   const coords = await page.locator(selector).evaluate((el) => {
-    const box = el.getBoundingClientRect(), x = Math.max(24, Math.min(innerWidth - 24, box.left + Math.min(box.width / 2, innerWidth / 2))), y = el.matches(".scrub") ? box.top + box.height / 2 : Math.min(innerHeight - 120, Math.max(box.top + 80, innerHeight / 2));
+    const safe = el.id === "view" ? el.querySelector(".page-heading") ?? el.querySelector("#verdict") ?? el : el;
+    const box = safe.getBoundingClientRect(), x = Math.max(24, Math.min(innerWidth - 24, innerWidth / 2)), y = el.matches(".scrub") ? box.top + box.height / 2 : Math.max(24, Math.min(innerHeight - 120, box.top + box.height / 2));
     return { x, y };
   });
   if (touchCdp && selector !== ".scrub") {
@@ -102,18 +116,41 @@ async function dragTabbar(fromIndex, toIndex) {
   for (let step = 1; step <= 5; step++) await page.mouse.move(x(fromIndex + (toIndex - fromIndex) * step / 5), y);
   await page.mouse.up(); await page.waitForTimeout(360);
 }
+async function dragSegment(fromIndex, toIndex) {
+  const box=await page.locator(".seg.day").boundingBox(), x=(index)=>box.x+box.width*((index+.5)/2), y=box.y+box.height/2;
+  await page.mouse.move(x(fromIndex),y); await page.mouse.down();
+  for(let step=1;step<=5;step++) await page.mouse.move(x(fromIndex+(toIndex-fromIndex)*step/5),y);
+  await page.mouse.up(); await page.waitForTimeout(420);
+}
 async function assertSheetExit() {
   await page.locator("#more").click();
-  const panel = page.locator(".sheet");
-  await panel.waitFor();
-  await page.locator(".xbtn[aria-label=Close]").evaluate((button) => button.click());
-  const started = Date.now();
-  await page.waitForTimeout(155);
-  assert.equal(await panel.count(), 1, "sheet must remain in DOM during its exit animation");
-  assert.ok(Date.now() - started >= 150, "sheet exit must not be removed before 150ms");
-  await page.waitForTimeout(100);
-  await panel.waitFor({ state: "detached", timeout: 600 });
-  assert.ok(Date.now() - started <= 600, `sheet must detach within 600ms (observed ${Date.now() - started}ms)`);
+  await page.locator(".sheet").waitFor();
+  const elapsed = await page.evaluate(() => new Promise((resolve) => {
+    const root = document.querySelector("#sheet-root"), panel = root.querySelector(".sheet"), start = performance.now();
+    const observer = new MutationObserver(() => { if (!root.contains(panel)) { observer.disconnect(); resolve(performance.now() - start); } });
+    observer.observe(root, { childList: true, subtree: true });
+    document.querySelector(".xbtn[aria-label=Close]").click();
+  }));
+  assert.ok(elapsed >= 170 && elapsed <= 600, `sheet removal must follow its exit animation (observed ${elapsed.toFixed(1)}ms)`);
+}
+async function assertButtonContrast() {
+  const failures = await page.evaluate(() => {
+    const rgb = (value) => { const nums=value.match(/[\d.]+/g)?.map(Number); return nums?.length>=3?nums.slice(0,3).map((x)=>x/255):null; };
+    const lum = (value) => { const c=rgb(value); if(!c)return null; const [r,g,b]=c.map((x)=>x<=.04045?x/12.92:((x+.055)/1.055)**2.4); return .2126*r+.7152*g+.0722*b; };
+    return [...document.querySelectorAll(".btn")].filter((button)=>button.getClientRects().length&&getComputedStyle(button).visibility==="visible").map((button)=>{const s=getComputedStyle(button),a=lum(s.color),b=lum(s.backgroundColor);return {label:button.innerText.trim(),ratio:a==null||b==null?0:(Math.max(a,b)+.05)/(Math.min(a,b)+.05),color:s.color,background:s.backgroundColor};}).filter((x)=>x.ratio<4.5);
+  });
+  assert.deepEqual(failures, [], `every visible .btn must meet 4.5:1 text contrast: ${JSON.stringify(failures)}`);
+}
+async function loadVisibleImages() {
+  await page.evaluate(async () => {
+    const images=[...document.images];
+    for (const image of images) image.loading="eager";
+    for (let y=0; y<document.body.scrollHeight; y+=Math.max(400,innerHeight*.75)) { window.scrollTo(0,y); await new Promise(requestAnimationFrame); }
+    const loaded=Promise.all(images.map((image)=>image.complete?Promise.resolve():new Promise((resolve)=>{image.addEventListener("load",resolve,{once:true});image.addEventListener("error",resolve,{once:true});})));
+    await Promise.race([loaded,new Promise((resolve)=>setTimeout(resolve,8000))]);
+    await Promise.all(images.filter((image)=>image.complete&&image.naturalWidth>0).map((image)=>image.decode().catch(()=>{})));
+    window.scrollTo(0,0);
+  });
 }
 async function startFrameTrace() {
   await page.evaluate(() => { window.__frameTimes = []; window.__frameLast = performance.now(); window.__frameTick = () => { const n = performance.now(); window.__frameTimes.push(n - window.__frameLast); window.__frameLast = n; window.__frameHandle = requestAnimationFrame(window.__frameTick); }; window.__frameHandle = requestAnimationFrame(window.__frameTick); });
@@ -140,6 +177,10 @@ try {
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark", "auto should resolve to daytime Dark at frozen midday");
   assert.equal(await page.evaluate(() => localStorage.getItem("v5proto.theme")), null, "auto default must not write a preference");
   assert.equal(await page.locator("#spot-label").innerText(), "Best anywhere", "default spot pill label must remain complete at 375px");
+  assert.doesNotMatch(await page.locator("#verdict .bet .mchip").innerText().catch(()=>""), /^Pier$/i, "default verdict must not recommend closed pier fishing");
+  await page.locator(".seg.day").waitFor();
+  await dragSegment(0,1); assert.equal(await page.locator(".seg.day button[aria-pressed=true]").innerText(),"Tomorrow","report-day indicator drag commits the nearer option");
+  await dragSegment(1,0); assert.equal(await page.locator(".seg.day button[aria-pressed=true]").innerText(),"Today","report-day drag snaps back to Today");
   const headerMetrics = await page.evaluate(() => Object.fromEntries([".bar", ".brand", "#spot-pill", ".tools", "#refresh", "#more"].map((s) => { const e = document.querySelector(s), r = e.getBoundingClientRect(); return [s, { left: r.left, right: r.right, width: r.width }]; })));
   assert.ok(headerMetrics["#spot-pill"].right < 375, `spot pill must fit beside header actions: ${JSON.stringify(headerMetrics)}`);
   assert.equal(await page.locator("#toast").getAttribute("aria-live"), "polite");
@@ -228,6 +269,29 @@ try {
       await page.waitForFunction((name) => document.querySelector(".tab[aria-current=page]")?.dataset.tab === name, tab, { timeout: 3000 });
       await page.locator("#view[aria-busy=false]").waitFor();
       await page.waitForTimeout(320);
+      assert.equal(await page.locator(".seg.day").count(), tab === "log" || tab === "plan" ? 0 : 1, `report-day control visibility on ${tab}`);
+      console.log(`ux screenshot: ${tab}/${theme}`);
+      await assertButtonContrast();
+      await loadVisibleImages();
+      const brokenImages=await page.evaluate(()=>[...document.querySelectorAll("img.photo")].filter((image)=>!image.classList.contains("photo-placeholder")&&image.naturalWidth===0).map((image)=>image.alt||image.src));
+      assert.deepEqual(brokenImages,[],`photos must decode when scrolled into view on ${tab}/${theme}`);
+      if(tab==="today"&&liveMode){
+        const height=await page.evaluate(()=>document.documentElement.scrollHeight);
+        assert.ok(height<=2.3*812,`live Today height ${height}px exceeds 2.3 screen heights`);
+      }
+      if(tab==="spots"){
+        await page.evaluate(()=>{location.hash="spot=flagler-pier&tab=spots";});
+        await page.waitForFunction(()=>location.hash.includes("flagler-pier"));
+        assert.ok(await page.getByText("Pier closed · rebuilding",{exact:true}).count(),"Flagler closure badge appears on the spot picker/card");
+        assert.ok(await page.getByText("Photo: 2016, before Hurricane Ian",{exact:true}).count(),"Flagler photo carries its historical caption");
+        await page.locator(".spot-feature .btn").click();
+        await page.locator(".closure-detail").waitFor();
+        assert.ok((await page.locator(".closure-detail").innerText()).includes("January 2027"),"Flagler detail explains its estimated reopening month");
+        assert.ok(await page.locator('.closure-detail a[href="https://www.cityofflaglerbeach.com/thepier"]').count(),"Flagler detail includes the source link");
+        await page.locator(".xbtn[aria-label=Close]").click();
+        await page.locator(".sheet").waitFor({state:"detached",timeout:1000});
+        await page.goto(`${base}#tab=spots`,{waitUntil:"domcontentloaded"}); await page.locator("#view[aria-busy=false]").waitFor();
+      }
       await page.screenshot({ path: join(out, `${tab}-${theme}-375.png`), fullPage: true });
     }
   }

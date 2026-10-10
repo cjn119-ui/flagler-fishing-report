@@ -52,7 +52,7 @@ await test('rejects missing required fields and invalid eligibility with exact p
   const run=runFixture();delete run.historyHash;assert.throws(()=>validatePredictionRun(run),/run\.historyHash: expected required field/);
   const rec=recFixture();rec.targets=[{eligibility:'impossible'}];
   const species=createSpeciesPrediction({id:'sp1',speciesId:'whiting',locationId:'flagler-pier',mode:'pier',window:windowFixture(),suitability:70,band:'Great',calibratedProbability:null,confidence:70,confidenceReasons:[],eligibility:'impossible',eligibilityReason:{},caps:[],useLine:message(),historicalRate:{rate:null,n:null,lowSample:false,band:null,month:10,unit:'trips',sourceLabel:'pier and beach surveys'},seasonCurve:Array(12).fill(null),waterFit:{},detailsRef:null});
-  assert.throws(()=>validateSpeciesPrediction(species),/speciesPrediction\.eligibility: expected one of realistic, rare, off-list, bycatch, no-structure/);
+  assert.throws(()=>validateSpeciesPrediction(species),/speciesPrediction\.eligibility: expected one of realistic, rare, off-list, bycatch, no-structure, closed/);
   assert.throws(()=>validateRecommendation({...rec,verdict:'SKIP',reason:null}),/recommendation\.reason: expected required for SKIP/);
 });
 

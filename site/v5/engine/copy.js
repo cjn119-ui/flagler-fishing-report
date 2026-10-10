@@ -7,6 +7,7 @@ export const REASON_COPY = Object.freeze({
   notRealistic: "Survey history is too low to make this a realistic target.",
   bycatch: "This fish is treated as bycatch, not a target.",
   structureRequired: "This fish needs structure such as a pier, bridge, or rocks.",
+  closedForConstruction: "This fishing mode is closed during construction.",
   notOnSpotList: "Not usually caught at the spots we cover.",
   belowRealisticFloor: "Survey history is too low to make this a realistic target.",
   realistic: "Survey history supports this as a realistic target.",

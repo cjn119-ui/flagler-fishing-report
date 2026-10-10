@@ -25,3 +25,23 @@ Review was done with LIVE data (copy https://cjn119-ui.github.io/flagler-fishing
 
 ## Verify (no faked results)
 All suites (pages.yml list, scripts/test-v5-*.mjs, test-ios-bridge, test-v5-catch-log, new closure tests) + ux-ios (sample mode) pass twice in a row; ux-ios UX_LIVE=1 passes once. Screenshots (sample + live) for every tab × Dark/Night/Light at 375 into .agent-handoff/shots/afix/. Then ios:sync, xcodebuild for simulator A488F352-DB47-40AE-8C25-D256D90FB728, install, launch, native screenshot. Report in codex-results.md with commands and exit codes.
+
+## OWNER ADDITIONS (2026-10-10) — same job, higher priority than P2/P3
+A partial first attempt was cancelled; scripts/test-v5-species-presentation.mjs may exist from it — inspect and keep or finish it.
+
+### O1. Today (landing page) is too spread out — make it compact
+Keep every element from mesh-map.md reachable (disclosures are fine), but restructure:
+- Above the fold at 375×812 (below header) must show: spot + date, verdict badge + headline, best window time + top species, and current conditions. Hero image shrinks to ~190–210 pt; the verdict ("Fishing outlook") card overlaps the hero's bottom edge (concept style); the conditions strip becomes one compact row inside/under the hero (temp+sky · wind · waves · water — no duplicate conditions grid further down; merge the old Conditions tiles into this row + "Why").
+- Best bet folds into the verdict card as one row (mode chip · window · chevron).
+- Targets → the concept's horizontal species row (image, name, fit word); tapping opens the existing species sheet; suitability bars move into that sheet.
+- "Suitability = …" note, local history, Why, and Confidence collapse into one "Why this verdict" disclosure at the bottom of the verdict card.
+- Best times chart: ~140 pt tall; the selected-hour detail becomes one inline line (time · fit · tide · light) instead of tiles; species-at-hour list only inside the disclosure.
+- Today vs tomorrow → one compact row (two verdict chips + windows).
+- Other spots → horizontal scroll of small cards (thumbnail, name, verdict, window), first 6 + "See all".
+- Rhythm: 12 pt between cards, 16 pt card padding, no full-width empty space. Target: Today total height ≤ 2.3 screen heights at 375×812 with live data (assert in ux-ios UX_LIVE).
+### O2. Bottom tab bar in the Today/Tomorrow segmented style
+The owner likes the Today/Tomorrow control. Restyle the tab bar to the same language: inset pill track (same fill, border, inner shadow) with a raised sliding indicator pill (same fill, depth and radius as the segment's `.seg::before`), icon + label inside each slot, active label/icon colour the same as the active segment text. Keep it floating with safe-area spacing. Works in Dark/Night/Light.
+### O3. Both must slide, smoothly
+- Today/Tomorrow segment: indicator animates between options with the spring curve; it can also be dragged — the indicator follows the finger and snaps to the nearer option on release (commit changes the report day).
+- Tab bar: indicator slides between tabs with the same spring on tap; follows the finger during a tab-bar drag (snap on release, haptic tick per boundary); AND tracks content-swipe progress in real time (indicator position interpolates with the page drag dx, then settles with the page).
+- Only transform/opacity animated; no layout thrash; 60 fps target. ux-ios: tap, drag and content-swipe paths for both controls; frame-time sampling during them (report p95 and frames > 25 ms).

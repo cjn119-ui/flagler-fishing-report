@@ -6,8 +6,8 @@ export function bestSpeciesCandidate(candidates = []) {
 export function speciesEligibilityLabel(candidate) {
   if (!candidate || candidate.eligibility === "realistic") return "";
   const code = candidate.eligibilityReason?.code;
-  return ({ belowRealisticFloor: "Rarely caught", historyUnavailable: "No survey data", notOnSpotList: "Not on our spot lists", structureRequired: "Needs structure", bycatch: "Bycatch" })[code]
-    ?? ({ rare: "Rarely caught", "off-list": "Not on our spot lists", "no-structure": "Needs structure", bycatch: "Bycatch" })[candidate.eligibility]
+  return ({ belowRealisticFloor: "Rarely caught", historyUnavailable: "No survey data", notOnSpotList: "Not on our spot lists", structureRequired: "Needs structure", bycatch: "Bycatch", closedForConstruction: "Closed for construction" })[code]
+    ?? ({ rare: "Rarely caught", "off-list": "Not on our spot lists", "no-structure": "Needs structure", bycatch: "Bycatch", closed: "Closed for construction" })[candidate.eligibility]
     ?? "Eligibility limited";
 }
 

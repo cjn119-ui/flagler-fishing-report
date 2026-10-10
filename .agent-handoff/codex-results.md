@@ -171,3 +171,55 @@ Browser screenshots are in `.agent-handoff/shots/redesign/` (`{today,spots,speci
 - Root: `/Users/christiannunez/flagler-fishing-ios`; branch `feature/capacitor-ios`; HEAD `4ca425e1f201aa4b2ef49ccf1350e6bc9fde22ff`.
 - All work remains uncommitted. No commit was created and the simulator app was not uninstalled. Pre-existing WIP and concurrent untracked task/image artifacts were preserved.
 - Independent review should resolve why the simulator capture stays on the gradient despite successful WebKit page-load records, and inspect the full-page screenshots where fixed navigation overlays long content.
+
+## Codex task A-fix + pier closures — 2026-10-10
+
+### Implementation
+
+- Added construction closure metadata for the Flagler Beach and St. Augustine piers, including source, checked date, estimated reopening, nearby access notes, and surf-open wording. Closed pier modes now receive `closed` eligibility and return no scored slots/windows; scoring for open modes is unchanged.
+- Added client-side filtering for legacy report candidates, location recommendations, species candidates, spot rows, plan windows, and hourly outlooks. Closure badges/captions appear on spot imagery and cards; native map payloads carry a closure badge. Pier spot details show the reason, estimate, nearby note, source, and checked date. Surf labels identify the beach by the pier.
+- Reworked Today into the compact landing layout, fixed hourly forecast columns and daily summaries, smoothed the tide curve, tightened image loading and thumbnail sizing, and restyled the tab and day controls for animated/drag progress, and hid the Today/Tomorrow control on Plan and Log where it does not change the content. Added live API mode to `ux-ios.mjs` while keeping fixture mode as default.
+- Regenerated the hero as a surf angler at sunrise with no pier and updated image credits. Excluded reference fish images from the native bundle.
+
+### Verification
+
+All commands below ran from `/Users/christiannunez/flagler-fishing-ios`.
+
+| Command | Exit | Result |
+| --- | ---: | --- |
+| `node scripts/test-logic.mjs` | 0 | Passed. |
+| `node scripts/test-app.mjs` | 0 | Passed. |
+| `node scripts/test-catch.mjs` | 0 | Passed. |
+| `node scripts/test-calculations.mjs` | 0 | Passed. |
+| `node scripts/test-validator.mjs` | 0 | Passed. |
+| `node scripts/test-restore-last-good-api.mjs` | 0 | Passed. |
+| `node scripts/test-refresh-status.mjs` | 0 | Passed. |
+| `node scripts/test-tide-window.mjs` | 0 | Passed. |
+| `node scripts/test-generated-output.mjs` | 1 | Could not validate generated reports because this iOS checkout has no `site/api/report.json`, `site/api/next-day-report.json`, or `site/api/live/{weather,marine,tides}.json`; no files were written. |
+| `node scripts/test-v5-contracts.mjs` | 0 | 11 contract groups passed. |
+| `node scripts/test-v5-catch-log.mjs` | 0 | 9 assertions passed. |
+| `node scripts/test-v5-proto-data.mjs` | 0 | Live-first, offline-cache, and sample fallback passed. |
+| `node scripts/test-v5-proto-ux.mjs` | 0 | UX regressions passed. |
+| `node scripts/test-v5-run.mjs` | 0 | 23 passed, 0 failed. |
+| `node scripts/test-v5-closures.mjs` | 0 | Closure catalog/client filtering, closed eligibility, no scoring/windows, and fixture run guardrails passed. |
+| `node scripts/test-v5-sources.mjs` | 0 | 15 passed, 0 failed. |
+| `node scripts/test-v5-integration.mjs` | 0 | Passed. |
+| `node scripts/test-v5-model.mjs` | 0 | 62 passed, 0 failed, including synthetic coverage over open spot/mode pairs. |
+| `node scripts/test-v5-hindcast.mjs` | 0 | Skipped because `.cache/hindcast` is absent. |
+| `node scripts/test-v5-species-presentation.mjs` | 0 | Realistic-first selection, reason labels, fit wording, and historical trip rate passed. |
+| `node scripts/test-ios-bridge.mjs` | 0 | URL rewriting and saved JSON fallback passed. |
+| `node --check site/v5/proto/proto.js && node --check scripts/ux-ios.mjs && git diff --check` | 0 | Passed. |
+| `npm run ios:sync` | 0 | Final native web bundle built and Capacitor sync completed with six plugins. |
+| `node scripts/ux-ios.mjs` (sample, final layout) | 0 | Passed twice consecutively. Each pass captured 15 screens at 375×812 (5 tabs × Dark/Night/Light), with zero console errors. Final frame samples: pass one 921 frames, p95 18 ms, 21 frames >25 ms; pass two 930 frames, p95 19 ms, 27 frames >25 ms. |
+| `UX_LIVE=1 node scripts/ux-ios.mjs` | 0 | Passed once against live Pages reports; captured 15 screens; live Today height passed the 2.3-screen limit; zero console errors. Final frame sample: 913 frames, p95 19 ms, 25 frames >25 ms. |
+| `xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator -destination 'platform=iOS Simulator,id=A488F352-DB47-40AE-8C25-D256D90FB728' -derivedDataPath /tmp/flagler-afix-derived CODE_SIGNING_ALLOWED=NO build` | 0 | `** BUILD SUCCEEDED **`. |
+| `xcrun simctl install A488F352-DB47-40AE-8C25-D256D90FB728 /tmp/flagler-afix-derived/Build/Products/Debug-iphonesimulator/App.app` | 0 | Installed over the existing app; it was not uninstalled. |
+| `xcrun simctl launch A488F352-DB47-40AE-8C25-D256D90FB728 com.trointelligence.flaglerfishing` | 0 | Launched (final PID 59511). |
+| `xcrun simctl io A488F352-DB47-40AE-8C25-D256D90FB728 screenshot .agent-handoff/shots/afix/native-iphone18pro.png` | 0 | Final delayed capture shows the rendered app UI. |
+
+### Artifacts, environment, and Git state
+
+- Browser automation used installed Chromium because the Playwright WebKit executable is unavailable. Native capture is from the booted iPhone 18 Pro simulator; no physical-device behavior was tested.
+- Screenshots are under `.agent-handoff/shots/afix/sample/`, `.agent-handoff/shots/afix/live/`, and `.agent-handoff/shots/afix/native-iphone18pro.png`. The screenshots directory is ignored by Git as configured in `.gitignore`.
+- Root: `/Users/christiannunez/flagler-fishing-ios`; branch `feature/capacitor-ios`; HEAD `7fd8222265ee9881a3c65b81cc2446d2b5b91710`. All changes remain uncommitted; no commit or push was made. The pre-existing modified `.agent-handoff/tasks-Afix.md` was left as-is, and the pre-existing untracked species presentation test was inspected and retained.
+- The separate generated-output validator and hindcast data checks remain unavailable for the specific missing local inputs noted above. Those results do not indicate a failure in the tested iOS/V5 fixtures.

@@ -15,6 +15,7 @@ cpSync(source, output, {
   recursive: true,
   filter: (path) => {
     const relative = path.slice(source.length).replace(/^\//, "");
+    if (relative.startsWith("v5/proto/img/fish/ref/")) return false;
     const first = relative.split(/[\\/]/)[0];
     return !first || !excluded.has(first);
   },

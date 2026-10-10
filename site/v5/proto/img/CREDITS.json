@@ -389,9 +389,9 @@
   },
   {
     "file": "hero.jpg",
-    "subject": "Northeast Florida fishing pier at sunrise",
+    "subject": "Northeast Florida surf fishing beach at sunrise",
     "generated": true,
     "tool": "OpenAI image_gen",
-    "prompt_summary": "Wide sunrise view of a fishing pier extending into the Atlantic, with open sky for overlay text."
+    "prompt_summary": "Wide generated sunrise scene of one angler surf fishing in shallow Atlantic water, offset right with open sky and ocean space for overlay text; no pier or buildings."
   }
 ]
