@@ -31,17 +31,23 @@ for (const name of capacitorPackages) {
   cpSync(from, join(vendorDir, `${name}.js`));
 }
 
-const indexPath = join(output, "index.html");
-let html = readFileSync(indexPath, "utf8");
-const injection = [
-  '<link rel="stylesheet" href="ios/bridge.css">',
-  ...["capacitor", ...capacitorPackages].map((name) => `<script src="ios-vendor/${name}.js"></script>`),
-  '<script type="module" src="ios/bridge.js"></script>',
+// Native entry point is the V5 prototype; the classic root app stays reachable as classic.html.
+const bridgeTags = (prefix) => [
+  `<link rel="stylesheet" href="${prefix}ios/bridge.css">`,
+  ...["capacitor", ...capacitorPackages].map((name) => `<script src="${prefix}ios-vendor/${name}.js"></script>`),
+  `<script type="module" src="${prefix}ios/bridge.js"></script>`,
 ].join("\n");
-if (!html.includes("ios/bridge.js")) {
-  if (!html.includes("</head>")) throw new Error("site/index.html has no closing </head> tag");
-  html = html.replace("</head>", `${injection}\n</head>`);
+function inject(file, prefix) {
+  let html = readFileSync(file, "utf8");
+  if (!html.includes("ios/bridge.js")) {
+    if (!html.includes("</head>")) throw new Error(`${file} has no closing </head> tag`);
+    html = html.replace("</head>", `${bridgeTags(prefix)}\n</head>`);
+  }
+  writeFileSync(file, html);
 }
-writeFileSync(indexPath, html);
+cpSync(join(output, "index.html"), join(output, "classic.html"));
+inject(join(output, "classic.html"), "");
+inject(join(output, "v5/proto/index.html"), "../../");
+writeFileSync(join(output, "index.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark light"><title>Flagler Fishing</title><script>location.replace("v5/proto/index.html" + location.hash);</script></head><body></body></html>\n`);
 
 console.log(`Built native web bundle at ${output}`);

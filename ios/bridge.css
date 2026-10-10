@@ -73,3 +73,6 @@ body.ios-keyboard-open main {
     margin-left: auto;
   }
 }
+
+/* V5 prototype shows its dev-only review control on hostname "localhost", which Capacitor uses. */
+#review { display: none !important; }
