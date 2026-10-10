@@ -5,3 +5,6 @@ DerivedData/
 .DS_Store
 site/api/
 .cache/
+.agent-handoff/shots/
+.claude/
+.playwright-cli/

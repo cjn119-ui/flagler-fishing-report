@@ -23,7 +23,7 @@ cpSync(source, output, {
 const vendorDir = join(output, "ios-vendor");
 mkdirSync(vendorDir, { recursive: true });
 mkdirSync(join(output, "ios"), { recursive: true });
-for (const name of ["bridge.js", "bridge.css"]) cpSync(join(root, "ios", name), join(output, "ios", name));
+for (const name of ["theme-init.js", "bridge.js", "bridge.css"]) cpSync(join(root, "ios", name), join(output, "ios", name));
 cpSync(join(root, "node_modules/@capacitor/core/dist/capacitor.js"), join(vendorDir, "capacitor.js"));
 // geolocation's browser bundle expects a global `synapse`; the helper package exposes `outsystemsSynapse`.
 writeFileSync(join(vendorDir, "synapse.js"), `${readFileSync(join(root, "node_modules/@capacitor/synapse/dist/synapse.js"), "utf8")}\n;var synapse = globalThis.outsystemsSynapse;\n`);
@@ -35,6 +35,7 @@ for (const name of capacitorPackages) {
 
 // Native entry point is the V5 prototype; the classic root app stays reachable as classic.html.
 const bridgeTags = (prefix) => [
+  `<script src="${prefix}ios/theme-init.js"></script>`,
   `<link rel="stylesheet" href="${prefix}ios/bridge.css">`,
   ...["capacitor", "synapse", ...capacitorPackages].map((name) => `<script src="${prefix}ios-vendor/${name}.js"></script>`),
   `<script type="module" src="${prefix}ios/bridge.js"></script>`,

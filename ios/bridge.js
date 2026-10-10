@@ -91,11 +91,32 @@ if (native && globalThis.fetch) {
 
   document.addEventListener("DOMContentLoaded", () => {
     const tools = document.querySelector(".tools");
+    const themeApi = globalThis.FFTheme;
+    if (tools && themeApi) {
+      const themeButton = document.createElement("button");
+      themeButton.type = "button";
+      themeButton.className = "ios-theme-button";
+      const labels = { dark: "Dark", night: "Night", light: "Light" };
+      const svg = (d) => `<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+      const icons = {
+        dark: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z"/>'),
+        night: svg('<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5Z" fill="currentColor"/><path d="M17 3v3M15.5 4.5h3"/>'),
+        light: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+      };
+      const paint = () => {
+        const t = themeApi.get();
+        themeButton.innerHTML = icons[t];
+        themeButton.setAttribute("aria-label", `Theme: ${labels[t]}. Tap to change.`);
+      };
+      themeButton.addEventListener("click", () => { themeApi.next(); paint(); });
+      paint();
+      tools.append(themeButton);
+    }
     if (tools && plugins.Share) {
       const share = document.createElement("button");
       share.type = "button";
       share.className = "ios-share-button";
-      share.textContent = "Share";
+      share.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3M8 7l4-4 4 4M6 11H5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1h-1"/></svg>';
       share.setAttribute("aria-label", "Share Flagler Fishing report");
       share.addEventListener("click", () => plugins.Share.share({
         title: document.title,

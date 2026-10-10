@@ -107,3 +107,22 @@ body.ios-keyboard-open main {
 .card, .btn, .btn-s, .pill, .tab, .sp, .row, .bet { transition: transform .14s ease, box-shadow .14s ease; }
 .btn:active, .btn-s:active, .pill:active, .mark:active, #refresh:active, .tab:active, .sp:active, .row:active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .card, .btn, .btn-s, .pill, .tab, .sp, .row, .bet { transition: none; } .btn:active, .btn-s:active, .pill:active, .tab:active, .mark:active, #refresh:active, .sp:active, .row:active { transform: none; } }
+
+/* ---- Night theme: true black (OLED), dimmer text; dark is the default, light stays available ---- */
+:root[data-night="1"] {
+  --bg: #000000; --surface: #07090B; --surface-2: #0D1114;
+  --line: rgba(255,255,255,.07); --line-strong: rgba(255,255,255,.12);
+  --text: #D5DCE2; --muted: #8B98A4; --accent: #4DB6D4;
+  --go: #2FBF8A; --mid: #D9A520; --skip: #E06A6A; --none: #5B6672;
+  --scrim: rgba(0,0,0,.78); --vig: rgba(0,0,0,0); --vig-hi: transparent;
+  --glass-bright: rgba(255,255,255,.09);
+  --depth-1: 0 1px 1px rgba(0,0,0,.8), 0 6px 14px -4px rgba(0,0,0,.9);
+  --depth-2: 0 1px 1px rgba(0,0,0,.9), 0 10px 22px -4px rgba(0,0,0,.95);
+  --depth-edge: inset 0 1px 0 rgba(255,255,255,.07), inset 0 -1px 0 rgba(0,0,0,.6);
+  color-scheme: dark;
+}
+:root[data-night="1"] body { background: #000; }
+:root[data-night="1"] body::before { background: none; }
+.ios-theme-button { width: 44px; min-width: 44px; min-height: 44px; margin-left: 0.35rem; padding: 0; flex: none; display: inline-grid; place-items: center; border-radius: 12px; border: 1px solid var(--ui-edge, var(--line-strong)); background: transparent; color: var(--text); font: inherit; font-weight: 600; font-size: var(--fs-sm, .875rem); cursor: pointer; }
+
+.ios-share-button { width: 44px; min-width: 44px; padding: 0; display: inline-grid; place-items: center; }
