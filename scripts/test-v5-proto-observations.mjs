@@ -22,6 +22,17 @@ assert.equal(observationRows(run, "waveForecast", "spot")[0].waveHeightM, 0.8);
 assert.equal(hourlyOutlook(49, true), "Poor");
 assert.equal(hourlyOutlook(50, true), "Good");
 assert.equal(hourlyOutlook(70, true), "Great");
-assert.equal(hourlyOutlook(99, false), "Outside window");
+assert.equal(hourlyOutlook(99, false), "Outside windows · fit 99");
 assert.equal(hourlyOutlook(null, true), "—");
+{ // live buoy shapes: Celsius water temperature and single-reading waves (SECOORA)
+  const live = { inputs: { observations: [
+    { kind: "waterTemperature", locationId: "icw", ok: true, observedAt: "2026-10-14T17:28:20Z", values: { temperatureC: 27.4 } },
+    { kind: "waves", locationId: "icw", ok: true, observedAt: "2026-10-14T17:00:00Z", values: { waveHeightM: 0.51, periodS: 7.7 } },
+  ] } };
+  const [water] = observationRows(live, "waterTemperature", "icw"), [wave] = observationRows(live, "waves", "icw");
+  assert.equal(Math.round(water.temperatureF), 81);
+  assert.equal(water.time, "2026-10-14T17:28:20Z");
+  assert.equal(wave.waveHeightM, 0.51);
+  assert.equal(observationFor([wave], "2026-10-14T18:00:00Z"), wave);
+}
 console.log("test-v5-proto-observations: observation shapes, period selection, unit conversion input, and wind formatting passed");

@@ -60,10 +60,44 @@ function readPair(storage) {
   } catch { return null; }
 }
 
+export function readCachedProtoRuns(storage) {
+  if (!storage) return null;
+  try {
+    const today = JSON.parse(storage.getItem(CACHE_KEYS[0]));
+    const tomorrow = JSON.parse(storage.getItem(CACHE_KEYS[1]));
+    if (!valid(today) || !valid(tomorrow)) return null;
+    return { today, tomorrow };
+  } catch { return null; }
+}
+
 function writePair(storage, pair) {
   if (!storage) return;
   try { pair.forEach((run, i) => storage.setItem(CACHE_KEYS[i], JSON.stringify(trimForCache(run)))); }
   catch { /* storage can be disabled or full */ }
+}
+
+export function writeCachedProtoRun(storage, horizon, run) {
+  const index = horizon === "today" ? 0 : horizon === "tomorrow" ? 1 : -1;
+  if (!storage || index < 0 || !valid(run)) return false;
+  try { storage.setItem(CACHE_KEYS[index], JSON.stringify(trimForCache(run))); return true; }
+  catch { return false; }
+}
+
+export async function fetchProtoRun(horizon, { fetchImpl = globalThis.fetch } = {}) {
+  const index = horizon === "today" ? 0 : horizon === "tomorrow" ? 1 : -1;
+  if (index < 0) throw new Error(`Unknown report horizon: ${horizon}`);
+  const path = LIVE_FILES[index];
+  const started = performance.now();
+  const response = await fetchImpl(path, { cache: "no-cache" });
+  const fetchedAt = performance.now();
+  if (!response?.ok) throw new Error(`${path}: ${response?.status ?? "unavailable"}`);
+  const raw = typeof response.text === "function" ? await response.text() : null;
+  const run = raw == null ? await response.json() : JSON.parse(raw);
+  const parsedAt = performance.now();
+  if (!valid(run)) throw new Error(`${path}: invalid prediction run`);
+  const cacheHeader = response.headers?.get?.("x-flagler-ios-cache") ?? "";
+  console.info(`FLAGLER_PERF horizon=${horizon} fetch_ms=${(fetchedAt - started).toFixed(1)} parse_ms=${(parsedAt - fetchedAt).toFixed(1)} source=${cacheHeader ? "saved" : "network"}`);
+  return { run, fromCache: !!cacheHeader && !["false", "0", "miss"].includes(String(cacheHeader).toLowerCase()) };
 }
 
 async function fetchRun(fetchImpl, path, strict = true) {

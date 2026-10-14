@@ -12,7 +12,7 @@ export function temperatureF(row) {
 }
 
 export function hourlyOutlook(suitability, insideWindow) {
-  if (!insideWindow) return "Outside window";
+  if (!insideWindow) return Number.isFinite(suitability) ? `Outside windows · fit ${suitability}` : "Outside windows";
   if (!Number.isFinite(suitability)) return "—";
   return suitability >= 70 ? "Great" : suitability >= 50 ? "Good" : "Poor";
 }
@@ -23,7 +23,11 @@ export function observationRows(run, kind, locationId) {
     const values = x.values ?? {};
     if (kind === "waveForecast" && values.waveHeightM != null && Number.isFinite(+values.waveHeightM)) return [{ ...values, waveHeightM: +values.waveHeightM, time: values.time ?? x.validFrom ?? x.fetchedAt }];
     if (kind === "hourlyForecast" && (values.temperature != null || values.temperatureC != null || values.windSpeed != null)) return [{ ...values, temperature: values.temperature ?? values.temperatureC, temperatureUnit: values.temperatureUnit ?? (values.temperatureC != null ? "C" : "F"), time: values.time ?? x.validFrom ?? x.fetchedAt, startTime: values.startTime ?? x.validFrom ?? x.fetchedAt, endTime: values.endTime ?? x.validTo }];
-    if (kind === "waterTemperature" && values.temperatureF != null) return [values];
+    const time = values.time ?? x.observedAt ?? x.fetchedAt;
+    if (kind === "waves" && values.waveHeightM != null && Number.isFinite(+values.waveHeightM)) return [{ ...values, waveHeightM: +values.waveHeightM, time }];
+    // Buoys report Celsius; normalise so every reader can use temperatureF.
+    if (kind === "waterTemperature" && values.temperatureF != null) return [{ ...values, time }];
+    if (kind === "waterTemperature" && values.temperatureC != null && Number.isFinite(+values.temperatureC)) return [{ ...values, temperatureF: +values.temperatureC * 9 / 5 + 32, time }];
     return [];
   });
 }

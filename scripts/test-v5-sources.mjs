@@ -41,7 +41,7 @@ function routedFetch(routes) {
 }
 function openMeteoWeatherFixture() {
   const hourly = { time: [], temperature_2m: [], precipitation_probability: [], wind_speed_10m: [],
-    wind_direction_10m: [], wind_gusts_10m: [] };
+    wind_direction_10m: [], wind_gusts_10m: [], pressure_msl: [] };
   for (let i = 0; i < 168; i++) {
     hourly.time.push(new Date(now + i * 3600000).toISOString().slice(0, 16));
     hourly.temperature_2m.push(75);
@@ -49,6 +49,7 @@ function openMeteoWeatherFixture() {
     hourly.wind_speed_10m.push(8);
     hourly.wind_direction_10m.push(90);
     hourly.wind_gusts_10m.push(12);
+    hourly.pressure_msl.push(1012 - i * 0.1);
   }
   return { hourly };
 }
@@ -106,6 +107,14 @@ await check("Open-Meteo adapters normalize UTC weather and marine forecast inter
   assert.equal(weather.hourly.values.rows[0].windSpeed, 8);
   assert.equal(weather.grid.values.windDirection[0].value, 90);
   assert.equal(weather.grid.values.probabilityOfPrecipitation[0].value, 20);
+  assert.equal(weather.pressureForecast.kind, "pressureForecast");
+  assert.equal(weather.pressureForecast.values.rows.length, 168);
+  assert.equal(weather.pressureForecast.values.rows[6].pressureHpa, 1011.4);
+  const unavailablePressure = await fetchOpenMeteoWeather(spot, { fetchImpl: async () => response({ hourly: {
+    ...openMeteoWeatherFixture().hourly, pressure_msl: undefined,
+  } }), now });
+  assert.equal(unavailablePressure.hourly.ok, true);
+  assert.equal(unavailablePressure.pressureForecast.ok, false);
 
   const marine = await fetchOpenMeteoMarineForecast(spot, { fetchImpl, now });
   assert.equal(marine.provider, "open-meteo");
@@ -138,7 +147,7 @@ await check("stale NWS weather and marine forecasts fall back to fresh Open-Mete
     throw new Error("fixture transport failure");
   };
   const inputs = await fetchSources({ locations: [location], fetchImpl, now });
-  for (const kind of ["hourlyForecast", "gridForecast", "waveForecast"]) {
+  for (const kind of ["hourlyForecast", "gridForecast", "pressureForecast", "waveForecast"]) {
     const fallback = inputs.find(x => x.kind === kind);
     assert.equal(fallback?.provider, "open-meteo", `${kind} should use the fresh fallback`);
     assert.equal(fallback?.stale, false);
@@ -167,6 +176,7 @@ await check("CO-OPS GMT conversion and DST repeated hour remain distinct instant
 await check("CO-OPS water temperature parses readings and handles missing station", async () => {
   const water = await fetchCoopsWaterTemperature(spot, { fetchImpl: async () => response(fixture("coops-water-temperature")), now });
   assert.equal(water.ok, true); assert.equal(water.station, "8720218"); assert.ok(Number.isFinite(water.values.rows[0].temperatureC));
+  assert.ok(Number.isFinite(water.values.rows[0].temperatureF));
   const none = await fetchCoopsWaterTemperature({ ...spot, waterTemp: null }, { now });
   assert.equal(none.ok, false);
 });
@@ -212,6 +222,7 @@ await check("single source failure does not cancel unrelated inputs; SECOORA fal
     [/\/observations\?limit=/, fixture("nws-observations")],
     [/\/datagetter\?.*product=predictions/, fixture("coops-predictions")],
     [/\/datagetter\?.*water_temperature/, fixture("coops-water-temperature")],
+    [/api\.open-meteo\.com/, openMeteoWeatherFixture()],
     [/sea_surface_wave_significant_height/, { status: 503 }],
     [/sea_water_temperature/, { status: 503 }],
     [/marine\.json$/, fixture("ndbc-marine")],
@@ -222,13 +233,14 @@ await check("single source failure does not cancel unrelated inputs; SECOORA fal
   assert.ok(inputs.some(x => x.kind === "hourlyForecast" && x.ok));
   assert.ok(inputs.some(x => x.kind === "waves" && x.ok && x.usedFallback));
   assert.ok(inputs.some(x => x.kind === "waterTemperature" && x.ok && x.usedFallback));
+  assert.ok(inputs.some(x => x.kind === "pressureForecast" && x.ok && x.provider === "open-meteo"));
 });
 
 await check("all upstream failures return independent unavailable observations", async () => {
   clearSourceCache(); clearNwsPointsCache();
   const inputs = await fetchSources({ locations: [spot], fetchImpl: failFetch, now });
-  assert.ok(inputs.length >= 8); assert.ok(inputs.every(x => x && typeof x.ok === "boolean"));
-  assert.ok(inputs.filter(x => !x.ok).length >= 8);
+  assert.ok(inputs.length >= 9); assert.ok(inputs.every(x => x && typeof x.ok === "boolean"));
+  assert.ok(inputs.filter(x => !x.ok).length >= 9);
 });
 
 await check("each individual adapter converts its own upstream failure to a result", async () => {

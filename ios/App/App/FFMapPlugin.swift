@@ -143,15 +143,19 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func fitMap() {
         guard let map = mapView, !annotations.isEmpty else { return }
+        if let selectedID, let spot = annotations[selectedID] {
+            map.setRegion(MKCoordinateRegion(center: spot.coordinate, latitudinalMeters: 2_400, longitudinalMeters: 2_400), animated: true)
+            return
+        }
         if annotations.count == 1, let spot = annotations.values.first {
-            map.setRegion(MKCoordinateRegion(center: spot.coordinate, latitudinalMeters: 4_000, longitudinalMeters: 4_000), animated: true)
+            map.setRegion(MKCoordinateRegion(center: spot.coordinate, latitudinalMeters: 3_500, longitudinalMeters: 3_500), animated: true)
             return
         }
         let points = annotations.values.map { MKMapPoint($0.coordinate) }
         let rect = points.dropFirst().reduce(MKMapRect(origin: points[0], size: MKMapSize(width: 0, height: 0))) { current, point in
             current.union(MKMapRect(origin: point, size: MKMapSize(width: 0, height: 0)))
         }
-        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 36, left: 32, bottom: 36, right: 32), animated: true)
+        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 24, left: 28, bottom: 24, right: 28), animated: true)
     }
 
     private func installOffsetObservation(on scrollView: UIScrollView) {
@@ -187,7 +191,7 @@ extension FFMapPlugin: MKMapViewDelegate {
         marker.markerTintColor = spot.closureBadge != nil ? .systemGray : color(for: spot.verdict)
         marker.titleVisibility = .adaptive
         marker.subtitleVisibility = .adaptive
-        marker.transform = spot.id == selectedID ? CGAffineTransform(scaleX: 1.2, y: 1.2) : .identity
+        marker.transform = spot.id == selectedID ? CGAffineTransform(scaleX: 1.08, y: 1.08) : .identity
         marker.displayPriority = spot.id == selectedID ? .required : .defaultHigh
         return marker
     }

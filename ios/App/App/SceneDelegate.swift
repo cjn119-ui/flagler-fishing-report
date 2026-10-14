@@ -2,8 +2,9 @@ import UIKit
 import Capacitor
 import WebKit
 
-final class FlaglerBridgeViewController: CAPBridgeViewController {
+final class FlaglerBridgeViewController: CAPBridgeViewController, WKScriptMessageHandler {
     private var debugLaunchHandled = false
+    private let debugStartUptime = ProcessInfo.processInfo.systemUptime
 
     private var loadingOverlay: UIView?
     private var pageLoadObservation: NSKeyValueObservation?
@@ -46,6 +47,27 @@ final class FlaglerBridgeViewController: CAPBridgeViewController {
         ])
         loadingOverlay = overlay
         if let webView {
+#if DEBUG
+            let debugScript = """
+            (() => {
+              const send = (kind, value) => { try { window.webkit.messageHandlers.flaglerDebug.postMessage({kind, value: String(value)}); } catch {} };
+              addEventListener('error', (event) => send('error', `${event.message} @ ${event.filename}:${event.lineno}:${event.colno}`));
+              addEventListener('unhandledrejection', (event) => send('rejection', event.reason?.stack || event.reason));
+              const originalError = console.error.bind(console);
+              console.error = (...args) => { send('console.error', args.join(' ')); originalError(...args); };
+              const originalInfo = console.info.bind(console);
+              console.info = (...args) => { if (String(args[0]).startsWith('FLAGLER_PERF')) send('perf', args.join(' ')); originalInfo(...args); };
+            })();
+            """
+            let contentController = webView.configuration.userContentController
+            contentController.add(self, name: "flaglerDebug")
+            contentController.addUserScript(WKUserScript(source: debugScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
+            if ProcessInfo.processInfo.arguments.contains("--flagler-clear-run-cache") {
+                let clearRunCache = "localStorage.removeItem('v5proto.live.today');localStorage.removeItem('v5proto.live.tomorrow');console.info('FLAGLER_PERF run_cache_cleared=true');"
+                contentController.addUserScript(WKUserScript(source: clearRunCache, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+            }
+            webView.evaluateJavaScript(debugScript)
+#endif
             pageLoadObservation = webView.observe(\.isLoading, options: [.new]) { [weak self] webView, _ in
                 guard !webView.isLoading else { return }
                 DispatchQueue.main.async { self?.dismissLoadingOverlay() }
@@ -69,6 +91,19 @@ final class FlaglerBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(FFMapPlugin())
     }
 
+#if DEBUG
+    deinit {
+        webView?.configuration.userContentController.removeScriptMessageHandler(forName: "flaglerDebug")
+    }
+#endif
+
+#if DEBUG
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard message.name == "flaglerDebug" else { return }
+        NSLog("FLAGLER_JS_%@ native_elapsed_s=%.3f %@", String(describing: (message.body as? [String: Any])?["kind"] ?? "message"), ProcessInfo.processInfo.systemUptime - debugStartUptime, String(describing: (message.body as? [String: Any])?["value"] ?? message.body))
+    }
+#endif
+
     #if DEBUG
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
@@ -80,11 +115,24 @@ final class FlaglerBridgeViewController: CAPBridgeViewController {
         let runCycles = debugCommand == "cycles" || debugCommand == "--flagler-map-cycles"
         let openSheet = debugCommand == "sheet" || debugCommand == "--flagler-sheet"
         let scrollUnderHeader = debugCommand == "under-header" || debugCommand == "--flagler-map-under-header"
-        let script = """
-        (async()=>{for(let n=0;n<200&&(!document.querySelector('.tab[data-tab=spots]')||!window.FFNativeMap);n++)await new Promise(r=>setTimeout(r,100));if(!window.FFNativeMap){console.error('Flagler map bridge unavailable');return;}document.querySelector('.tab[data-tab=spots]')?.click();await new Promise(r=>setTimeout(r,700));const slot=document.querySelector('#spots-map');if(slot)slot.scrollIntoView({block:'start',behavior:'instant'});await new Promise(r=>setTimeout(r,300));\(runCycles ? "const m=window.FFNativeMap,p={spots:[{id:'debug-spot',name:'Map lifecycle check',lat:29.901,lon:-81.312,verdict:'GO',favorite:true,closureBadge:null}],selectedId:'debug-spot',mode:'surf'};for(let i=0;i<30;i++){await m.show(p);await new Promise(r=>setTimeout(r,180));await m.hide();await new Promise(r=>setTimeout(r,180));}console.log('Flagler map lifecycle completed 30 show/hide cycles');document.querySelector('.tab[data-tab=spots]')?.click();await new Promise(r=>setTimeout(r,500));const s=document.querySelector('#spots-map');if(s)s.scrollIntoView({block:'start',behavior:'instant'});" : "")\(scrollUnderHeader ? "if(slot)window.scrollBy(0,slot.getBoundingClientRect().top-80);" : "")\(openSheet ? "await new Promise(r=>setTimeout(r,250));document.querySelector('#more')?.click();" : "")})()
+        let targetTab = ["--flagler-spots": "spots", "--flagler-species": "species", "--flagler-plan": "plan", "--flagler-log": "log"][debugCommand ?? ""]
+        let openMapTab = debugCommand == "--flagler-spots" || scrollUnderHeader || openSheet || runCycles
+        let targetTabScript = targetTab.map { "location.hash='#tab=\($0)';" } ?? ""
+        let goToSpotsScript = openMapTab && targetTab != "spots" ? "document.querySelector('.tab[data-tab=spots]')?.click();" : ""
+        let mapPositionScript = scrollUnderHeader || openSheet || runCycles ? "if(slot)slot.scrollIntoView({block:'start',behavior:'instant'});" : ""
+        let afterTabScript = """
+        setTimeout(()=>{const slot=document.querySelector('#spots-map');\(mapPositionScript)\(scrollUnderHeader ? "setTimeout(()=>{const s=document.querySelector('#spots-map');if(s)window.scrollBy(0,s.getBoundingClientRect().top-80);},350);" : "")\(openSheet ? "setTimeout(()=>document.querySelector('#more')?.click(),450);" : "")\(runCycles ? "void (async()=>{const m=window.FFNativeMap,p={spots:[{id:'debug-spot',name:'Map lifecycle check',lat:29.901,lon:-81.312,verdict:'GO',favorite:true,closureBadge:null}],selectedId:'debug-spot',mode:'surf'};for(let i=0;i<30;i++){await m.show(p);await new Promise(r=>setTimeout(r,180));await m.hide();await new Promise(r=>setTimeout(r,180));}console.info('FLAGLER_PERF map_cycles=30');document.querySelector('.tab[data-tab=spots]')?.click();})()" : "")},700);
         """
-        webView.evaluateJavaScript(script)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak webView] in
+        let script = """
+        \(targetTabScript)\(goToSpotsScript)\(openMapTab ? afterTabScript : "")console.info('FLAGLER_PERF debug_hook_ready tab='+document.querySelector('.tab[aria-current]')?.dataset.tab);void 0;
+        """
+        NSLog("FLAGLER_IOS_DEBUG command=%@ arguments=%@", String(describing: debugCommand), String(describing: args))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { [weak webView] in
+            webView?.evaluateJavaScript(script) { _, error in
+                if let error { NSLog("FLAGLER_IOS_DEBUG hook_error=%@", error.localizedDescription) }
+            }
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 6) { [weak webView] in
             webView?.evaluateJavaScript("JSON.stringify({url:location.href,tab:document.querySelector('.tab[aria-current]')?.dataset.tab,nativeMap:!!window.FFNativeMap,plugin:window.Capacitor?.isPluginAvailable?.('FFMap'),slot:!!document.querySelector('#spots-map'),slotRect:(()=>{const r=document.querySelector('#spots-map')?.getBoundingClientRect();return r&&{x:r.x,y:r.y,width:r.width,height:r.height}})(),body:document.body.innerText.slice(0,240)})") { result, error in
                 NSLog("FLAGLER_IOS_DEBUG state=%@ error=%@", String(describing: result), String(describing: error))
             }

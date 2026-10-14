@@ -11019,7 +11019,7 @@ export const MODEL_PARAMS = Object.freeze({
     effectNeutralMin: 0.34,
     tideSensitivityMultipliers: Object.freeze({ high: 1.3, medium: 1, low: 0.6 }),
     // Coverage uses 0.5 ft/hr as a review proposal only; do not activate without calibration.
-    tide: Object.freeze({ oppositeDirectionFloor: 0.35, anyDirectionScore: 0.7, rateNormalizationScale: null, rateNormalizationScaleProvisional: true, rateNormalizationScaleProposal: 0.5 }),
+    tide: Object.freeze({ oppositeDirectionFloor: 0.35, anyDirectionScore: 0.7, rateNormalizationScale: 0.5, rateNormalizationScaleProvisional: true, rateNormalizationScaleProposal: 0.5 }),
     light: Object.freeze({ lowlightMinutes: 60, middayScore: 0.4, nightScore: 0.25, dayScore: 1, nightDaySpeciesScore: 0.3, anyScore: 0.8 }),
     solunar: Object.freeze({ majorMinutes: 60, minorMinutes: 30, majorScore: 1, minorScore: 0.75, neutralScore: 0.45, phaseBoost: 0.1, phaseDays: 3, synodicDays: 29.530588853 }),
     wind: Object.freeze({ fullScoreMaxMph: 10, zeroScoreMph: 25, gustZeroMph: 30, onshoreCalmPenalty: 0.15, onshoreRoughBonus: 0.05, offshoreCalmBonus: 0.1, inshoreOnshorePenalty: 0.1, onshoreSectorHalfWidthDeg: 90 }),

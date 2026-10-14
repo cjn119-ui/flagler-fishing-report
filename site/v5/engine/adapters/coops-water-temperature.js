@@ -10,7 +10,8 @@ export async function fetchCoopsWaterTemperature(location, { fetchImpl, now = Da
   try {
     const { json } = await fetchJson(url, { fetchImpl, timeoutMs });
     if (!Array.isArray(json?.data)) throw new Error(json?.error?.message ?? "CO-OPS water-temperature rows missing");
-    const values = json.data.map(row => ({ time: parseTime(row.t), temperatureC: Number(row.v), quality: row.f ?? null }))
+    const values = json.data.map(row => { const temperatureC = Number(row.v); return { time: parseTime(row.t), temperatureC,
+      temperatureF: temperatureC * 9 / 5 + 32, quality: row.f ?? null }; })
       .filter(x => x.time && Number.isFinite(x.temperatureC));
     return observation({ provider: "coops", kind: "waterTemperature", locationId, station, url, fetchedAt: new Date(now).toISOString(),
       observedAt: values.at(-1)?.time ?? null, validFrom: values[0]?.time ?? null, validTo: values.at(-1)?.time ?? null,

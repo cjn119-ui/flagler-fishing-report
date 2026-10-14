@@ -5,7 +5,7 @@ import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfid
 import { SPECIES } from "../species.js";
 import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
-import { loadProtoData } from "./proto-data.js";
+import { fetchProtoRun, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
 import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesTripRate } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
@@ -39,10 +39,21 @@ const session = { history: false, factors: false, use: false, conf: false, sourc
 const D = {};            // loaded JSON by file
 let lastSpoken = "";
 let dataSource = "sample", dataOffline = false;
+const horizonSource = { today: "sample", tomorrow: "sample" };
+const horizonOffline = { today: false, tomorrow: false };
 let refreshError = "";
+let refreshInProgress = false, coldRenderPending = true;
 /* motion bookkeeping: entrances run once per view, value changes only on user input */
 const motion = { shown: null, seen: new Set(), counted: new Set(), filled: new Set(), seal: null, seg: null };
 let imageCredits = [], sheetAnimation = null, tabDrag = null, renderedImageCount = 0;
+const gestureVelocity = (samples) => {
+  if (!samples || samples.length < 2) return 0;
+  const end = samples.at(-1), start = [...samples].reverse().find((sample) => end.t - sample.t >= 40) ?? samples[0];
+  return (end.p - start.p) / Math.max(1, end.t - start.t);
+};
+const gestureDuration = (distance, velocity, fallback = 260) => Math.max(180, Math.min(380, Math.round(Math.max(0, distance) / Math.max(.18, Math.abs(velocity)) * 1.6 || fallback)));
+const rubberBand = (distance, width) => Math.sign(distance) * (Math.abs(distance) * width * .35) / (Math.abs(distance) + width * .35);
+const motionEase = "cubic-bezier(.6,1,.8,1)";
 const FISH_IMAGE = Object.fromEntries(SPECIES.map((sp) => [sp.id, sp.id]));
 
 /* ---------- tiny DOM helpers ---------- */
@@ -102,7 +113,7 @@ function searchBox(label, value, oninput) { const id = label.toLowerCase().repla
 
 /* ---------- formatting (display only) ---------- */
 const validDate = (d) => d != null && d !== "" && Number.isFinite(+new Date(d));
-const fmtTime = (d) => !validDate(d) ? "Time unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(d)).replace(":00", "");
+const fmtTime = (d) => !validDate(d) ? "Time unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(d)).replace(":00", "").replace(/\s([AP]M)$/, "\u00a0$1");
 const ampm = (t) => t.match(/\s([AP]M)$/)?.[1];
 const fmtRange = (a, b) => { if (!validDate(a) || !validDate(b)) return "Time unavailable"; const x = fmtTime(a), y = fmtTime(b); return `${ampm(x) && ampm(x) === ampm(y) ? x.replace(/\s[AP]M$/, "") : x}–${y}`; };
 const localParts = (d) => !validDate(d) ? {} : Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "numeric", hour12: false }).formatToParts(new Date(d)).map((p) => [p.type, p.value]));
@@ -173,9 +184,11 @@ function ctx() {
     rec = candidates.map((x) => run.scopeViews?.byLocation?.[`${x.locationId}:${x.mode}`]?.recommendation).filter(Boolean).sort((a,b) => TIER[a.verdict]-TIER[b.verdict] || (b.suitability??0)-(a.suitability??0))[0] ?? rec;
   }
   const fr = freshness(run, now);
-  const sample = !def.live || dataSource === "sample";
-  return { def, run, rec, now, fr, focus, focusMissing, override, sample, source: dataSource,
-    offline: !!def.offline || dataOffline, stale: fr.level === "stale",
+  const horizon = st.h === "tomorrow" ? "tomorrow" : "today";
+  const source = def.live ? horizonSource[horizon] : "sample";
+  const sample = !def.live || source === "sample";
+  return { def, run, rec, now, fr, focus, focusMissing, override, sample, source,
+    offline: !!def.offline || horizonOffline[horizon], stale: fr.level === "stale",
     partial: run.status === "partial" || (run.missingInputs?.length ?? 0) > 0, skip: rec.verdict === "SKIP",
     overall: isModeClosed(run.recommendation.locationId, run.recommendation.mode) ? rec : run.recommendation, isBest: rec.id === run.recommendation.id, spotId: st.spot, candidates };
 }
@@ -233,12 +246,42 @@ function applyThemePreference(preference = store.get("theme", "auto"), override 
   root.dataset.themePreference = selected;
 }
 function syncTheme() { applyThemePreference(store.get("theme", "auto")); }
-async function refreshLiveData() {
-  const data = await loadProtoData({ storage: safeStorage(), online: navigator.onLine !== false });
-  D[RICH] = data.today; D[TOMORROW] = data.tomorrow;
-  dataSource = data.source; dataOffline = navigator.onLine === false || data.offline;
-  syncNotifications(D[RICH]);
-  return data;
+async function refreshLiveData({ onToday } = {}) {
+  if (navigator.onLine === false) {
+    horizonOffline.today = horizonOffline.tomorrow = true;
+    dataOffline = true;
+    return { changed: false, offline: true };
+  }
+  const storage = safeStorage();
+  const before = { today: D[RICH]?.id, tomorrow: D[TOMORROW]?.id };
+  refreshInProgress = true;
+  const results = await Promise.allSettled(["today", "tomorrow"].map(async (horizon) => {
+    const { run, fromCache } = await fetchProtoRun(horizon);
+    const today = horizon === "today", key = today ? RICH : TOMORROW;
+    const previousId = D[key]?.id;
+    D[key] = run;
+    horizonSource[horizon] = fromCache ? "cached" : "live";
+    horizonOffline[horizon] = false;
+    writeCachedProtoRun(storage, horizon, run);
+    if (today) {
+      dataSource = horizonSource.today;
+      dataOffline = false;
+      syncNotifications(D[RICH]);
+      onToday?.({ changed: previousId !== run.id, fromCache });
+    }
+    if (today && before.today == null && imageCredits.length) {
+      refreshInProgress = false;
+      render({ resetScroll: true });
+    }
+    return run;
+  }));
+  refreshInProgress = false;
+  const todayOk = results[0].status === "fulfilled", tomorrowOk = results[1].status === "fulfilled";
+  if (!todayOk) horizonOffline.today = !D[RICH] || navigator.onLine === false;
+  if (!tomorrowOk) horizonOffline.tomorrow = !D[TOMORROW] || navigator.onLine === false;
+  dataOffline = horizonOffline.today;
+  if (!todayOk && !tomorrowOk && !D[RICH]) throw results[0].reason;
+  return { changed: before.today !== D[RICH]?.id || before.tomorrow !== D[TOMORROW]?.id, todayOk, tomorrowOk };
 }
 function syncNotifications(run = ctx().run) {
   const notify = window.FFNotify;
@@ -248,14 +291,17 @@ function syncNotifications(run = ctx().run) {
 }
 
 /* ---------- render orchestrator ---------- */
-function render({ resetScroll = false } = {}) {
+function render({ resetScroll = false, navigation = false } = {}) {
+  const renderStarted = performance.now();
   const previousDetails = resetScroll ? [] : [...document.querySelectorAll("#view details")].map((el) => el.open);
   const scrollSelector = ".target-species-scroll,.other-spots-scroll,.species-carousel,.species-tabs,.plan-day-chips,.hourly-scroll,.spotlist .list,.sheet-b";
   const previousScroll = resetScroll ? [] : [...document.querySelectorAll(scrollSelector)].map((el) => el.scrollLeft);
   const previousY = resetScroll ? 0 : window.scrollY;
   if (resetScroll) window.scrollTo({ top: session.scroll[st.tab] ?? 0, behavior: "instant" });
   const fk = document.activeElement?.dataset?.fk;
+  const contextStarted = performance.now();
   const c = ctx();
+  if (coldRenderPending) console.info(`FLAGLER_PERF ctx_ms=${(performance.now() - contextStarted).toFixed(1)}`);
   st.t = st.t && c.run.slots?.length ? st.t : null;
   renderCtl(c); renderHeader(c); renderBanner(c);
   const view = $("view");
@@ -267,7 +313,7 @@ function render({ resetScroll = false } = {}) {
     [...document.querySelectorAll(scrollSelector)].forEach((el, i) => { if (previousScroll[i] != null) el.scrollLeft = previousScroll[i]; });
     window.scrollTo({ top: previousY, behavior: "instant" });
   }
-  animateView(view);
+  animateView(view, { navigation });
   view.setAttribute("aria-busy", "false");
   document.querySelectorAll(".tab").forEach((b) => b.dataset.tab === st.tab ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current"));
   syncReview(); writeHash();
@@ -275,15 +321,19 @@ function render({ resetScroll = false } = {}) {
   if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true });
   if (st.tab === "today") announce(c);
   syncNativeSpots(c);
+  if (coldRenderPending) {
+    console.info(`FLAGLER_PERF first_content_ms=${performance.now().toFixed(1)} ctx_ms=${(performance.now() - contextStarted).toFixed(1)} render_ms=${(performance.now() - renderStarted).toFixed(1)} source=${c.source} offline=${c.offline}`);
+    coldRenderPending = false;
+  }
 }
-function animateView(view) {
+function animateView(view, { navigation = false } = {}) {
   const key = `${st.tab}|${st.h}`, seal = view.querySelector(".seal"), sealKey = seal && `${seal.parentElement.closest("#verdict")?.dataset.level}|${seal.dataset.cert}|${seal.dataset.phase}|${seal.textContent}`;
-  if (seal && motion.seal && sealKey !== motion.seal) seal.classList.add("swap");
-  if (seal && !motion.seen.has(`seal:${sealKey}`)) { motion.seen.add(`seal:${sealKey}`); seal.classList.add("intro"); }
+  if (!navigation && seal && motion.seal && sealKey !== motion.seal) seal.classList.add("swap");
+  if (!navigation && seal && !motion.seen.has(`seal:${sealKey}`)) { motion.seen.add(`seal:${sealKey}`); seal.classList.add("intro"); }
   motion.seal = sealKey ?? motion.seal;
   if (key === motion.shown) return;
   const first = motion.shown == null; motion.shown = key;
-  if (!motion.seen.has(st.tab)) { // light stagger, once per view; the verdict is never held back
+  if (!navigation && !motion.seen.has(st.tab)) { // light stagger, once per view; the verdict is never held back
     motion.seen.add(st.tab);
     [...view.querySelectorAll(".col-a > :not(#verdict), .col-b > *, .spotlist .list > li, .grid > li, .days > li, .plan-layout > .card")].slice(0, 12)
       .forEach((el, i) => { el.classList.add("stagger"); el.style.setProperty("--i", Math.min(i, 4)); });
@@ -293,11 +343,14 @@ function animateView(view) {
   view.querySelectorAll(".bar-m > i").forEach((bar, i) => {
     const key = `${selected}|bar|${i}`;
     if (motion.filled.has(key)) return;
-    motion.filled.add(key); bar.style.transform = "scaleX(0)"; bar.style.transformOrigin = "left center";
-    requestAnimationFrame(() => { if (bar.isConnected) { bar.style.transition = matchMedia("(prefers-reduced-motion: reduce)").matches ? "none" : "transform 360ms cubic-bezier(.32,.72,0,1)"; bar.style.transform = "scaleX(1)"; } });
+    motion.filled.add(key);
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    bar.style.transform = "scaleX(0)"; bar.style.transformOrigin = "left center";
+    requestAnimationFrame(() => { if (bar.isConnected) { bar.style.transition = "transform var(--dur-4) var(--ease-spring)"; bar.style.transform = "scaleX(1)"; } });
   });
   if (first) return;
-  view.classList.remove("v-in"); void view.offsetWidth; view.classList.add("v-in");
+  if (navigation) view.classList.remove("v-in");
+  else { view.classList.remove("v-in"); void view.offsetWidth; view.classList.add("v-in"); }
 }
 function animateFirstValues(view) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -318,30 +371,55 @@ function animateFirstValues(view) {
     requestAnimationFrame(frame);
   });
 }
+function animateTabPreview(preview, tab) {
+  if (!preview) return;
+  const previousTab = st.tab, previousShown = motion.shown, previousSeal = motion.seal;
+  st.tab = tab;
+  animateView(preview, { navigation: true });
+  st.tab = previousTab; motion.shown = previousShown; motion.seal = previousSeal;
+}
 function announce(c) {
   const r = c.rec, focus = c.focus ? ` for ${r.targets?.[0]?.name ?? spName(st.species)}` : "";
   const text = `${VERDICT_SPOKEN[r.verdict]}${focus}. ${c.skip ? formatHeadline({recommendation:r}) : `${r.displayName}, ${r.mode}, ${fmtRange(r.window?.start, r.window?.end)}`}.${c.stale ? " Last known report." : ""}`;
   if (text !== lastSpoken) { lastSpoken = text; $("live").textContent = text; }
 }
-function go(tab, opts) {
+let tabSettleAnimation = null;
+let tabTransitionEpoch = 0;
+function interruptTabTransitions({ preserveView = false } = {}) {
+  tabTransitionEpoch++;
+  document.dispatchEvent(new Event("v5:interrupt-tab-gesture"));
+  const view = $("view"), tabs = document.querySelector(".tabs");
+  const matrix = view && new DOMMatrixReadOnly(getComputedStyle(view).transform), carriedX = Number.isFinite(matrix?.m41) ? matrix.m41 : 0;
+  view?.getAnimations?.().forEach((animation) => animation.cancel());
+  if (preserveView && carriedX) view.style.transform = `translateX(${carriedX}px)`;
+  else view?.style.removeProperty("transform");
+  view?.style.removeProperty("will-change");
+  document.querySelectorAll(".tab-peek").forEach((preview) => preview.remove());
+  tabs?.classList.remove("dragging", "content-drag"); tabs?.style.removeProperty("--tab-i");
+  tabSettleAnimation = null;
+  return preserveView ? carriedX : 0;
+}
+function go(tab, opts = {}) {
   if (!TAB_ORDER.includes(tab) || tab === st.tab) return;
   if (sheet) { closeSheet().then(() => go(tab, opts)); return; }
+  const carriedX = interruptTabTransitions({ preserveView: true });
   session.scroll[st.tab] = window.scrollY;
   const before = st.tab, oldIndex = TAB_ORDER.indexOf(before), newIndex = TAB_ORDER.indexOf(tab), view = $("view");
-  document.documentElement.style.setProperty("--tab-dir", newIndex > oldIndex ? "1" : "-1");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  view.getAnimations?.().forEach((animation) => animation.cancel());
   st.tab = tab;
-  const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (opts?.swipe) {
-    render({ resetScroll: true });
-  } else if (document.startViewTransition && !reduced) {
-    view.style.viewTransitionName = "view-content";
-    document.startViewTransition(() => render({ resetScroll: true, ...opts }));
-  } else {
-    render({ resetScroll: true, ...opts });
-    if (view.animate) view.animate(reduced ? [{ opacity: .7 }, { opacity: 1 }] : [{ opacity: 0, transform: `translateX(${newIndex > oldIndex ? "18px" : "-18px"})` }, { opacity: 1, transform: "translateX(0)" }], { duration: reduced ? 120 : 300, easing: "cubic-bezier(.32,.72,0,1)" });
+  render({ resetScroll: true, navigation: true });
+  if (!opts?.swipe && view.animate) {
+    const direction = Math.sign(newIndex - oldIndex) || 1;
+    const animation = reduce
+      ? view.animate([{ opacity: .72 }, { opacity: 1 }], { duration: 100, easing: "ease-out" })
+      : view.animate([{ opacity: .88, transform: `translateX(${carriedX || direction * 18}px)` }, { opacity: 1, transform: "translateX(0)" }], { duration: gestureDuration(Math.abs(carriedX || 18), 0, 340), easing: motionEase });
+    tabSettleAnimation = animation;
+    animation.finished.finally(() => { if (tabSettleAnimation === animation) { tabSettleAnimation = null; view.style.removeProperty("transform"); } }).catch(() => {});
   }
-  setTimeout(() => document.documentElement.style.removeProperty("--tab-dir"), 360);
+  const tabs = document.querySelector(".tabs"); tabs?.style.removeProperty("--tab-i");
   document.dispatchEvent(new CustomEvent("v5:tab", { detail: { tab } }));
+  if (opts.haptic !== false) { tick("select"); window.Capacitor?.Plugins?.Haptics?.impact?.({ style: "LIGHT" })?.catch?.(() => {}); }
   const selectedButton = document.querySelector(`.tab[data-tab="${tab}"]`);
   selectedButton?.classList.remove("pop"); if (selectedButton) { void selectedButton.offsetWidth; selectedButton.classList.add("pop"); setTimeout(() => selectedButton.classList.remove("pop"), 220); }
 }
@@ -366,16 +444,18 @@ function renderHeader(c) {
   const { run, fr, offline } = c;
   const chip = $("fresh");
   const updatedAt = !validDate(run.generatedAt) ? "Time unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, hour: "numeric", minute: "2-digit" }).format(new Date(run.generatedAt));
-  let text = `${updatedAt} · ${ageText(Math.max(0, Math.round((Date.now() - Date.parse(run.generatedAt)) / 60000)))}`, tag = "Updated ", sv = "fresh";
+  const age = ageText(Math.max(0, Math.round((Date.now() - Date.parse(run.generatedAt)) / 60000)));
+  let text = updatedAt, tag = "Updated ", sv = "fresh";
   if (offline) { sv = "offline"; tag = "Offline · "; }
   else if (c.stale) { sv = "stale"; tag = "Stale · "; }
-  else if (c.source === "cached") { sv = "cached"; tag = "Cached · "; }
+  else if (c.source === "cached") { sv = "cached"; tag = refreshInProgress ? "Saved · updating · " : "Cached · "; }
+  else if (c.source === "sample") { sv = "sample"; tag = refreshInProgress ? "Sample · loading live data · " : "Sample · not live · "; }
   else if (run.inputs?.sourceStatus?.some((source) => source.provider === "open-meteo" && source.status === "fallback")) {
     sv = "fallback"; tag = "Open-Meteo fallback · ";
   }
   else if (fr.level === "aging") sv = "aging";
   chip.dataset.s = sv; chip.replaceChildren(sv === "stale" ? icon("warn") : sv === "offline" ? icon("off") : "", h("span", { class: "lbl" }, tag), h("span", { class: "fresh-time" }, text));
-  chip.setAttribute("aria-label", `${tag}${text}`);
+  chip.setAttribute("aria-label", `${tag}${text} · ${age}`);
   const rb = $("refresh"); rb.disabled = offline;
   rb.setAttribute("aria-label", offline ? "Refresh unavailable while offline" : "Refresh report");
   const name = st.spot ? (locOf(run, st.spot)?.name ?? "Spot") : "Best anywhere";
@@ -387,14 +467,16 @@ function segment(label, items, cur, on, cls = "") {
   const at = items.findIndex(([id]) => id === cur), from = motion.seg?.label === label ? motion.seg.from : null; // controls are rebuilt, so slide from the last pick
   if (motion.seg?.label === label) motion.seg = null;
   const el = h("div", { class: `seg ${cls}${from != null && from !== at ? " slide" : ""}`, role: "group", "aria-label": label, "data-count": items.length }, items.map(([id, text]) =>
-    h("button", { type: "button", "aria-pressed": String(cur === id), "data-fk": `${label}-${id}`, onclick: () => { motion.seg = { label, from: at }; on(id); } }, text)));
+    h("button", { type: "button", "aria-pressed": String(cur === id), "data-fk": `${label}-${id}`, onclick: () => { motion.seg = { label, from: at }; press(id); on(id); } }, text)));
+  // Reflect the pick immediately; callers that don't re-render (e.g. the catch form) rely on this.
+  const press = (id) => { el.style.removeProperty("--seg-index"); [...el.children].forEach((b, i) => b.setAttribute("aria-pressed", String(items[i][0] === id))); };
   el.style.setProperty("--seg-count", items.length);
   if (from != null) el.style.setProperty("--seg-from", `${from * 100}%`);
   let drag = null, dragged = false, suppressClick = false;
   const indexAt = (x) => Math.max(0, Math.min(items.length - 1, Math.floor((x - el.getBoundingClientRect().left) / (el.getBoundingClientRect().width / items.length))));
   el.addEventListener("pointerdown", (event) => { if (event.button != null && event.button !== 0) return; drag = { id: event.pointerId, start: event.clientX }; dragged = false; el.setPointerCapture(event.pointerId); el.classList.add("dragging"); });
   el.addEventListener("pointermove", (event) => { if (!drag || event.pointerId !== drag.id) return; drag.x = event.clientX; dragged ||= Math.abs(event.clientX - drag.start) > 5; el.style.setProperty("--seg-index", `${indexAt(event.clientX) * 100}%`); });
-  const finish = (event) => { if (!drag || event && event.pointerId !== drag.id) return; const moved = dragged, index = indexAt(event?.clientX ?? drag.x ?? drag.start); drag = null; el.classList.remove("dragging"); suppressClick = moved; if (moved) { event?.preventDefault(); motion.seg = { label, from: at }; on(items[index][0]); } else el.style.removeProperty("--seg-index"); };
+  const finish = (event) => { if (!drag || event && event.pointerId !== drag.id) return; const moved = dragged, index = indexAt(event?.clientX ?? drag.x ?? drag.start); drag = null; el.classList.remove("dragging"); suppressClick = moved; if (moved) { event?.preventDefault(); motion.seg = { label, from: at }; press(items[index][0]); on(items[index][0]); } else el.style.removeProperty("--seg-index"); };
   el.addEventListener("pointerup", finish); el.addEventListener("pointercancel", finish);
   el.addEventListener("click", (event) => { if (suppressClick) { suppressClick = false; event.preventDefault(); event.stopImmediatePropagation(); } }, { capture: true });
   return el;
@@ -403,10 +485,10 @@ function renderCtl(c) {
   const ctl = $("ctl"), fresh = $("fresh"); ctl.replaceChildren(); $("header-fresh").replaceChildren(fresh);
   if (st.tab !== "plan" && st.tab !== "log") ctl.append(segment("Report day", [["today", "Today"], ["tomorrow", "Tomorrow"]], st.h, (v) => { st.h = v; st.t = null; render(); }, "day"));
   if (refreshError) ctl.append(h("p", { class: "notice refresh-status", role: "status" }, refreshError));
-  if (st.tab === "plan") return;
-  if (st.tab !== "today") return;
-  if (st.species) ctl.append(h("button", { class: "fchip", type: "button", "data-fk": "unfocus", "aria-label": `Targeting ${spName(st.species)}. Remove`, onclick: () => scope({ spot: st.spot, mode: st.mode }) },
+  // The targeting chip is the one way to clear a target, so it shows wherever the target changes what you see.
+  if (st.species && st.tab !== "log") ctl.append(h("button", { class: "fchip", type: "button", "data-fk": "unfocus", "aria-label": `Targeting ${spName(st.species)}. Remove`, onclick: () => scope({ spot: st.spot, mode: st.mode, tab: st.tab }) },
     "Targeting: ", h("b", {}, spName(st.species)), h("i", {}, s("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: PATHS.x })))));
+  if (st.tab !== "today") return;
   const modes = st.spot ? openModes(st.spot, modesOf(c.run, st.spot), SPOTS) : [];
   if (modes.length > 1 && !st.species) {
     const cur = st.mode ?? c.rec.mode;
@@ -419,7 +501,7 @@ function renderBanner(c) {
   if (c.sample) notices.push(["Sample data — not live.", "Live report data is unavailable; this view uses the included review sample."]);
   else if (c.offline) notices.push([`Offline — showing the report from ${fmtTime(c.run.generatedAt)}.`, c.source === "cached" ? "Showing the last good live report saved on this device." : "Refresh is paused until you're back online."]);
   if (st.tab === "today" && !c.offline && c.stale) { const when = `${relDay(c.run.generatedAt, c.now)} ${partWord(c.run.generatedAt)}`; notices.push([`This report is from ${when === "earlier evening" ? "an earlier evening" : when}. Pull to refresh.`, "Windows that have passed are struck through; the next one is shown."]); }
-  if (!c.offline && c.source === "cached") notices.push([`Cached report · generated ${fmtTime(c.run.generatedAt)}.`, "The iOS app supplied a previously cached report."]);
+  if (c.source === "cached") notices.push([`${refreshInProgress ? "Saved report" : "Cached report"} · generated ${fmtTime(c.run.generatedAt)}${refreshInProgress ? " · updating" : ""}.`, "The iOS app supplied a previously cached report."]);
   if (notices.length) slot.append(h("div", { class: "banner banner-compact", role: "status" }, icon(c.offline ? "off" : "warn"), h("div", {},
     h("p", {}, h("b", {}, notices[0][0])), h("details", {}, h("summary", {}, "Details"), notices.map(([,detail]) => h("p", {}, detail))))));
 }
@@ -484,11 +566,12 @@ function windowLine(c) {
   const start = Date.parse(w.start), end = Date.parse(w.end), range = fmtRange(w.start, w.end);
   if (end <= c.now) {
     const next = nextWindowLabel(c.run, c.rec, c.now);
-    return h("p", { class: "win" }, h("strong", { class: "next" }, next ?? "No more windows today"), " ", h("span", { class: "muted nowrap" }, h("s", {}, range)));
+    const match = next?.match(/^(.*\s)(\d{1,2}(?::\d{2})?\s[AP]M)$/);
+    return h("p", { class: "win" }, match ? h("span", { class: "next-label" }, match[1].trim()) : h("strong", { class: "next" }, next ?? "No more windows today"), match ? h("span", { class: "nowrap" }, match[2].replace(/\s/, "\u00a0")) : null, " ", h("span", { class: "muted nowrap" }, h("s", {}, range)));
   }
   if (dayKey(w.start) !== dayKey(c.now)) return h("p", { class: "win" }, `${range} · Tomorrow`);
   if (c.now >= start) return h("p", { class: "win" }, h("strong", {}, `Fish now — until ${fmtTime(w.end)}`));
-  return h("p", { class: "win" }, range, " · ", formatWindowStatus({ recommendation: c.rec }, c.now, w));
+  return h("p", { class: "win" }, h("span", { class: "nowrap" }, range), " · ", formatWindowStatus({ recommendation: c.rec }, c.now, w));
 }
 function betRow(c) {
   const r = c.rec;
@@ -636,14 +719,15 @@ function timesCard(c) {
     const isNow = idx === nowIdx;
     const lightTxt = lightAt(light, p.at);
     const tide = p.tide?.heightFt != null ? { v: p.tide.direction ? cap(p.tide.direction) : "", d: `${p.tide.heightFt.toFixed(1)} ft` } : null;
-    const detailParts = [p.suitability == null ? "Fit —" : `${speciesFitBand(p.suitability)} · fit ${p.suitability}`];
+    const outsideWindow = !slotInWindow(p.at, wins);
+    const detailParts = [p.suitability == null ? "Fit —" : outsideWindow ? `Fit ${p.suitability}` : `${speciesFitBand(p.suitability)} · fit ${p.suitability}`];
     if (tide) detailParts.push(`${tide.v ? `${tide.v} tide` : "Tide"} ${tide.d}`);
     if (lightTxt?.v) detailParts.push(`Light ${lightTxt.v.toLowerCase()}`);
     const speciesDisclosure = speciesAt(p) ? h("details", { class: "hour-species" }, h("summary", {}, "Species at this time"), speciesAt(p)) : null;
     fill(readout,
       h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)),
         isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : nearestSlotIndex(pts, c.now), { user: true }); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now"),
-        h("span", { class: "vchip", "data-v": null }, c.skip && slotHeld(p.at, r.window?.gates ?? []) ? "On hold" : slotInWindow(p.at, wins) ? "In a best window" : p.suitability == null ? "No window" : "Outside windows")),
+        h("span", { class: "vchip", "data-v": null }, c.skip && slotHeld(p.at, r.window?.gates ?? []) ? "On hold" : hourlyOutlook(p.suitability, !outsideWindow))),
       h("p", { class: "hour-detail-line" }, detailParts.join(" · ")), speciesDisclosure);
     if (commit) { st.t = p.at; writeHash(); }
   }
@@ -699,13 +783,17 @@ function conditionsStrip(c) {
   const windFactor = factors.find((x) => x.key === "wind");
   const windRaw = hourly?.windSpeed;
   const windValue = windRaw != null ? fmtWind(hourly) : windFactor?.value != null ? `${windFactor.value} ${windFactor.unit ?? ""}`.trim() : msg(windFactor?.humanLabel ?? "");
-  const water = factors.find((x) => x.key === "waterTemp");
+  const waterFactor = factors.find((x) => x.key === "waterTemp")?.value;
+  const waterObs = observationFor(observationRows(c.run, "waterTemperature", spotId), c.now)?.temperatureF;
+  const water = waterFactor ?? waterObs;
   const wave = observationFor([...observationRows(c.run, "waves", spotId), ...observationRows(c.run, "waveForecast", spotId)], c.now);
+  // Ocean buoy waves mean little in the ICW; tide direction is what matters there.
+  const tideNow = c.rec.mode === "inshore" ? slotSeries(c).filter((p) => Date.parse(p.at) <= c.now).at(-1)?.tide?.direction : null;
   const rows = [
     [tempF != null ? `${Math.round(tempF)}°F` : "—", "Air"],
     [windValue || "—", "Wind"],
-    [wave ? `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft` : "—", "Waves"],
-    [water?.value != null ? `${(+water.value).toFixed(0)}°F` : "—", "Water"],
+    c.rec.mode === "inshore" ? [tideNow ? cap(tideNow) : "—", "Tide"] : [wave ? `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft` : "—", "Waves"],
+    [water != null && Number.isFinite(+water) ? `${(+water).toFixed(0)}°F` : "—", "Water"],
   ];
   return h("section", { class: "card conditions-strip", "aria-label": "Conditions strip" }, rows.map(([value, label]) => h("div", { class: "condition-cell" }, h("b", {}, value), h("small", {}, label))));
 }
@@ -817,11 +905,12 @@ function spotsView(c) {
     spotMiniStats(c, featured.id),
     h("button", { class: "btn", type: "button", onclick: (e) => openSpotDetail(featured.id, rec.mode, e.currentTarget) }, "View details")) : null;
   return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "page-heading" }, h("h1", {}, "Spots"), h("div", { class: "page-actions" }, h("button", { class: "icon-button", type: "button", "aria-label": "Manage favorites", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "♥"))),
-    list.filters, searchBox("Search spots", st.search, (e) => { st.search = e.target.value; listHost?.rebuild(); }), featureCard, map, list)];
+    list.filters, searchBox("Search spots", st.search, (e) => { st.search = e.target.value; listHost?.rebuild(); }), map, featureCard, list)];
 }
 function spotMiniStats(c, locationId) {
   const waves = [...observationRows(c.run, "waves", locationId), ...observationRows(c.run, "waveForecast", locationId)];
-  const wave = waves.find((x) => x.waveHeightM != null && Number.isFinite(+x.waveHeightM));
+  const coastal = locOf(c.run, locationId)?.modes?.some((m) => m !== "inshore") ?? true;
+  const wave = coastal ? waves.find((x) => x.waveHeightM != null && Number.isFinite(+x.waveHeightM)) : null;
   const hourly = observationFor(observationRows(c.run, "hourlyForecast", locationId), c.now);
   const tides = observationRows(c.run, "tidePredictions", locationId).filter((x) => x.time && Number.isFinite(+x.heightFt)).sort((a, b) => Date.parse(a.time) - Date.parse(b.time));
   const now = Date.now(), ti = tides.findIndex((x) => Date.parse(x.time) >= now), a = tides[Math.max(0, ti - 1)], b = tides[ti];
@@ -849,20 +938,22 @@ function speciesRows(c) {
 }
 function speciesView(c) {
   const rows = speciesRows(c);
-  const tiles = (items) => h("ul", { class: "grid" }, items.map(({ sp, best, suit, focused }) =>
-    h("li", {}, h("button", { class: `sp${suit == null || (!focused && best?.eligibility !== "realistic") ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
-      "aria-label": `${sp.name}, ${suit == null ? "no reading" : `suitability ${suit}`}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
+  const tiles = (items) => h("ul", { class: "grid" }, items.map(({ sp, best, suit, focused }) => {
+    const notRealistic = !focused && best?.eligibility !== "realistic";
+    const showScore = suit != null && !notRealistic;
+    return h("li", {}, h("button", { class: `sp${!showScore ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
+      "aria-label": `${sp.name}, ${showScore ? `suitability ${suit}` : notRealistic ? speciesEligibilityLabel(best) : "no reading"}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-      h("div", { class: "big" }, h("b", {}, suit ?? "—"), h("span", {}, speciesFitBand(suit))),
+      showScore ? h("div", { class: "big" }, h("b", {}, suit), h("span", {}, speciesFitBand(suit))) : null,
       best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
       best?.historicalRate ? h("small", { class: "trip-rate" }, speciesTripRate(best)) : null,
-      h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${suit ?? 0}%` }))))));
+      showScore ? h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${suit}%` })) : null));
+  }));
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
     h("div", { class: "page-heading" }, h("h1", {}, "Species")),
     searchBox("Search species", st.search, (e) => { st.search = e.target.value; render(); }),
-    h("p", { class: "fine" }, "Realistic targets first · ranked by today's conditions fit"), h("p", { class: "fine eligibility-legend" }, "Dimmed means the fish is less commonly caught, off-list, or needs structure; conditions fit is still shown."),
+    h("p", { class: "fine" }, "Realistic targets first · ranked by today's conditions fit"), h("p", { class: "fine eligibility-legend" }, "Dimmed means the fish is less commonly caught, off-list, or needs structure, so no score is shown."),
     h("div", { class: "species-carousel" }, rows.filter((x) => !x.sp.bycatch && (st.search === "" || x.sp.name.toLowerCase().includes(st.search.toLowerCase()))).slice(0, 12).map(({ sp }) => h("button", { class: `species-avatar${st.species === sp.id ? " on" : ""}`, type: "button", "aria-label": sp.name, onclick: (e) => openSpecies(sp.id, e.currentTarget) }, fishImage(sp.id), h("span", {}, sp.name)))),
-    st.species ? h("p", { class: "notice" }, `Targeting ${spName(st.species)}. Today is re-ranked for it.`) : null,
     h("div", { class: "tools-row" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })), tiles(rows.filter((x)=>!x.sp.bycatch && (!st.search || x.sp.name.toLowerCase().includes(st.search.toLowerCase())))), h("details",{class:"also",open:session.also||null,ontoggle:(e)=>{session.also=e.currentTarget.open;}},h("summary",{},"Also biting (bycatch)"),tiles(rows.filter((x)=>x.sp.bycatch && (!st.search || x.sp.name.toLowerCase().includes(st.search.toLowerCase()))))))];
 }
 
@@ -885,7 +976,8 @@ function daySummary(c, day, index) {
   const wave = observationFor(waveRows, targetAt);
   const conditions = [];
   if (hourly?.windSpeed != null) conditions.push(`wind ${fmtWind(hourly)}`.replace(/\s+/g," ").trim());
-  if (wave) conditions.push(`waves ${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`);
+  // Ocean buoy waves mean little in the ICW; only quote them for surf and pier windows.
+  if (wave && (window?.mode ?? rec?.mode) !== "inshore") conditions.push(`waves ${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`);
   if (conditions.length) pieces.push(conditions.join(" · "));
   else if (rec?.reason?.text) pieces.push(msg(rec.reason));
   return pieces.join(" · ");
@@ -957,8 +1049,8 @@ function planView(c) {
   const summary = h("section", { class: "card daily-outlook" }, h("div", { class: "card-h" }, h("span", { class: "vchip", "data-v": selected?.kind === "outlook" || dayOnlyClosedWindows(selected) ? null : selected?.verdict }, selectedOutlook), h("h2", {}, "Daily outlook")), h("p", {}, msg(selectedCopy)),
     observations.length ? h("div", { class: "plan-conditions" }, temperature ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "☀"), h("b", {}, `${Math.round(temperature.temperature)}°F`), h("small", {}, temperature.shortForecast ?? "Air")) : null,
       firstHour?.windSpeed ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "↗"), h("b", {}, fmtWind(firstHour)), h("small", {}, "Wind")) : null,
-      (() => { const waves = observations.filter((x) => x.waveHeightM != null && Number.isFinite(+x.waveHeightM)); const wave = observationFor(waves, selectedAt) ?? waves[0]; return wave ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "〰"), h("b", {}, `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`), h("small", {}, "Waves")) : null; })(),
-      (() => { const water = observations.find((x) => x.temperatureF != null && Number.isFinite(+x.temperatureF)); return water ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "♨"), h("b", {}, `${water.temperatureF}°`), h("small", {}, "Water")) : null; })()) : null);
+      selectedMode !== "inshore" && (() => { const waves = observations.filter((x) => x.waveHeightM != null && Number.isFinite(+x.waveHeightM)); const wave = observationFor(waves, selectedAt) ?? waves[0]; return wave ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "〰"), h("b", {}, `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`), h("small", {}, "Waves")) : null; })(),
+      (() => { const water = observations.find((x) => x.temperatureF != null && Number.isFinite(+x.temperatureF)); return water ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "♨"), h("b", {}, `${Math.round(+water.temperatureF)}°F`), h("small", {}, "Water")) : null; })()) : null);
   const list = h("ul", { class: "days" }, days.flatMap((d,i) => {
     const outlook = d.kind === "outlook", w = dayOpenWindows(d)[0], onlyClosed = dayOnlyClosedWindows(d), bw = d.bestWindow ?? {};
     const title = i === 0 ? "Today" : wk(d.date,{weekday:"short"});
@@ -1098,6 +1190,7 @@ async function exportCatchLog() {
 /* ---------- sheets ---------- */
 let sheet = null;
 function openSheet(title, body, opener) {
+  interruptTabTransitions();
   closeSheet(true);
   const prev = opener ?? document.activeElement;
   const titleId = "sheet-title";
@@ -1107,26 +1200,62 @@ function openSheet(title, body, opener) {
     h("div", { class: "sheet-b" }, body));
   const scrim = h("div", { class: "scrim", onclick: () => closeSheet() });
   $("sheet-root").replaceChildren(scrim, panel);
+  document.body.classList.add("sheet-open");
   $("app").inert = true; $("tabbar").inert = true; $("review").inert = true;
-  sheet = { panel, prev, prevFk: prev?.dataset?.fk };
+  sheet = { panel, scrim, prev, prevFk: prev?.dataset?.fk };
   if (!matchMedia("(prefers-reduced-motion: reduce)").matches && panel.animate) {
     const desktop = matchMedia("(min-width:768px)").matches;
-    sheetAnimation = panel.animate(desktop ? [{ opacity: 0, transform: "translate(-50%,-48%) scale(.97)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)" }] : [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }], { duration: 280, easing: "cubic-bezier(.2,.8,.2,1)" });
+    sheetAnimation = panel.animate(desktop ? [{ opacity: 0, transform: "translate(-50%,-48%) scale(.97)" }, { opacity: 1, transform: "translate(-50%,-50%) scale(1)" }] : [{ transform: "translateY(100%)" }, { transform: "translateY(0)" }], { duration: 300, easing: motionEase });
     scrim.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: "ease-out" });
+  } else {
+    panel.animate?.([{ opacity: .72 }, { opacity: 1 }], { duration: 100, easing: "ease-out" });
+    scrim.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 100, easing: "ease-out" });
   }
-  const hd = panel.querySelector(".sheet-h"); let y0 = null, dy = 0;
-  let dragAt = 0;
-  hd.addEventListener("pointerdown", (e) => {
-    if (e.target.closest("button,input,select,textarea,a")) return;
-    y0 = e.clientY; dragAt = performance.now(); hd.setPointerCapture(e.pointerId); panel.classList.add("drag"); panel.style.willChange = "transform"; sheetAnimation?.cancel();
+  let y0 = null, dy = 0, pointerId = null, samples = [], captured = false;
+  const desktopSheet = matchMedia("(min-width:768px)").matches;
+  const dragTransform = (distance) => desktopSheet ? `translate(-50%, calc(-50% + ${distance}px))` : `translateY(${distance}px)`;
+  panel.addEventListener("pointerdown", (e) => {
+    if (e.target.closest("button,input,select,textarea,a,[contenteditable=true]") || e.button != null && e.button !== 0) return;
+    const body = panel.querySelector(".sheet-b");
+    if (body?.scrollTop > 0 && !e.target.closest(".sheet-h")) return;
+    y0 = e.clientY; dy = 0; pointerId = e.pointerId; samples = [{ p: e.clientY, t: performance.now() }]; captured = false; panel.style.touchAction = "none";
+    panel.classList.add("drag"); panel.style.willChange = "transform"; sheetAnimation?.cancel();
   });
-  hd.addEventListener("pointermove", (e) => { if (y0 == null) return; dy = Math.max(0, e.clientY - y0); panel.style.transform = `translateY(${dy}px)`; });
-  const rel = () => { if (y0 == null) return; const velocity = dy / Math.max(1, performance.now() - dragAt); y0 = null; panel.classList.remove("drag"); panel.style.willChange = ""; if (velocity > .5 || dy > panel.getBoundingClientRect().height * .3) closeSheet(); else {
-    const desktop = matchMedia("(min-width:768px)").matches;
-    sheetAnimation = panel.animate([{ transform: `translateY(${dy}px)` }, { transform: desktop ? "translate(-50%,-50%)" : "translateY(0)" }], { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
-    sheetAnimation.finished.finally(() => { if (sheet?.panel === panel) panel.style.transform = ""; }).catch(() => {});
-  } dy = 0; };
-  hd.addEventListener("pointerup", rel); hd.addEventListener("pointercancel", rel);
+  panel.addEventListener("pointermove", (e) => {
+    if (y0 == null || e.pointerId !== pointerId) return;
+    const delta = e.clientY - y0;
+    if (!captured && Math.abs(delta) < 7) return;
+    dy = delta < -7 ? rubberBand(delta, panel.getBoundingClientRect().height) : Math.max(0, delta);
+    if (!captured) { panel.style.touchAction = "none"; panel.setPointerCapture(e.pointerId); captured = true; }
+    const now = performance.now(); samples.push({ p: e.clientY, t: now }); samples = samples.filter((sample) => now - sample.t <= 120).slice(-6);
+    const progress = Math.max(0, Math.min(1, 1 - dy / panel.getBoundingClientRect().height));
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) panel.style.opacity = String(.72 + progress * .28);
+    else panel.style.transform = dragTransform(dy);
+    if (scrim) scrim.style.opacity = String(progress);
+    document.body.style.setProperty("--sheet-progress", String(progress));
+    document.body.style.setProperty("--sheet-scale", String(1 - progress * .04));
+    document.body.style.setProperty("--sheet-alpha", String(1 - progress * .14));
+    e.preventDefault();
+  }, { passive: false });
+  const rel = (event) => {
+    if (y0 == null || event.pointerId !== pointerId) return;
+    const velocity = gestureVelocity(samples); y0 = null; pointerId = null;
+    panel.classList.remove("drag"); panel.style.willChange = ""; panel.style.touchAction = "";
+    if (event.type !== "pointercancel" && (velocity > .5 || dy > panel.getBoundingClientRect().height * .3)) closeSheet(false, { velocity, distance: dy });
+    else {
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const duration = reduce ? 100 : gestureDuration(Math.abs(dy), velocity);
+      sheetAnimation = reduce
+        ? panel.animate?.([{ opacity: Number(panel.style.opacity || 1) }, { opacity: 1 }], { duration, easing: "ease-out" })
+        : panel.animate?.([{ transform: dragTransform(dy) }, { transform: desktopSheet ? "translate(-50%,-50%)" : "translateY(0)" }], { duration, easing: motionEase });
+      scrim?.animate?.([{ opacity: getComputedStyle(scrim).opacity }, { opacity: 1 }], { duration, easing: "ease-out", fill: "forwards" });
+      document.body.style.removeProperty("--sheet-progress");
+      document.body.style.removeProperty("--sheet-scale"); document.body.style.removeProperty("--sheet-alpha");
+      sheetAnimation?.finished.finally(() => { if (sheet?.panel === panel) { panel.style.transform = ""; panel.style.opacity = ""; if (scrim) scrim.style.opacity = ""; sheetAnimation = null; } }).catch(() => {});
+    }
+    dy = 0; samples = []; captured = false;
+  };
+  panel.addEventListener("pointerup", rel); panel.addEventListener("pointercancel", rel);
   panel.addEventListener("keydown", trap);
   panel.querySelector(".xbtn").focus();
 }
@@ -1138,11 +1267,11 @@ function trap(e) {
   const first = f[0], last = f[f.length - 1];
   if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); } else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
 }
-function closeSheet(silent) {
+function closeSheet(silent, dragInfo = null) {
   if (!sheet) return Promise.resolve();
   tick("close"); sheet.observer?.disconnect();
   const current = sheet, { panel, prev, prevFk } = current;
-  if (silent) { sheet = null; sheetAnimation?.cancel(); $("sheet-root").replaceChildren(); current.resolveClose?.(); }
+  if (silent) { sheet = null; sheetAnimation?.cancel(); $("sheet-root").replaceChildren(); document.body.classList.remove("sheet-open"); document.body.style.removeProperty("--sheet-progress"); document.body.style.removeProperty("--sheet-scale"); document.body.style.removeProperty("--sheet-alpha"); current.resolveClose?.(); }
   else {
     if (current.closing) return current.closePromise;
     current.closing = true;
@@ -1152,15 +1281,18 @@ function closeSheet(silent) {
     const desktop = matchMedia("(min-width:768px)").matches, computed = getComputedStyle(panel).transform;
     const from = panel.style.transform && panel.style.transform !== "none" ? panel.style.transform : computed && computed !== "none" ? computed : desktop ? "translate(-50%,-50%)" : "translateY(0)";
     sheetAnimation?.cancel();
-    const animation = !reduce && panel.animate ? panel.animate([{ transform: from }, { transform: desktop ? "translate(-50%,-46%)" : "translateY(100%)" }], { duration: 280, easing: "cubic-bezier(.32,.72,0,1)" }) : null;
+    const remaining = Math.max(0, panel.getBoundingClientRect().height - Math.max(0, dragInfo?.distance ?? 0));
+    const duration = dragInfo ? gestureDuration(remaining, dragInfo.velocity) : 280;
+    const animation = panel.animate ? panel.animate(reduce ? [{ opacity: Number(getComputedStyle(panel).opacity) }, { opacity: 0 }] : [{ transform: from }, { transform: desktop ? "translate(-50%,-46%)" : "translateY(100%)" }], { duration: reduce ? 100 : duration, easing: reduce ? "ease-out" : motionEase }) : null;
+    scrim?.animate?.([{ opacity: getComputedStyle(scrim).opacity }, { opacity: 0 }], { duration: reduce ? 100 : duration, easing: "ease-out", fill: "forwards" });
     const closeStarted = performance.now(); let minExitTimer;
     const remove = () => {
-      const remaining = 280 - (performance.now() - closeStarted);
-      if (remaining > 0) { clearTimeout(minExitTimer); minExitTimer = setTimeout(remove, remaining); return; }
-      if (sheet === current) sheet = null; panel.remove(); scrim?.remove(); if (sheetAnimation === animation) sheetAnimation = null; current.resolveClose?.();
+      const wait = (animation ? (reduce ? 100 : duration) : 0) - (performance.now() - closeStarted);
+      if (wait > 0) { clearTimeout(minExitTimer); minExitTimer = setTimeout(remove, wait); return; }
+      if (sheet === current) sheet = null; panel.remove(); scrim?.remove(); document.body.classList.remove("sheet-open"); document.body.style.removeProperty("--sheet-progress"); document.body.style.removeProperty("--sheet-scale"); document.body.style.removeProperty("--sheet-alpha"); if (sheetAnimation === animation) sheetAnimation = null; current.resolveClose?.();
     };
     if (animation) {
-      const fallback = setTimeout(remove, 280);
+      const fallback = setTimeout(remove, reduce ? 100 : duration);
       animation.finished.then(() => { clearTimeout(fallback); remove(); }).catch(() => {});
     } else remove();
   }
@@ -1255,7 +1387,7 @@ function openSpecies(id, opener) {
   const body = h("div", { class: "species-detail" }, fishImage(id, "species-detail-photo"),
     h("p", { class: "species-season" }, `${monthName} · ${sp.modes.map(modeLabel).join(" / ")}`),
     h("nav", { class: "species-tabs", "aria-label": "Species details" }, ["Overview", "Techniques", "Bait & Gear", "Best Times"].map((label) => h("button", { type: "button", class: "species-tab", onclick: (e) => {
-      const targets = { Overview: "Best place and time", Techniques: "Use", "Bait & Gear": "Use", "Best Times": "Local history" };
+      const targets = { Overview: "Best for this fish", Techniques: "Use", "Bait & Gear": "Use", "Best Times": "Local history" };
       const section = [...body.querySelectorAll(":scope > .block")].find((x) => x.querySelector("h3")?.textContent === targets[label]);
       section?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
       body.querySelectorAll(".species-tab").forEach((b) => b.setAttribute("aria-current", String(b === e.currentTarget)));
@@ -1278,7 +1410,7 @@ function openSpecies(id, opener) {
       sp.tip ? h("div", {}, h("dt", {}, "Tip"), h("dd", {}, sp.tip)) : null), h("p", { class: "fine" }, "Check current FWC rules before you go.")),
     h("div", { class: "cta" },
       sp.bycatch ? h("p", { class: "fine" }, "Bycatch species are never a target, so there is no Target this.") :
-      st.species === id ? h("button", { class: "btn alt", type: "button", onclick: () => scope({ spot: st.spot, mode: st.mode }) }, "Stop targeting") :
+      st.species === id ? h("button", { class: "btn alt", type: "button", onclick: () => scope({ spot: st.spot, mode: st.mode, tab: st.tab }) }, "Stop targeting") :
       h("button", { class: "btn", type: "button", disabled: focused ? null : true, "aria-describedby": focused ? null : "tt-why", onclick: () => scope({ spot: null, species: id }) }, `Target this: ${sp.name}`),
       !sp.bycatch && !focused ? h("p", { class: "fine", id: "tt-why" }, `No usable window for ${sp.name} in this run, so it can't re-rank Today.`) : null));
   const blocks = [...body.querySelectorAll(":scope > .block")];
@@ -1356,38 +1488,40 @@ async function init() {
       const c = ctx(); nodes = tab === "today" ? todayView(c) : tab === "spots" ? spotsView(c) : tab === "species" ? speciesView(c) : tab === "plan" ? planView(c) : logView(c);
     } finally { st.tab = previous; listHost = previousHost; }
     const preview = h("div", { class: "tab-peek", "aria-hidden": "true" }, ...nodes);
-    preview.inert = true; document.body.append(preview); return preview;
+    preview.inert = true; preview.style.transform = "translateX(110vw)"; document.body.append(preview); return preview;
   };
   const tabIndexAt = (x) => Math.max(0, Math.min(tabButtons.length - 1, Math.floor((x - tabs.getBoundingClientRect().left) / (tabs.getBoundingClientRect().width / tabButtons.length))));
-  const tabTick = () => { tick("select"); window.Capacitor?.Plugins?.Haptics?.impact?.({ style: "LIGHT" })?.catch?.(() => {}); };
+  let tabSuppressClick = false;
   tabs.addEventListener("pointerdown", (event) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const index = tabIndexAt(event.clientX); tabDrag = { pointerId: event.pointerId, index, startX: event.clientX, moved: false };
-    tabs.setPointerCapture(event.pointerId); tabs.classList.add("dragging"); tabs.style.setProperty("--tab-i", index);
   });
   tabs.addEventListener("pointermove", (event) => {
     if (!tabDrag || event.pointerId !== tabDrag.pointerId) return;
-    const index = tabIndexAt(event.clientX); tabDrag.moved ||= Math.abs(event.clientX - tabDrag.startX) > 8;
+    const index = tabIndexAt(event.clientX); tabDrag.moved ||= Math.abs(event.clientX - tabDrag.startX) > 10;
+    if (tabDrag.moved && !tabs.hasPointerCapture(event.pointerId)) { tabs.setPointerCapture(event.pointerId); tabs.classList.add("dragging"); }
     const box = tabs.getBoundingClientRect(), step = box.width / tabButtons.length;
-    tabs.style.setProperty("--tab-i", Math.max(0, Math.min(tabButtons.length - 1, (event.clientX - box.left) / step - .5)));
-    if (index !== tabDrag.index) { tabDrag.index = index; tabTick(); }
+    if (tabDrag.moved) tabs.style.setProperty("--tab-i", Math.max(0, Math.min(tabButtons.length - 1, (event.clientX - box.left) / step)));
+    if (index !== tabDrag.index) tabDrag.index = index;
   });
   const finishTabDrag = (event) => {
     if (!tabDrag || (event && event.pointerId !== tabDrag.pointerId)) return;
     const target = tabButtons[tabDrag.index]?.dataset.tab, moved = tabDrag.moved; tabDrag = null;
     tabs.classList.remove("dragging");
-    if (moved && target) go(target);
-    setTimeout(() => tabs.style.removeProperty("--tab-i"), 360);
+    tabSuppressClick = moved;
+    if (moved && target) { event?.preventDefault(); go(target); }
+    if (!moved) tabs.style.removeProperty("--tab-i");
   };
-  tabs.addEventListener("pointerup", finishTabDrag); tabs.addEventListener("pointercancel", finishTabDrag);
+  tabs.addEventListener("pointerup", finishTabDrag); tabs.addEventListener("pointercancel", () => { tabDrag = null; tabSuppressClick = false; tabs.classList.remove("dragging"); tabs.style.removeProperty("--tab-i"); });
+  tabs.addEventListener("click", (event) => { if (tabSuppressClick) { tabSuppressClick = false; event.preventDefault(); event.stopImmediatePropagation(); } }, { capture: true });
   $("refresh").addEventListener("click", () => {
     const chip = $("fresh"), rm = matchMedia("(prefers-reduced-motion: reduce)").matches;
     chip.replaceChildren(rm ? "" : h("span", { class: "spin" }), "Updating…");
-    refreshLiveData().then(() => { refreshError = ""; tick("refresh"); }).catch(error => { console.warn("V5 live refresh failed", error); refreshError = `Couldn't refresh — showing ${fmtTime(ctx().run.generatedAt)} data`; }).finally(() => { render(); $("pull-refresh")?.remove(); });
+    refreshLiveData().then((result) => { refreshError = ""; if (result.changed) render(); else { renderHeader(ctx()); renderBanner(ctx()); } tick("refresh"); }).catch(error => { console.warn("V5 live refresh failed", error); refreshError = `Couldn't refresh — showing ${fmtTime(ctx().run.generatedAt)} data`; render(); }).finally(() => { $("pull-refresh")?.remove(); });
   });
   if (matchMedia("(display-mode: standalone)").matches) document.body.style.overscrollBehaviorY = "contain";
   let pullStart = null, pulled = false, pullDistance = 0;
-  document.addEventListener("touchstart", (e) => { pullStart = st.tab === "today" && scrollY === 0 && !sheet ? e.touches[0].clientY : null; pullDistance = 0; }, {passive:true});
+  document.addEventListener("touchstart", (e) => { pullStart = st.tab === "today" && scrollY === 0 && !sheet ? e.touches[0].clientY : null; pullDistance = 0; pulled = false; }, {passive:true});
   document.addEventListener("touchmove", (e) => {
     if (pullStart == null || cOffline()) return;
     const distance = Math.max(0, e.touches[0].clientY - pullStart);
@@ -1402,6 +1536,7 @@ async function init() {
     if (pulled) $("refresh").click();
     $("pull-refresh")?.remove(); pullStart=null; pulled=false; pullDistance=0;
   });
+  document.addEventListener("touchcancel", () => { $("main").style.transform = ""; $("pull-refresh")?.remove(); pullStart = null; pulled = false; pullDistance = 0; });
   const cOffline = () => ctx().offline;
   const nav = $("tabbar"), wide = matchMedia("(min-width:900px)"); const placeNav = () => { if(wide.matches) document.querySelector(".bar").append(nav); else document.body.insertBefore(nav,$("sheet-root")); }; placeNav(); wide.addEventListener("change",placeNav);
   initReview();
@@ -1409,12 +1544,44 @@ async function init() {
   try {
     const first = new URLSearchParams(location.hash.slice(1));
     const wanted = STATES.find((x) => x.id === first.get("state"));
-    const [credits] = await Promise.all([load("img/CREDITS.json"), load(RICH_SAMPLE), load(TOMORROW_SAMPLE), ...(wanted ? [load(wanted.file)] : []), refreshLiveData()]);
+    const cached = readCachedProtoRuns(safeStorage());
+    if (cached) {
+      D[RICH] = cached.today; D[TOMORROW] = cached.tomorrow;
+      horizonSource.today = horizonSource.tomorrow = "cached";
+      horizonOffline.today = horizonOffline.tomorrow = navigator.onLine === false;
+      dataSource = "cached"; dataOffline = navigator.onLine === false;
+    }
+    const creditsPromise = load("img/CREDITS.json");
+    const samplesPromise = cached ? null : Promise.all([load(RICH_SAMPLE), load(TOMORROW_SAMPLE), ...(wanted ? [load(wanted.file)] : [])]);
+    const [credits] = await Promise.all([creditsPromise, samplesPromise ?? Promise.resolve()]);
+    if (!cached) {
+      D[RICH] = D[RICH_SAMPLE]; D[TOMORROW] = D[TOMORROW_SAMPLE];
+      horizonSource.today = horizonSource.tomorrow = "sample";
+      horizonOffline.today = horizonOffline.tomorrow = navigator.onLine === false;
+      dataOffline = navigator.onLine === false;
+    }
     imageCredits = Array.isArray(credits) ? credits.filter((entry) => !entry.file.startsWith("fish/ref/")) : [];
     const p = readHash();
     if (!location.hash) { const saved = store.get("spot", null); if (saved && locOf(D[RICH], saved.spot)) { st.spot = saved.spot; st.mode = coerceMode(D[RICH], saved.spot, saved.mode); } }
+    refreshInProgress = navigator.onLine !== false;
     render({ resetScroll: true });
     if (p.get("t") && st.tab === "today") render();
+    let renderedOnToday = false;
+    refreshLiveData({ onToday: ({ changed }) => {
+      renderedOnToday = changed;
+      if (changed) render();
+      else { renderHeader(ctx()); renderBanner(ctx()); }
+    } }).then((result) => {
+      if (result.changed && !renderedOnToday && st.h === "tomorrow") render();
+      else if (!renderedOnToday) { renderHeader(ctx()); renderBanner(ctx()); }
+    }).catch((error) => {
+      console.warn("V5 initial refresh failed", error);
+      dataOffline = navigator.onLine === false || !cached;
+      horizonOffline.today = dataOffline;
+      refreshInProgress = false;
+      if (!cached) dataSource = horizonSource.today = "sample";
+      render();
+    });
   } catch (e) {
     console.error(e);
     $("view").replaceChildren(h("div", { class: "card" }, h("h2", {}, "Couldn't read the report"), h("p", { class: "muted" }, "Something went wrong reading the report. Try again, or check back in a few minutes."),
@@ -1432,62 +1599,93 @@ async function init() {
   setInterval(() => { syncTheme(); refreshLiveData().then(() => { const next = `${D[RICH]?.id}|${D[TOMORROW]?.id}|${dataSource}|${dataOffline}`; if (next !== dataKey) { dataKey = next; render(); } }).catch(error => console.warn("V5 scheduled refresh failed", error)); }, 5 * 60 * 1000);
   setInterval(() => { const next = clockRenderKey(); if (next !== clockKey) { clockKey = next; render(); } }, 60 * 1000);
   addEventListener("hashchange", async () => { closeSheet(); const p = new URLSearchParams(location.hash.slice(1)); const d = STATES.find((x) => x.id === p.get("state")); if (d) await load(d.file); readHash(); render(); });
-  let swipe = null;
+  let swipe = null, lastScrollAt = 0;
+  // A drag that starts while the page is still scrolling (momentum) is a scroll, not a tab swipe.
+  addEventListener("scroll", () => { lastScrollAt = performance.now(); }, { passive: true });
   const previewCache = new Map();
   const clearSwipePreviews = () => { for (const preview of previewCache.values()) preview.remove(); previewCache.clear(); };
-  const prepareSwipePreviews = () => {
-    const i = TAB_ORDER.indexOf(st.tab), neighbors = [TAB_ORDER[i - 1], TAB_ORDER[i + 1]].filter(Boolean);
-    for (const tab of neighbors) {
-      previewCache.get(tab)?.remove();
-      const preview = makeTabPreview(tab); preview.style.position = "fixed"; preview.style.inset = "0"; preview.style.width = "100%"; preview.style.overflow = "auto"; preview.style.pointerEvents = "none";
-      previewCache.set(tab, preview);
-    }
+  document.addEventListener("v5:interrupt-tab-gesture", () => { swipe = null; swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); });
+  const prepareSwipePreview = (tab) => {
+    if (previewCache.has(tab)) { const preview = previewCache.get(tab); document.body.append(preview); return preview; }
+    const preview = makeTabPreview(tab), box = $("view").getBoundingClientRect();
+    preview.style.top = `${Math.max(0, box.top)}px`;
+    preview.style.bottom = `${innerHeight - $("tabbar").getBoundingClientRect().top}px`;
+    preview.style.left = `${box.left}px`; preview.style.width = `${box.width}px`;
+    preview.style.padding = "0";
+    preview.scrollTop = session.scroll[tab] ?? 0;
+    previewCache.set(tab, preview);
+    return preview;
   };
-  const scrollsHorizontally = (target) => { for (let el = target; el && el !== $("view"); el = el.parentElement) { const style = getComputedStyle(el); if (el.matches(".scrub,.seg,input,select,textarea,[contenteditable=true]") || /(auto|scroll)/.test(`${style.overflowX} ${style.overflow}`) && el.scrollWidth > el.clientWidth + 1) return true; } return false; };
+  const scrollsHorizontally = (target) => { for (let el = target; el && el !== $("view"); el = el.parentElement) { const style = getComputedStyle(el); if (el.matches(".scrub,.seg,input,select,textarea,[contenteditable=true],.target-species-scroll,.other-spots-scroll,.species-carousel,.plan-day-chips,.hourly-scroll,.species-tabs") || /(auto|scroll)/.test(`${style.overflowX} ${style.overflow}`) && el.scrollWidth > el.clientWidth + 1) return true; } return false; };
   document.addEventListener("touchstart", (e) => {
     const t = e.touches[0], target = e.target;
-    if (!$("view").contains(target) || sheet || t.clientX < 20 || t.clientX > innerWidth - 20 || scrollsHorizontally(target)) { swipe = null; return; }
-    swipe = { x: t.clientX, y: t.clientY, at: performance.now(), dx: 0, dy: 0, view: $("view") };
-    const prepare = () => { if (swipe) prepareSwipePreviews(); };
-    if (window.requestIdleCallback) requestIdleCallback(prepare, { timeout: 250 }); else setTimeout(prepare, 120);
+    if (!$("view").contains(target) || sheet || t.clientX < 20 || t.clientX > innerWidth - 20 || performance.now() - lastScrollAt < 150 || scrollsHorizontally(target)) { swipe = null; return; }
+    if (tabSettleAnimation || document.querySelector(".tab-peek")) interruptTabTransitions();
+    swipe = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, scrollY, view: $("view"), samples: [{ p: t.clientX, t: performance.now() }] };
+    clearSwipePreviews();
   }, { passive: true });
   document.addEventListener("touchmove", (e) => {
     if (!swipe) return;
-    const t = e.touches[0]; swipe.dx = t.clientX - swipe.x; swipe.dy = t.clientY - swipe.y;
-    if (Math.abs(swipe.dx) > Math.abs(swipe.dy) * 1.5) {
-      const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (swipe.dx < 0 ? 1 : -1)], atEdge = !next, dx = atEdge ? swipe.dx * .28 : swipe.dx;
+    const t = e.touches[0], now = performance.now(); swipe.dx = t.clientX - swipe.x; swipe.dy = t.clientY - swipe.y;
+    swipe.samples.push({ p: t.clientX, t: now }); swipe.samples = swipe.samples.filter((sample) => now - sample.t <= 120).slice(-6);
+    if (!swipe.horizontal && (Math.abs(swipe.dy) > 10 && Math.abs(swipe.dy) >= Math.abs(swipe.dx) || Math.abs(scrollY - swipe.scrollY) > 2)) { swipe = null; clearSwipePreviews(); return; }
+    if (swipe.horizontal || Math.abs(swipe.dx) > 18 && Math.abs(swipe.dx) > Math.abs(swipe.dy) * 2) {
+      swipe.horizontal = true;
+      const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (swipe.dx < 0 ? 1 : -1)], atEdge = !next, dx = atEdge ? rubberBand(swipe.dx, innerWidth) : swipe.dx;
+      if (!swipe.interrupted) {
+        const matrix = new DOMMatrixReadOnly(getComputedStyle(swipe.view).transform);
+        const carriedX = Number.isFinite(matrix.m41) ? matrix.m41 : 0;
+        tabSettleAnimation?.cancel(); tabSettleAnimation = null;
+        swipe.view.style.transform = carriedX ? `translateX(${carriedX}px)` : "";
+        swipe.interrupted = true;
+      }
       tabs.classList.add("content-drag");
-      tabs.style.setProperty("--tab-i", Math.max(0, Math.min(TAB_ORDER.length - 1, i + swipe.dx / innerWidth)));
+      tabs.style.setProperty("--tab-i", Math.max(0, Math.min(TAB_ORDER.length - 1, i - swipe.dx / innerWidth)));
       if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
         swipe.view.style.willChange = "transform"; swipe.view.style.transform = `translateX(${dx}px)`;
-        if (next && next !== swipePreviewTab) { swipePreview?.remove(); swipePreview = previewCache.get(next) ?? null; swipePreviewTab = next; if (swipePreview) { swipePreview.style.zIndex = "20"; swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`; } }
+        if (next && next !== swipePreviewTab) { swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next; if (swipePreview) { swipePreview.style.zIndex = "20"; swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`; } }
         if (swipePreview) swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`;
         if (!next) { swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; }
       }
       e.preventDefault();
     }
   }, { passive: false });
-  const finishSwipe = () => {
+  const finishSwipe = (event) => {
     if (!swipe) return;
-    const { dx, dy, at, view } = swipe; swipe = null;
-    const elapsed = Math.max(1, performance.now() - at), velocity = Math.abs(dx) / elapsed;
-    if (Math.abs(dx) <= Math.abs(dy) * 1.5 || !(Math.abs(dx) >= 60 || Math.abs(dx) >= 24 && velocity >= .45)) {
+    const { dx, dy, view, samples } = swipe; swipe = null;
+    const velocity = gestureVelocity(samples), projected = dx + velocity * 200;
+    const currentIndex = TAB_ORDER.indexOf(st.tab), candidate = TAB_ORDER[currentIndex + (projected < 0 ? 1 : -1)];
+    const commit = event.type !== "touchcancel" && !!candidate && Math.sign(projected) === Math.sign(dx) && Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(projected) >= Math.max(80, innerWidth * 0.22);
+    if (!commit) {
       swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); tabs.classList.remove("content-drag"); tabs.style.removeProperty("--tab-i");
-      if (view.animate && view.style.transform) view.animate([{ transform: view.style.transform }, { transform: "translateX(0)" }], { duration: 240, easing: "cubic-bezier(.32,.72,0,1)" }).finished.finally(() => { view.style.transform = ""; view.style.willChange = ""; }).catch(() => {});
-      else { view.style.transform = ""; view.style.willChange = ""; }
+      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const from = view.style.transform || "translateX(0)";
+      if (view.animate && from !== "translateX(0)") {
+        const animation = view.animate(reduce ? [{ opacity: .72 }, { opacity: 1 }] : [{ transform: from }, { transform: "translateX(0)" }], { duration: reduce ? 100 : gestureDuration(Math.abs(dx), velocity), easing: motionEase });
+        animation.finished.finally(() => { view.style.transform = ""; view.style.willChange = ""; }).catch(() => {});
+      } else { view.style.transform = ""; view.style.willChange = ""; }
       return;
     }
-    const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (dx < 0 ? 1 : -1)];
-    if (!next) { swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); tabs.classList.remove("content-drag"); tabs.style.removeProperty("--tab-i"); view.style.transform = ""; view.style.willChange = ""; return; }
-    const direction = dx < 0 ? -1 : 1, targetIndex = TAB_ORDER.indexOf(next);
-    tabs.style.setProperty("--tab-i", targetIndex); tabs.classList.add("content-drag");
+    const next = candidate, targetIndex = TAB_ORDER.indexOf(candidate);
+    const direction = targetIndex > currentIndex ? -1 : 1;
+    if (swipePreviewTab !== next) {
+      swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next;
+    }
+    if (swipePreview) { swipePreview.style.zIndex = "20"; swipePreview.style.transform = `translateX(${-direction * innerWidth + dx}px)`; }
+    animateTabPreview(swipePreview, next);
+    tabs.classList.remove("content-drag"); tabs.style.setProperty("--tab-i", targetIndex);
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const remaining = Math.max(0, innerWidth - Math.abs(dx)), duration = reduce ? 100 : gestureDuration(remaining, velocity);
     const animations = [];
-    if (view.animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) animations.push(view.animate([{ transform: `translateX(${dx}px)` }, { transform: `translateX(${direction * innerWidth}px)` }], { duration: 220, easing: "cubic-bezier(.32,.72,0,1)" }).finished.catch(() => {}));
-    if (swipePreview?.animate && !matchMedia("(prefers-reduced-motion: reduce)").matches) animations.push(swipePreview.animate([{ transform: `translateX(${-direction * innerWidth + dx}px)` }, { transform: "translateX(0)" }], { duration: 220, easing: "cubic-bezier(.32,.72,0,1)" }).finished.catch(() => {}));
+    if (!reduce && view.animate && view.style.transform) animations.push(view.animate([{ transform: view.style.transform }, { transform: `translateX(${direction * innerWidth}px)` }], { duration, easing: motionEase }).finished.catch(() => {}));
+    if (!reduce && swipePreview?.animate) animations.push(swipePreview.animate([{ transform: `translateX(${-direction * innerWidth + dx}px)` }, { transform: "translateX(0)" }], { duration, easing: motionEase }).finished.catch(() => {}));
+    if (reduce && view.animate) animations.push(view.animate([{ opacity: .72 }, { opacity: 1 }], { duration, easing: "ease-out" }).finished.catch(() => {}));
+    const transition = ++tabTransitionEpoch;
     Promise.all(animations).finally(() => {
+      if (transition !== tabTransitionEpoch) { swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); view.style.transform = ""; view.style.willChange = ""; return; }
+      go(next, { swipe: true });
       swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews();
       view.style.transform = ""; view.style.willChange = "";
-      go(next, { swipe: true });
       tabs.classList.remove("content-drag"); tabs.style.removeProperty("--tab-i");
     });
   };

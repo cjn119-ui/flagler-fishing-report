@@ -18,6 +18,11 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* V5 floats its tab bar over the page; keep the page's own clearance so the last content isn't hidden under it. */
+body:has(> .tabbar) {
+  padding-bottom: calc(var(--ios-bottom-inset) + 112px);
+}
+
 input,
 textarea,
 select {

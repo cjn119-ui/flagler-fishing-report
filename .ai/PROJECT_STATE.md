@@ -24,6 +24,13 @@ First Coast fishing-decision PWA (St. Augustine → Flagler; surf/pier/inshore) 
 ## Routing (owner rules, 2026-10-05/06)
 No Sol in delegation. Bounded work → Codex GPT-6 Luna Low/Medium/High (XHigh only in previously allowed roles); judgment/taste → Claude Sonnet/Opus Medium; adversarial review → Claude Sonnet; deterministic checks run directly (never delegated). Launch Codex directly with `codex-companion task --write --model gpt-6-luna --effort <e> --cwd <repo> --prompt-file <f>`; verify model/effort in the session file. Never push/merge/deploy/enable Supabase without explicit approval.
 
+## In progress (2026-10-14, uncommitted, Claude Code session)
+- Owner decision: tide `rateNormalizationScale` = 0.5 for now (`params.js`). Hindcast report predates this — re-run.
+- UI fixes in `site/v5/proto/*` + `ios/bridge.css` verified on iPhone 18 Pro simulator: tab-swipe gating, targeting chip on all tabs + un-target, tab bar clearance, live water temp (°C→°F, rounded on Plan), inshore tide cell, Best times opens on next window.
+- Engine (Codex Luna High, reviewed): falling-tide height fix (`run.js tideAt`), Open-Meteo `pressureForecast` used for future-slot 6 h pressure change. No active CO-OPS water-temp station within 25 mi of inshore spots (nearest Mayport 8720218, 34–66 mi) — buoy kept.
+- All V5 suites pass (Node 26; Node 22 binary is broken locally). `test-generated-output.mjs` not run (live network).
+- Next: owner review → commit/push; confirm next scheduled report clears "Tide timing is unavailable" and `pressureUnavailable`.
+
 ## Next tasks
 1. Owner decisions above.
 2. Fix the "absolute-only" reporting row in `scripts/hindcast/run-hindcast.mjs`.

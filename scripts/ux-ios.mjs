@@ -87,7 +87,7 @@ async function setAppearance(name) {
 async function touchSwipe(selector, dx, dy = 0) {
   if (selector !== "#view") await page.locator(selector).scrollIntoViewIfNeeded();
   const coords = await page.locator(selector).evaluate((el) => {
-    const safe = el.id === "view" ? el.querySelector(".page-heading") ?? el.querySelector("#verdict") ?? el : el;
+    const safe = el.id === "view" ? el.querySelector(".page-heading") ?? el.querySelector("#verdict") ?? el.querySelector(".card-h") ?? el : el;
     const box = safe.getBoundingClientRect(), x = Math.max(24, Math.min(innerWidth - 24, innerWidth / 2)), y = el.matches(".scrub") ? box.top + box.height / 2 : Math.max(24, Math.min(innerHeight - 120, box.top + box.height / 2));
     return { x, y };
   });
@@ -104,6 +104,34 @@ async function touchSwipe(selector, dx, dy = 0) {
     }, { dx, dy, ...coords });
   }
   await page.waitForTimeout(650);
+}
+async function cleanNavigationState(tab) {
+  await page.waitForFunction((name) => document.querySelector('.tab[aria-current="page"]')?.dataset.tab === name, tab, { timeout: 3000 });
+  await page.waitForTimeout(390);
+  const state = await page.evaluate(() => ({
+    active: document.querySelector('.tab[aria-current="page"]')?.dataset.tab,
+    peeks: document.querySelectorAll(".tab-peek").length,
+    viewTransform: document.querySelector("#view").style.transform,
+    tabIndex: document.querySelector(".tabs").style.getPropertyValue("--tab-i"),
+    vIn: document.querySelector("#view").classList.contains("v-in"),
+    stagger: document.querySelector("#view .stagger") !== null
+  }));
+  assert.equal(state.active, tab, `active tab settles on ${tab}`);
+  assert.equal(state.peeks, 0, "no swipe preview remains after navigation");
+  assert.equal(state.viewTransform, "", "#view has no inline transform after navigation");
+  assert.equal(state.tabIndex, "", "inline --tab-i is unset after navigation");
+  assert.equal(state.vIn, false, "tab slide does not apply the rise class");
+  assert.equal(state.stagger, false, "tab slide does not replay stagger classes");
+}
+async function dragSheet(distance, steps, delay) {
+  const box = await page.locator(".sheet-h").boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y); await page.mouse.down();
+  for (let i = 1; i <= steps; i++) {
+    await page.mouse.move(x, y + distance * i / steps);
+    if (delay) await page.waitForTimeout(delay);
+  }
+  await page.mouse.up();
 }
 async function dragTabbar(fromIndex, toIndex) {
   const box = await page.locator(".tabs").boundingBox();
@@ -230,6 +258,67 @@ try {
   await touchSwipe("#view", 130); assert.equal(await page.locator(".tab[aria-current=page]").getAttribute("data-tab"), "today", "first tab must not wrap");
   if (await page.locator(".scrub").count()) { await touchSwipe(".scrub", -130); assert.equal(await page.locator(".tab[aria-current=page]").getAttribute("data-tab"), "today", "scrubber swipe must be ignored"); }
 
+  const tapSlide = await page.evaluate(() => {
+    document.querySelector('.tab[data-tab="spots"]').click();
+    const animation = [...document.querySelector("#view").getAnimations()].find((item) => item.effect?.getKeyframes().some((frame) => frame.transform));
+    return { keyframes: animation?.effect?.getKeyframes() ?? [], vIn: document.querySelector("#view").classList.contains("v-in"), stagger: !!document.querySelector("#view .stagger") };
+  });
+  assert.ok(String(tapSlide.keyframes[0]?.transform).includes("18px"), `Today to Spots tap enters from the next tab direction: ${JSON.stringify(tapSlide.keyframes)}`);
+  assert.equal(tapSlide.vIn, false, "tap navigation does not run v-in");
+  assert.equal(tapSlide.stagger, false, "tap navigation does not replay stagger");
+  await cleanNavigationState("spots");
+
+  await startFrameTrace();
+  await touchSwipe("#view", -128);
+  await cleanNavigationState("species");
+  const swipeFrameStats = await stopFrameTrace();
+
+  await page.evaluate(() => {
+    for (const tab of ["today", "spots", "species"]) document.querySelector(`.tab[data-tab="${tab}"]`).click();
+  });
+  await cleanNavigationState("species");
+  await page.locator('.tab[data-tab="plan"]').evaluate((button) => button.click());
+  await touchSwipe("#view", -128);
+  await cleanNavigationState("log");
+
+  await page.locator('.tab[data-tab="today"]').evaluate((button) => button.click());
+  await page.locator("#more").evaluate((button) => button.click());
+  await page.locator(".sheet").waitFor();
+  const interruptedBySheet = await page.evaluate(() => ({ peeks: document.querySelectorAll(".tab-peek").length, viewTransform: document.querySelector("#view").style.transform, tabIndex: document.querySelector(".tabs").style.getPropertyValue("--tab-i") }));
+  assert.deepEqual(interruptedBySheet, { peeks: 0, viewTransform: "", tabIndex: "" }, "opening a sheet during a tab slide clears transient tab state");
+  await page.locator(".xbtn[aria-label=Close]").click(); await page.locator(".sheet").waitFor({ state: "detached", timeout: 1000 });
+
+  await page.locator("#more").click(); await page.locator(".sheet").waitFor(); await page.waitForTimeout(330);
+  await page.locator(".xbtn[aria-label=Close]").click(); await page.locator(".sheet").waitFor({ state: "detached", timeout: 1000 });
+  await page.locator("#more").click(); await page.locator(".sheet").waitFor(); await page.waitForTimeout(330);
+  await startFrameTrace();
+  await dragSheet(40, 1, 0);
+  await page.locator(".sheet").waitFor({ state: "detached", timeout: 1000 });
+  await page.locator("#more").click(); await page.locator(".sheet").waitFor(); await page.waitForTimeout(330);
+  await dragSheet(26, 4, 55);
+  await page.waitForTimeout(420);
+  assert.equal(await page.locator(".sheet").count(), 1, "slow small sheet drag springs back without closing");
+  assert.equal(await page.locator(".sheet").evaluate((panel) => panel.style.transform), "", "sheet drag settles without a leftover transform");
+  const sheetFrameStats = await stopFrameTrace();
+  await page.locator(".xbtn[aria-label=Close]").click(); await page.locator(".sheet").waitFor({ state: "detached", timeout: 1000 });
+
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.locator('.tab[data-tab="today"]').evaluate((button) => button.click());
+  const reducedState = await page.evaluate(() => ({
+    view: getComputedStyle(document.querySelector("#view")).transform,
+    pill: getComputedStyle(document.querySelector(".tabs"), "::before").transform,
+    animationTransforms: [...document.querySelector("#view").getAnimations()].flatMap((animation) => animation.effect?.getKeyframes() ?? []).filter((frame) => frame.transform && frame.transform !== "none")
+  }));
+  assert.equal(reducedState.view, "none", `reduced tab transition uses opacity only: ${JSON.stringify(reducedState)}`);
+  assert.equal(reducedState.pill, "none", "reduced tab indicator does not transform");
+  assert.deepEqual(reducedState.animationTransforms, [], "reduced tab animation has no transform keyframes");
+  await page.locator("#more").click(); await page.locator(".sheet").waitFor();
+  assert.equal(await page.locator(".sheet").evaluate((panel) => getComputedStyle(panel).transform), "none", "reduced sheet entrance does not transform");
+  await page.locator(".xbtn[aria-label=Close]").click(); await page.locator(".sheet").waitFor({ state: "detached", timeout: 1000 });
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await openApp();
+  console.log("motion frame-time sample: " + JSON.stringify({ swipe: swipeFrameStats, sheetDrag: sheetFrameStats }));
+
   await startFrameTrace();
   console.log("ux checkpoint: tab and swipe coverage complete");
   for (const tab of ["spots", "species", "plan", "log", "today"]) {
@@ -321,7 +410,7 @@ try {
         await page.locator(".sheet").waitFor({state:"detached",timeout:1000});
         await page.goto(`${base}#tab=spots`,{waitUntil:"domcontentloaded"}); await page.locator("#view[aria-busy=false]").waitFor();
       }
-      await page.screenshot({ path: join(out, `${tab}-${theme}-375.png`), fullPage: true });
+      if (process.env.UX_NO_SCREENSHOTS !== "1") await page.screenshot({ path: join(out, `${tab}-${theme}-375.png`), fullPage: true });
     }
   }
 
@@ -329,12 +418,16 @@ try {
     await page.setViewportSize({ width, height: 812 });
     for (const tab of ["today", "spots", "species", "plan", "log"]) {
       await page.locator(`[data-tab=${tab}]`).click({ force: true }); await page.locator("#view[aria-busy=false]").waitFor();
-      const metrics = await page.evaluate(() => ({ viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth, farthest: Math.max(0, ...[...document.querySelectorAll("body *")].map((el) => el.getBoundingClientRect().right - innerWidth)) }));
-      assert.ok(metrics.document <= width + 1 && metrics.farthest <= 1, `horizontal overflow at ${width}px on ${tab}: ${JSON.stringify(metrics)}`);
+      await page.waitForTimeout(400);
+      const metrics = await page.evaluate(() => {
+        const overflow = ["#app", "#tabbar", "#sheet-root"].map((selector) => [selector, document.querySelector(selector)?.getBoundingClientRect()]).filter(([, rect]) => rect).map(([selector, rect]) => ({ selector, left: Math.round(rect.left), right: Math.round(rect.right) })).filter((rect) => rect.right > innerWidth + 1 || rect.left < -1);
+        return { viewport: innerWidth, document: document.documentElement.scrollWidth, body: document.body.scrollWidth, farthest: Math.max(0, ...overflow.map((el) => el.right - innerWidth)), overflow };
+      });
+      assert.ok(metrics.document <= width + 1 && metrics.body <= width + 1 && metrics.farthest <= 1, `page horizontal overflow at ${width}px on ${tab}: ${JSON.stringify(metrics)}`);
     }
   }
   assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(" | ")}`);
-  console.log("ux-ios: passed on " + browserName + "; 4 theme persistence cases, hash override, content swipes, tab-bar drags, long-name header checks (320/375/430 × 5 tabs), sheet close cycles, catch add/edit/delete/validation/export, screenshots, frame sample " + JSON.stringify(frameStats) + ", zero console errors.");
+  console.log("ux-ios: passed on " + browserName + "; 4 theme persistence cases, hash override, motion direction/settling/rapid input/interruption/sheet flick/reduced-motion checks, content swipes, tab-bar drags, long-name header checks (320/375/430 × 5 tabs), sheet close cycles, catch add/edit/delete/validation/export, " + (process.env.UX_NO_SCREENSHOTS === "1" ? "screenshots skipped (UX_NO_SCREENSHOTS=1), " : "screenshots, ") + "frame samples " + JSON.stringify({ overall: frameStats, swipe: swipeFrameStats, sheetDrag: sheetFrameStats }) + ", zero console errors.");
 } finally {
   await context.close(); await browser.close(); server.close();
 }
