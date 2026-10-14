@@ -51,6 +51,9 @@ await check("pressure uses station change while covered, then a model-only six-h
   const oldStation={...station,values:{rows:[{at:stamp(t-9*3600000),pressureHpa:1012}]}};
   assert.equal(pressureChange(oldStation,forecast,stamp(t)),-3);
   assert.equal(pressureChange(oldStation,{...forecast,stale:true},stamp(t)),null);
+  // Station covers now but not six hours back (live KFIN often has ~6 h of rows): use the forecast pair.
+  const shortStation={...station,values:{rows:[{at:stamp(t-3*3600000),pressureHpa:1012},{at:stamp(t),pressureHpa:1013}]}};
+  assert.equal(pressureChange(shortStation,forecast,stamp(t)),-3);
 });
 await check("forecast pressure reaches future slot conditions and normalized run inputs",async()=>{
   const location=miniLocations[0],start=Date.parse(fixture.now)-6*3600000,stamp=x=>new Date(x).toISOString();

@@ -110,6 +110,7 @@ await check("Open-Meteo adapters normalize UTC weather and marine forecast inter
   assert.equal(weather.pressureForecast.kind, "pressureForecast");
   assert.equal(weather.pressureForecast.values.rows.length, 168);
   assert.equal(weather.pressureForecast.values.rows[6].pressureHpa, 1011.4);
+  assert.equal(weather.pressureForecast.usedFallback, false, "pressure forecast is a primary source");
   const unavailablePressure = await fetchOpenMeteoWeather(spot, { fetchImpl: async () => response({ hourly: {
     ...openMeteoWeatherFixture().hourly, pressure_msl: undefined,
   } }), now });
@@ -151,7 +152,7 @@ await check("stale NWS weather and marine forecasts fall back to fresh Open-Mete
     const fallback = inputs.find(x => x.kind === kind);
     assert.equal(fallback?.provider, "open-meteo", `${kind} should use the fresh fallback`);
     assert.equal(fallback?.stale, false);
-    assert.equal(fallback?.usedFallback, true);
+    assert.equal(fallback?.usedFallback, kind !== "pressureForecast", `${kind} fallback flag`);
   }
 });
 

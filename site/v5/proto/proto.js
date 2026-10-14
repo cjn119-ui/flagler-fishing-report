@@ -5,7 +5,7 @@ import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfid
 import { SPECIES } from "../species.js";
 import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
-import { fetchProtoRun, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
+import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
 import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesTripRate } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
@@ -263,6 +263,7 @@ async function refreshLiveData({ onToday } = {}) {
     horizonSource[horizon] = fromCache ? "cached" : "live";
     horizonOffline[horizon] = false;
     writeCachedProtoRun(storage, horizon, run);
+    if (today) hydrateFactors(run);
     if (today) {
       dataSource = horizonSource.today;
       dataOffline = false;
@@ -1364,6 +1365,17 @@ function openSpotDetail(id, mode, opener) {
     h("div", { class: "cta" }, st.spot === id ? null : h("button", { class: "btn", type: "button", onclick: () => scope({ spot: id, mode: isModeClosed(id,mode) ? "surf" : mode }) }, "Show this spot on Today"), h("a", { class: "btn alt", href: /Mac|iPhone|iPad/.test(navigator.userAgent) ? `https://maps.apple.com/?daddr=${cat.lat},${cat.lon}` : `https://www.google.com/maps/dir/?api=1&destination=${cat.lat},${cat.lon}` }, "Directions")));
   if (matchMedia("(min-width:900px)").matches && st.tab === "spots") { let pane = document.querySelector(".spot-detail"); if (!pane) { pane = h("section",{class:"card spot-detail"}); document.querySelector(".spots-layout").append(pane); } pane.replaceChildren(h("h2",{},cat.name),body); } else openSheet(cat.name, body, opener);
 }
+// Live runs keep factors in per-spot details files; load the recommended spot's so "Why this verdict" and the factor table have them.
+async function hydrateFactors(run) {
+  const rec = run?.recommendation;
+  if (!rec?.locationId || run._proto?.factors?.length) return;
+  const factors = factorsAt(await fetchRunDetails(run, rec.locationId, rec.mode), rec.driverSpeciesId, rec.window?.start);
+  if (!factors.length || D[RICH] !== run) return;
+  run._proto = { ...run._proto, factors };
+  if (!sheet) render();
+}
+const factorReasons = (factors) => factors.filter((f) => f.available !== false && (f.effect === "helps" || f.effect === "hurts"))
+  .map((f) => ({ effect: f.effect, text: factorLine(f.label, msg(f.humanLabel)) }));
 function openSpecies(id, opener) {
   const c = ctx(), sp = spCat(id);
   if (!sp) return;
@@ -1425,7 +1437,16 @@ function openSpecies(id, opener) {
   const why = h("div",{class:"block"},h("h3",{},"Why now"),h("ul",{class:"whys"},[...reasons.filter((x)=>x.effect==="helps").slice(0,2),...reasons.filter((x)=>x.effect==="hurts").slice(0,1)].map((x)=>h("li",{},effectMark(x.effect),msg(x)))));
   if(setupBlock) { setupBlock.querySelector("h3").textContent="Use"; setupBlock.querySelector(".fine")?.remove(); }
   if(seasonBlock) { seasonBlock.querySelector("h3").textContent="Local history"; seasonBlock.querySelector(".fine").textContent="Share of surveyed trips that caught it, by month"; if(historyBlock) { seasonBlock.append(...[...historyBlock.children].slice(1)); historyBlock.remove(); } }
-  if (!why.querySelector("li")) why.append(h("p",{class:"fine"},"Condition details unavailable for this fish."));
+  if (!why.querySelector("li")) {
+    const note = h("p",{class:"fine"},"Loading conditions…"); why.append(note);
+    const at = best?.window?.start ?? best?.at ?? c.now;
+    fetchRunDetails(run, best?.locationId, best?.mode).then((details) => {
+      const rows = factorReasons(factorsAt(details, id, at));
+      const pick = [...rows.filter((x) => x.effect === "helps").slice(0, 2), ...rows.filter((x) => x.effect === "hurts").slice(0, 1)];
+      if (!pick.length) { note.textContent = "Condition details unavailable for this fish."; return; }
+      note.replaceWith(h("ul",{class:"whys"},pick.map((x) => h("li",{},effectMark(x.effect),h("span",{},x.text)))));
+    });
+  }
   body.append(why); if(setupBlock) body.append(setupBlock); if(seasonBlock) body.append(seasonBlock); else if(historyBlock) body.append(historyBlock);
   body.append(h("a",{class:"btn alt",href:"https://myfwc.com/fishing/saltwater/recreational/",target:"_blank",rel:"noopener"},"Check current FWC rules")); actionHost?.remove();
   if(matchMedia("(min-width:900px)").matches && st.tab === "species") { const browser = document.querySelector(".species-browser"); let layout=browser.parentElement.querySelector(".species-layout"); if(!layout) { layout=h("div",{class:"species-layout"}); browser.replaceWith(layout); layout.append(browser); } let pane=layout.querySelector(".species-pane"); if(!pane) { pane=h("section",{class:"card species-pane"});layout.append(pane); } pane.replaceChildren(h("h2",{},sp.name),body); }
@@ -1547,6 +1568,7 @@ async function init() {
     const cached = readCachedProtoRuns(safeStorage());
     if (cached) {
       D[RICH] = cached.today; D[TOMORROW] = cached.tomorrow;
+      hydrateFactors(D[RICH]);
       horizonSource.today = horizonSource.tomorrow = "cached";
       horizonOffline.today = horizonOffline.tomorrow = navigator.onLine === false;
       dataSource = "cached"; dataOffline = navigator.onLine === false;

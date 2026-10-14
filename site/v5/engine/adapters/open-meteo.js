@@ -76,7 +76,8 @@ export async function fetchOpenMeteoWeather(location, { fetchImpl, now = Date.no
       const pressureTimes = forecastTimes(json?.hourly, ["pressure_msl"]);
       const pressureRows = pressureTimes.map((at, i) => ({ at, pressureHpa: finiteOrNull(json.hourly.pressure_msl[i]) }));
       if (!pressureRows.some((row) => Number.isFinite(row.pressureHpa))) throw new Error("Open-Meteo pressure values are unavailable");
-      pressureForecast = observation({ ...shared, kind: "pressureForecast", validFrom: pressureTimes[0],
+      // Pressure forecast is a primary source, not a stand-in for NWS.
+      pressureForecast = observation({ ...shared, usedFallback: false, kind: "pressureForecast", validFrom: pressureTimes[0],
         validTo: new Date(Date.parse(pressureTimes.at(-1)) + 60 * 60 * 1000).toISOString(),
         units: { pressureHpa: "hPa" }, values: { rows: pressureRows } });
     } catch (error) {

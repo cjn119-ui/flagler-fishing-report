@@ -18,12 +18,14 @@ const nodes = new Map();
 const get = id => { if (!nodes.has(id)) nodes.set(id, new Element()); return nodes.get(id); };
 // Pin the minute so clock strings in the rendered stats (tides are now-relative) can never contain "32".
 const now = new Date(Math.floor(Date.now() / 3600e3) * 3600e3 + 7 * 60e3);
+// The app's own clock is pinned too, so "N min ago" ages can't drift into "32" either.
+class PinnedDate extends Date { constructor(...a) { super(...(a.length ? a : [+now])); } static now() { return +now; } }
 const hourly = Array.from({length: 36}, (_, i) => ({startTime: new Date(+now + (i-1)*3600e3).toISOString(), endTime: new Date(+now + i*3600e3).toISOString(), windSpeed:'8 mph', probabilityOfPrecipitation:{value:10}}));
 const day = logic.localDay(now);
 const tides = Array.from({length:16},(_,i)=>({t:new Date(+now+(i-4)*6*3600e3).toISOString().slice(0,16).replace('T',' '), v:String(i%2),type:i%2?'H':'L'}));
 let mode = 'normal';
 const storage = new Map();
-const context = vm.createContext({...logic, ...week, ...catchLogic, Intl, Date, Math, Number, String, JSON, Object, URLSearchParams, AbortSignal, console,
+const context = vm.createContext({...logic, ...week, ...catchLogic, Intl, Date: PinnedDate, Math, Number, String, JSON, Object, URLSearchParams, AbortSignal, console,
   document:{ getElementById:get, querySelector:get, createElement:()=>new Element(), createTextNode:text=>({textContent:text}), addEventListener(){} },
   navigator:{onLine:true}, window:{addEventListener(){}}, addEventListener(){}, setInterval(){},
   localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)},

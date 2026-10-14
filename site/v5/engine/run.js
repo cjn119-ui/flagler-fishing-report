@@ -54,7 +54,7 @@ export function pressureChange(obs, forecast, at) {
   const rowsFor=(source, keys)=>valueRows(source).filter(x=>has(x.pressureHpa??x.pressurePa??x.value)&&Number.isFinite(Date.parse(keys.map(k=>x[k]).find(v=>v!=null)??"")))
     .map(x=>({t:Date.parse(keys.map(k=>x[k]).find(v=>v!=null)),v:has(x.pressureHpa)?x.pressureHpa:has(x.pressurePa)?x.pressurePa/100:x.value})).sort((a,b)=>a.t-b.t);
   const t=Date.parse(at), station=obs?.ok&&!obs.stale?rowsFor(obs,["at","timestamp","time"]):[], newest=station.at(-1);
-  if(newest&&station[0]&&t>=station[0].t&&t-newest.t<=3600000){const current=station.filter(x=>x.t<=t).at(-1),old=station.filter(x=>x.t<=t-6*3600000).at(-1);return current&&old?current.v-old.v:null;}
+  if(newest&&station[0]&&t>=station[0].t&&t-newest.t<=3600000){const current=station.filter(x=>x.t<=t).at(-1),old=station.filter(x=>x.t<=t-6*3600000).at(-1);if(current&&old)return current.v-old.v;}
   if(!forecast?.ok||forecast.stale)return null;
   const modeled=rowsFor(forecast,["at","timestamp","time","validFrom"]), near=target=>modeled.reduce((best,row)=>Math.abs(row.t-target)<Math.abs((best?.t??Infinity)-target)?row:best,null);
   const current=near(t),old=near(t-6*3600000);

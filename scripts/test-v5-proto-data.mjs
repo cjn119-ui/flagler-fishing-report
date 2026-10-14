@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { fetchProtoRun, loadProtoData, readCachedProtoRuns, trimForCache, writeCachedProtoRun } from "../site/v5/proto/proto-data.js";
+import { detailsRefFor, factorsAt, fetchProtoRun, fetchRunDetails, loadProtoData, readCachedProtoRuns, trimForCache, writeCachedProtoRun } from "../site/v5/proto/proto-data.js";
 
 const sampleToday = JSON.parse(await readFile(new URL("../site/v5/proto/sample-rich.json", import.meta.url), "utf8"));
 const sampleTomorrow = JSON.parse(await readFile(new URL("../site/v5/proto/sample-rich-tomorrow.json", import.meta.url), "utf8"));
@@ -49,4 +49,21 @@ const sample = await loadProtoData({ storage: null, online: true, fetchImpl: asy
 } });
 assert.equal(sample.source, "sample");
 assert.equal(sample.today.id, sampleToday.id);
+{ // live details files supply per-slot factors
+  const run = { detailsRefs: ["details/r1/flagler-icw-inshore.json", "details/r1/flagler-pier-pier.json"] };
+  assert.equal(detailsRefFor(run, "flagler-icw", "inshore"), "details/r1/flagler-icw-inshore.json");
+  assert.equal(detailsRefFor(run, "flagler-icw", "surf"), null);
+  const details = { rows: [{ speciesId: "mangrove", slots: [
+    { at: "2026-10-14T20:30:00.000Z", factors: [{ key: "wind", effect: "helps" }] },
+    { at: "2026-10-14T21:00:00.000Z", factors: [{ key: "wind", effect: "hurts" }] }] }] };
+  assert.equal(factorsAt(details, "mangrove", "2026-10-14T20:40:00Z")[0].effect, "helps");
+  assert.equal(factorsAt(details, "mangrove", "2026-10-14T20:55:00Z")[0].effect, "hurts");
+  assert.deepEqual(factorsAt(details, "whiting", "2026-10-14T20:40:00Z"), []);
+  let calls = 0;
+  const fetchImpl = async (url) => { calls++; assert.equal(url, "../../api/v5/details/r1/flagler-icw-inshore.json"); return { ok: true, json: async () => details }; };
+  assert.equal((await fetchRunDetails(run, "flagler-icw", "inshore", { fetchImpl })).rows.length, 1);
+  await fetchRunDetails(run, "flagler-icw", "inshore", { fetchImpl });
+  assert.equal(calls, 1, "details are fetched once per file");
+  assert.equal(await fetchRunDetails(run, "nowhere", "inshore", { fetchImpl }), null);
+}
 console.log("RESULT live-first, offline-cache, and sample-fallback checks passed");

@@ -126,3 +126,27 @@ export async function loadProtoData({ fetchImpl = globalThis.fetch, storage,
   const sample = await Promise.all(SAMPLE_FILES.map(path => fetchRun(fetchImpl, path, false)));
   return { today: sample[0].run, tomorrow: sample[1].run, source: "sample", offline: !online };
 }
+
+// Live runs keep per-slot factors in separate details files (one per spot and mode); fetch them on demand.
+const DETAILS_BASE = "../../api/v5/";
+const detailsCache = new Map();
+export function detailsRefFor(run, locationId, mode) {
+  return (run?.detailsRefs ?? []).find((ref) => ref.endsWith(`/${locationId}-${mode}.json`)) ?? null;
+}
+export async function fetchRunDetails(run, locationId, mode, { fetchImpl = globalThis.fetch } = {}) {
+  const ref = detailsRefFor(run, locationId, mode);
+  if (!ref) return null;
+  if (!detailsCache.has(ref)) detailsCache.set(ref, Promise.resolve().then(() => fetchImpl(DETAILS_BASE + ref)).then((r) => (r?.ok ? r.json() : null)).catch(() => null));
+  const details = await detailsCache.get(ref);
+  if (details == null) detailsCache.delete(ref);
+  return details;
+}
+// Factors for one species at the slot nearest `at`.
+export function factorsAt(details, speciesId, at) {
+  const slots = (details?.rows ?? []).find((row) => row.speciesId === speciesId)?.slots ?? [];
+  const t = Date.parse(at);
+  const timed = slots.filter((slot) => Number.isFinite(Date.parse(slot.at)) && Array.isArray(slot.factors));
+  if (!timed.length) return [];
+  if (!Number.isFinite(t)) return timed[0].factors;
+  return timed.reduce((best, slot) => (Math.abs(Date.parse(slot.at) - t) < Math.abs(Date.parse(best.at) - t) ? slot : best)).factors;
+}

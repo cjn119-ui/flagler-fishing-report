@@ -8,3 +8,6 @@ site/api/
 .agent-handoff/shots/
 .claude/
 .playwright-cli/
+
+# Local Xcode device builds
+/build/
