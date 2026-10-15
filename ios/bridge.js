@@ -178,8 +178,13 @@ if (native && globalThis.fetch) {
     const hideForTransientUI = () => {
       if (!mapPayload || hiddenByTransientUI) return;
       hiddenByTransientUI = true;
-      nativeMap.hide();
+      nativeMap.hide({ immediate: true });  // the slot's snapshot stands in and moves with the page
     };
+    // The native map sends a picture of itself; the slot shows it so swipes, previews and sheets never show an empty card.
+    document.addEventListener("ffmap:snapshot", (event) => {
+      const image = event.image ?? event.detail?.image;
+      if (typeof image === "string" && image.startsWith("data:image/")) document.documentElement.style.setProperty("--ff-map-snapshot", `url("${image}")`);
+    });
     const restoreAfterTransientUI = () => {
       if (!mapPayload) return;
       hiddenByTransientUI = false;
@@ -188,7 +193,7 @@ if (native && globalThis.fetch) {
     document.addEventListener("scroll", () => applyMap(), { passive: true });
     globalThis.addEventListener("resize", () => applyMap(), { passive: true });
     globalThis.addEventListener("orientationchange", () => setTimeout(applyMap, 200), { passive: true });
-    document.addEventListener("v5:tab", () => { hideForTransientUI(); setTimeout(restoreAfterTransientUI, 180); });
+    document.addEventListener("v5:tab", () => { hideForTransientUI(); setTimeout(restoreAfterTransientUI, 300); });
     let gestureStart = null;
     document.addEventListener("touchstart", (event) => { gestureStart = event.touches?.[0] ? [event.touches[0].clientX, event.touches[0].clientY] : null; }, { passive: true });
     document.addEventListener("touchmove", (event) => {

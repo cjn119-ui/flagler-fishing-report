@@ -487,17 +487,23 @@ function segment(label, items, cur, on, cls = "") {
 }
 function renderCtl(c) {
   const ctl = $("ctl"), fresh = $("fresh"); ctl.replaceChildren(); $("header-fresh").replaceChildren(fresh);
+  ctl.append(...ctlNodes(c));
+}
+// Controls row for the current st.tab; also used to build swipe previews so they match the real page.
+function ctlNodes(c) {
+  const ctl = { nodes: [], append(...n) { this.nodes.push(...n); } };
   if (st.tab !== "plan" && st.tab !== "log") ctl.append(segment("Report day", [["today", "Today"], ["tomorrow", "Tomorrow"]], st.h, (v) => { st.h = v; st.t = null; render(); }, "day"));
   if (refreshError) ctl.append(h("p", { class: "notice refresh-status", role: "status" }, refreshError));
   // The targeting chip is the one way to clear a target, so it shows wherever the target changes what you see.
   if (st.species && st.tab !== "log") ctl.append(h("button", { class: "fchip", type: "button", "data-fk": "unfocus", "aria-label": `Targeting ${spName(st.species)}. Remove`, onclick: () => scope({ spot: st.spot, mode: st.mode, tab: st.tab }) },
     "Targeting: ", h("b", {}, spName(st.species)), h("i", {}, s("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: PATHS.x })))));
-  if (st.tab !== "today") return;
+  if (st.tab !== "today") return ctl.nodes;
   const modes = st.spot ? openModes(st.spot, modesOf(c.run, st.spot), SPOTS) : [];
   if (modes.length > 1 && !st.species) {
     const cur = st.mode ?? c.rec.mode;
     ctl.append(segment("Mode", modes.map((m) => [m, modeDisplay(m,st.spot)]), cur, (m) => { st.mode = m; st.t = null; render(); }, "modes"));
   }
+  return ctl.nodes;
 }
 function renderBanner(c) {
   const slot = $("banner-slot"); slot.replaceChildren();
@@ -1510,6 +1516,8 @@ async function init() {
     try {
       st.tab = tab;
       const c = ctx(); nodes = tab === "today" ? todayView(c) : tab === "spots" ? spotsView(c) : tab === "species" ? speciesView(c) : tab === "plan" ? planView(c) : logView(c);
+      const banner = $("banner-slot")?.cloneNode(true); banner?.removeAttribute("id");  // the banner is the same on every tab
+      nodes = [h("div", { class: "ctl" }, ...ctlNodes(c)), banner, h("div", { class: "peek-view" }, ...nodes)].filter(Boolean);
     } finally { st.tab = previous; listHost = previousHost; }
     const preview = h("div", { class: "tab-peek", "aria-hidden": "true" }, ...nodes);
     preview.inert = true; preview.style.transform = "translateX(110vw)"; document.body.append(preview); return preview;
@@ -1642,12 +1650,16 @@ async function init() {
   document.addEventListener("v5:interrupt-tab-gesture", () => { swipe = null; swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); });
   const prepareSwipePreview = (tab) => {
     if (previewCache.has(tab)) { const preview = previewCache.get(tab); document.body.append(preview); return preview; }
-    const preview = makeTabPreview(tab), box = $("view").getBoundingClientRect();
-    preview.style.top = `${Math.max(0, box.top)}px`;
+    // Line the preview up with where the real tab will render, so nothing snaps when the swipe commits: it mirrors
+    // <main> (controls row + page) from main's untransformed content edge, at the target tab's saved scroll, under the sticky header.
+    const main = $("main"), preview = makeTabPreview(tab), box = main.getBoundingClientRect(), cs = getComputedStyle(main);
+    const contentTop = box.top + scrollY + (parseFloat(cs.paddingTop) || 0) - (session.scroll[tab] ?? 0);
+    const clipTop = Math.max(0, document.querySelector(".bar")?.getBoundingClientRect().bottom ?? 0);
+    preview.style.top = `${Math.max(clipTop, contentTop)}px`;
     preview.style.bottom = `${innerHeight - $("tabbar").getBoundingClientRect().top}px`;
-    preview.style.left = `${box.left}px`; preview.style.width = `${box.width}px`;
+    preview.style.left = `${box.left + (parseFloat(cs.paddingLeft) || 0)}px`; preview.style.width = `${main.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0)}px`;
     preview.style.padding = "0";
-    preview.scrollTop = session.scroll[tab] ?? 0;
+    preview.scrollTop = Math.max(0, clipTop - contentTop);
     previewCache.set(tab, preview);
     return preview;
   };
@@ -1656,7 +1668,7 @@ async function init() {
     const t = e.touches[0], target = e.target;
     if (!$("view").contains(target) || sheet || t.clientX < 20 || t.clientX > innerWidth - 20 || performance.now() - lastScrollAt < 150 || scrollsHorizontally(target)) { swipe = null; return; }
     if (tabSettleAnimation || document.querySelector(".tab-peek")) interruptTabTransitions();
-    swipe = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, scrollY, view: $("view"), samples: [{ p: t.clientX, t: performance.now() }] };
+    swipe = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, scrollY, view: $("main") /* controls row and page move together */, samples: [{ p: t.clientX, t: performance.now() }] };
     clearSwipePreviews();
   }, { passive: true });
   document.addEventListener("touchmove", (e) => {
@@ -1665,6 +1677,8 @@ async function init() {
     swipe.samples.push({ p: t.clientX, t: now }); swipe.samples = swipe.samples.filter((sample) => now - sample.t <= 120).slice(-6);
     if (!swipe.horizontal && (Math.abs(swipe.dy) > 10 && Math.abs(swipe.dy) >= Math.abs(swipe.dx) || Math.abs(scrollY - swipe.scrollY) > 2)) { swipe = null; clearSwipePreviews(); return; }
     if (swipe.horizontal || Math.abs(swipe.dx) > 18 && Math.abs(swipe.dx) > Math.abs(swipe.dy) * 2) {
+      // Start following from where the swipe was recognised, so the page doesn't leap by the detection slop.
+      if (!swipe.horizontal) { const sign = Math.sign(swipe.dx); swipe.x = t.clientX - sign; swipe.dx = sign; }  // keep the direction so the right preview is built
       swipe.horizontal = true;
       const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (swipe.dx < 0 ? 1 : -1)], atEdge = !next, dx = atEdge ? rubberBand(swipe.dx, innerWidth) : swipe.dx;
       if (!swipe.interrupted) {
@@ -1680,7 +1694,7 @@ async function init() {
       tabs.style.setProperty("--tab-i", indicatorIndex);
       if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
         swipe.view.style.willChange = "transform"; swipe.view.style.transform = `translateX(${dx}px)`;
-        if (next && next !== swipePreviewTab) { swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next; if (swipePreview) { swipePreview.style.zIndex = "20"; swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`; } }
+        if (next && next !== swipePreviewTab) { swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next; if (swipePreview) { swipePreview.style.zIndex = "19"; swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`; } }
         if (swipePreview) swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`;
         if (!next) { swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; }
       }
@@ -1708,7 +1722,7 @@ async function init() {
     if (swipePreviewTab !== next) {
       swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next;
     }
-    if (swipePreview) { swipePreview.style.zIndex = "20"; swipePreview.style.transform = `translateX(${-direction * innerWidth + dx}px)`; }
+    if (swipePreview) { swipePreview.style.zIndex = "19"; swipePreview.style.transform = `translateX(${-direction * innerWidth + dx}px)`; }
     animateTabPreview(swipePreview, next);
     tabs.classList.remove("content-drag"); tabs.style.setProperty("--tab-i", targetIndex);
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;

@@ -263,7 +263,7 @@ try {
     const animation = [...document.querySelector("#view").getAnimations()].find((item) => item.effect?.getKeyframes().some((frame) => frame.transform));
     return { keyframes: animation?.effect?.getKeyframes() ?? [], vIn: document.querySelector("#view").classList.contains("v-in"), stagger: !!document.querySelector("#view .stagger") };
   });
-  assert.equal(tapSlide.keyframes[0]?.transform, `translateX(${await page.evaluate(() => innerWidth)}px)`, `Today to Spots tap enters from the next tab direction: ${JSON.stringify(tapSlide.keyframes)}`);
+  assert.equal(tapSlide.keyframes[0]?.transform, "translateX(18px)", `Today to Spots tap enters from the next tab direction (short slide; the outgoing page is already gone): ${JSON.stringify(tapSlide.keyframes)}`);
   assert.equal(tapSlide.vIn, false, "tap navigation does not run v-in");
   assert.equal(tapSlide.stagger, false, "tap navigation does not replay stagger");
   await cleanNavigationState("spots");

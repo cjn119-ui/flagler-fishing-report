@@ -43,6 +43,7 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
     private var generation = 0
     private var headerBottom: CGFloat = 0
     private var tabBarTop: CGFloat = 0
+    private var snapshotWork: DispatchWorkItem?
 
     @objc func show(_ call: CAPPluginCall) {
         DispatchQueue.main.async { [weak self] in
@@ -78,6 +79,7 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
             self.selectedID = call.getString("selectedId")
             self.updateMask()
             self.installOffsetObservation(on: scrollView)
+            self.scheduleSnapshot()
             call.resolve()
         }
     }
@@ -99,7 +101,10 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
             guard let self, let map = self.mapView else { call.resolve(); return }
             self.generation += 1
             let token = self.generation
-            UIView.animate(withDuration: 0.15, animations: { map.alpha = 0 }) { _ in
+            self.snapshotWork?.cancel()
+            // Gestures hide the map instantly: the page's snapshot underneath then moves with the content.
+            let duration = call.getBool("immediate") == true ? 0 : 0.15
+            UIView.animate(withDuration: duration, animations: { map.alpha = 0 }) { _ in
                 guard self.generation == token else { return }
                 map.removeFromSuperview()
                 map.layer.mask = nil
@@ -165,6 +170,30 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    // Send the page a picture of the map so its slot can stand in for the native view while it is hidden (swipes, sheets).
+    private func scheduleSnapshot() {
+        snapshotWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.sendSnapshot() }
+        snapshotWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6, execute: work)
+    }
+
+    private func sendSnapshot() {
+        guard let map = mapView, map.superview != nil, map.alpha > 0.99, map.bounds.width > 1, map.bounds.height > 1,
+              let scroll = pageWebView?.scrollView else { return }
+        // Capture exactly what is on screen (MapKit's overlap-hidden pins stay hidden), and only while the map is fully
+        // visible, so the header/tab-bar mask can't clip the picture. Otherwise keep the previous snapshot.
+        let fullyVisible = map.frame.minY >= scroll.contentOffset.y + headerBottom && map.frame.maxY <= scroll.contentOffset.y + tabBarTop
+        guard fullyVisible else { return }
+        let image = UIGraphicsImageRenderer(bounds: map.bounds).image { _ in
+            map.drawHierarchy(in: map.bounds, afterScreenUpdates: false)
+        }
+        guard let jpeg = image.jpegData(compressionQuality: 0.72),
+              let data = try? JSONSerialization.data(withJSONObject: ["image": "data:image/jpeg;base64," + jpeg.base64EncodedString()]),
+              let json = String(data: data, encoding: .utf8) else { return }
+        bridge?.triggerJSEvent(eventName: "ffmap:snapshot", target: "document", data: json)
+    }
+
     private func updateMask() {
         guard let map = mapView, let scroll = pageWebView?.scrollView else { return }
         let mapTop = map.frame.minY
@@ -181,6 +210,14 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
 }
 
 extension FFMapPlugin: MKMapViewDelegate {
+    func mapViewDidFinishRenderingMap(_ mapView: MKMapView, fullyRendered: Bool) {
+        if fullyRendered { scheduleSnapshot() }
+    }
+
+    func mapView(_ mapView: MKMapView, regionDidChangeAnimated animated: Bool) {
+        scheduleSnapshot()
+    }
+
     func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
         guard let spot = annotation as? FishingSpotAnnotation else { return nil }
         let reuseID = "flagler-spot"
