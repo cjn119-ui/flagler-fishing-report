@@ -51,9 +51,10 @@ const gestureVelocity = (samples) => {
   const end = samples.at(-1), start = [...samples].reverse().find((sample) => end.t - sample.t >= 40) ?? samples[0];
   return (end.p - start.p) / Math.max(1, end.t - start.t);
 };
-const gestureDuration = (distance, velocity, fallback = 260) => Math.max(180, Math.min(380, Math.round(Math.max(0, distance) / Math.max(.18, Math.abs(velocity)) * 1.6 || fallback)));
-const rubberBand = (distance, width) => Math.sign(distance) * (Math.abs(distance) * width * .35) / (Math.abs(distance) + width * .35);
-const motionEase = "cubic-bezier(.6,1,.8,1)";
+// Settle time so the release continues at the finger's speed (motionEase starts at ~2.25× average speed), kept short so it never lingers.
+const gestureDuration = (distance, velocity, fallback = 240) => Math.max(160, Math.min(300, Math.round(Math.max(0, distance) / Math.max(.25, Math.abs(velocity)) * 2.25 || fallback)));
+const rubberBand = (distance, width) => Math.sign(distance) * (Math.abs(distance) * width * .2) / (Math.abs(distance) + width * .2);  // stiff edges: little give past the first/last tab
+const motionEase = "cubic-bezier(.32,.72,0,1)";  // iOS-like: quick start, no overshoot, short tail
 const FISH_IMAGE = Object.fromEntries(SPECIES.map((sp) => [sp.id, sp.id]));
 
 /* ---------- tiny DOM helpers ---------- */
@@ -341,13 +342,13 @@ function animateView(view, { navigation = false } = {}) {
     [...view.querySelectorAll(".col-a > :not(#verdict), .col-b > *, .spotlist .list > li, .grid > li, .days > li, .plan-layout > .card")].slice(0, 12)
       .forEach((el, i) => { el.classList.add("stagger"); el.style.setProperty("--i", Math.min(i, 4)); });
   }
-  animateFirstValues(view);
+  if (!navigation) animateFirstValues(view);  // no number count-ups while a screen slides in
   const selected = `${st.tab}|${st.spot ?? "any"}|${st.mode ?? "all"}|${st.species ?? "all"}`;
   view.querySelectorAll(".bar-m > i").forEach((bar, i) => {
     const key = `${selected}|bar|${i}`;
     if (motion.filled.has(key)) return;
     motion.filled.add(key);
-    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (navigation || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     bar.style.transform = "scaleX(0)"; bar.style.transformOrigin = "left center";
     requestAnimationFrame(() => { if (bar.isConnected) { bar.style.transition = "transform var(--dur-4) var(--ease-spring)"; bar.style.transform = "scaleX(1)"; } });
   });
@@ -1676,7 +1677,7 @@ async function init() {
     const t = e.touches[0], now = performance.now(); swipe.dx = t.clientX - swipe.x; swipe.dy = t.clientY - swipe.y;
     swipe.samples.push({ p: t.clientX, t: now }); swipe.samples = swipe.samples.filter((sample) => now - sample.t <= 120).slice(-6);
     if (!swipe.horizontal && (Math.abs(swipe.dy) > 10 && Math.abs(swipe.dy) >= Math.abs(swipe.dx) || Math.abs(scrollY - swipe.scrollY) > 2)) { swipe = null; clearSwipePreviews(); return; }
-    if (swipe.horizontal || Math.abs(swipe.dx) > 18 && Math.abs(swipe.dx) > Math.abs(swipe.dy) * 2) {
+    if (swipe.horizontal || Math.abs(swipe.dx) > 14 && Math.abs(swipe.dx) > Math.abs(swipe.dy) * 1.8) {
       // Start following from where the swipe was recognised, so the page doesn't leap by the detection slop.
       if (!swipe.horizontal) { const sign = Math.sign(swipe.dx); swipe.x = t.clientX - sign; swipe.dx = sign; }  // keep the direction so the right preview is built
       swipe.horizontal = true;
@@ -1706,7 +1707,7 @@ async function init() {
     const { dx, dy, view, samples } = swipe; swipe = null;
     const velocity = gestureVelocity(samples), projected = dx + velocity * 200;
     const currentIndex = TAB_ORDER.indexOf(st.tab), candidate = TAB_ORDER[currentIndex + (projected < 0 ? 1 : -1)];
-    const commit = event.type !== "touchcancel" && !!candidate && Math.sign(projected) === Math.sign(dx) && Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(projected) >= Math.max(80, innerWidth * 0.22);
+    const commit = event.type !== "touchcancel" && !!candidate && Math.sign(projected) === Math.sign(dx) && Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(projected) >= Math.max(64, innerWidth * 0.18);
     if (!commit) {
       swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); tabs.classList.remove("content-drag"); tabs.style.removeProperty("--tab-i");
       const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
