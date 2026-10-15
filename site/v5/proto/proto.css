@@ -1026,3 +1026,5 @@ body.sheet-open #app { transform:scale(var(--sheet-scale,.96)); opacity:var(--sh
 /* iOS gives date inputs an intrinsic width that ignores width:100%; drop the native appearance so it fits the form. */
 .field input[type="datetime-local"] { display:block; min-width:0; max-width:100%; -webkit-appearance:none; appearance:none; }
 .field input[type="datetime-local"]::-webkit-date-and-time-value { text-align:left; }
+
+.native-map-slot { cursor:pointer; }  /* the map preview opens the full map */

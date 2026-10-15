@@ -168,6 +168,9 @@ if (native && globalThis.fetch) {
         }
         return applyMap();
       },
+      expand() {
+        return nativeMap.expand?.();
+      },
       hide() {
         mapPayload = null;
         hiddenByTransientUI = true;
@@ -190,7 +193,8 @@ if (native && globalThis.fetch) {
       hiddenByTransientUI = false;
       applyMap();
     };
-    document.addEventListener("scroll", () => applyMap(), { passive: true });
+    // No per-scroll work: the native map lives inside the web view's scroll view, so it scrolls natively and masks
+    // itself from contentOffset. Re-sending the map on every scroll event cost frames.
     globalThis.addEventListener("resize", () => applyMap(), { passive: true });
     globalThis.addEventListener("orientationchange", () => setTimeout(applyMap, 200), { passive: true });
     document.addEventListener("v5:tab", () => { hideForTransientUI(); setTimeout(restoreAfterTransientUI, 300); });

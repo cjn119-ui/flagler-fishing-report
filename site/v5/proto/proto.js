@@ -903,7 +903,11 @@ function spotList(c, { onPick, externalFilters = false } = {}) {
   return el;
 }
 function spotsView(c) {
-  const map = window.FFNativeMap ? h("div", { id: "spots-map", class: "native-map-slot", "aria-label": "Map of fishing spots" }) : h("div", { class: "web-map-placeholder compact-map" }, h("span", {}, "Explore nearby spots"));
+  // The card map is a non-interactive preview (swipes and scrolling pass over it); the map itself is the button to the full map.
+  const openMap = () => window.FFNativeMap?.expand?.();
+  const map = window.FFNativeMap
+    ? h("div", { id: "spots-map", class: "native-map-slot", role: "button", tabindex: "0", "aria-label": "Map of fishing spots. Open full map", onclick: openMap, onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMap(); } } })
+    : h("div", { class: "web-map-placeholder compact-map" }, h("span", {}, "Explore nearby spots"));
   const list = spotList(c, { externalFilters: true });
   const featured = c.run.locations?.find((x) => x.id === (st.spot ?? c.rec.locationId));
   const rec = featured && (st.mode && !isModeClosed(featured.id, st.mode) ? c.run.scopeViews?.byLocation?.[`${featured.id}:${st.mode}`]?.recommendation : bestModeRec(c.run, featured.id)) || c.rec;
@@ -1504,7 +1508,7 @@ async function init() {
   $("spot-pill").addEventListener("click", (e) => openSpotSheet(e.currentTarget));
   $("more").addEventListener("click", (e) => openMoreSheet(e.currentTarget));
   document.addEventListener("ffmap:select", (event) => {
-    const id = event.detail?.id;
+    const id = event.id ?? event.detail?.id;  // Capacitor puts native event data on the event itself
     if (!locOf(ctx().run, id)) return;
     st.spot = id; st.species = null; st.t = null;
     if (st.mode) st.mode = coerceMode(ctx().run, id, st.mode);
@@ -1557,11 +1561,17 @@ async function init() {
     refreshLiveData().then((result) => { refreshError = ""; if (result.changed) render(); else { renderHeader(ctx()); renderBanner(ctx()); } tick("refresh"); }).catch(error => { console.warn("V5 live refresh failed", error); refreshError = `Couldn't refresh — showing ${fmtTime(ctx().run.generatedAt)} data`; render(); }).finally(() => { $("pull-refresh")?.remove(); });
   });
   if (matchMedia("(display-mode: standalone)").matches) document.body.style.overscrollBehaviorY = "contain";
-  let pullStart = null, pulled = false, pullDistance = 0;
-  document.addEventListener("touchstart", (e) => { pullStart = st.tab === "today" && scrollY === 0 && !sheet ? e.touches[0].clientY : null; pullDistance = 0; pulled = false; }, {passive:true});
+  // Pull-to-refresh only engages on a clearly vertical pull, so it never fights a sideways tab swipe (both move <main>).
+  let pullStart = null, pullX = 0, pullEngaged = false, pulled = false, pullDistance = 0;
+  document.addEventListener("touchstart", (e) => { pullStart = st.tab === "today" && scrollY === 0 && !sheet ? e.touches[0].clientY : null; pullX = e.touches[0].clientX; pullEngaged = false; pullDistance = 0; pulled = false; }, {passive:true});
   document.addEventListener("touchmove", (e) => {
     if (pullStart == null || cOffline()) return;
-    const distance = Math.max(0, e.touches[0].clientY - pullStart);
+    const distance = Math.max(0, e.touches[0].clientY - pullStart), sideways = Math.abs(e.touches[0].clientX - pullX);
+    if (!pullEngaged) {
+      if (sideways > 10 && sideways >= distance) { pullStart = null; return; }  // a swipe, not a pull
+      if (distance < 12 || distance < sideways * 1.5) return;
+      pullEngaged = true;
+    }
     if (!distance) return;
     const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     pullDistance = Math.min(92, distance * .48);
@@ -1572,6 +1582,8 @@ async function init() {
     if (distance > 64) { pulled = true; let indicator = $("pull-refresh"); if (!indicator) { indicator = h("div", { id: "pull-refresh", role: "status" }, h("span", { class: "pull-spinner", "aria-hidden": "true" }), h("span", {}, "Release to refresh")); $("ctl").append(indicator); } indicator.style.setProperty("--pull-progress", Math.min(1, distance / 92)); }
   }, {passive:true});
   const finishPull = (event) => {
+    if (!pullEngaged) { pullStart = null; return; }  // leave <main> alone: a swipe may be settling it
+    pullEngaged = false;
     const main = $("main"), reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (reduce && main.style.opacity) main.animate?.([{ opacity: Number(main.style.opacity) }, { opacity: 1 }], { duration: 100, easing: "ease-out" }).finished.finally(() => { main.style.opacity = ""; }).catch(() => {});
     else if (main.animate && main.style.transform) main.animate([{ transform: main.style.transform }, { transform: "translateY(0)" }], { duration: 240, easing: motionEase }).finished.finally(() => { main.style.transform = ""; }).catch(() => {});
