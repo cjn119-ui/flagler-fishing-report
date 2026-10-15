@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { ACTIVE_SPOTS } from "../site/v5/spots.js";
 import { SPECIES } from "../site/v5/species.js";
 import { loadFirstCoastHistory } from "../site/v5/engine/history.js";
-import { buildPredictionRun } from "../site/v5/engine/run.js";
+import { buildPredictionRun, pressureChange, tideAt } from "../site/v5/engine/run.js";
 import { reasonFor } from "../site/v5/engine/run.js";
 import { validatePredictionRun, validateNormalizedObservation, validateSpeciesPrediction } from "../site/v5/engine/contracts.js";
 import { buildArchiveBundle, restoreArchiveBundle, uploadArchiveBundle } from "./archive-v5.mjs";
@@ -33,6 +33,39 @@ await check("same frozen inputs produce byte-identical run and detail JSON",asyn
 await check("one builder emits two horizons from identical normalized source inputs",()=>{assert.equal(built.today.inputs.observations.length,built.tomorrow.inputs.observations.length);assert.deepEqual(built.today.inputs.observations,built.tomorrow.inputs.observations);assert.notEqual(built.today.targetDate,built.tomorrow.targetDate);});
 await check("targets, drivers, species focus and backups are eligibility-safe",()=>{for(const run of [built.today,built.tomorrow]){assert.ok(run.recommendation.targets.every(x=>x.eligibility==="realistic"));assert.ok(run.candidates.filter(x=>x.id===run.recommendation.backup?.id).every(x=>x.eligibility==="realistic"));for(const focused of Object.values(run.bySpecies))if(focused.focused)assert.equal(focused.focused.driverSpeciesId,SPECIES.find(x=>x.id===focused.focused.driverSpeciesId)?.id);assert.ok(run.candidates.filter(x=>x.eligibility!=="realistic").every(x=>x.band!=="Great fit"));}});
 await check("real high-low tide fixture interpolates live timeline height and rate",()=>{const tides=built.tomorrow.slots.flatMap(x=>x.slots.map(s=>s.tide));assert.ok(tides.some(x=>Number.isFinite(x.heightFt)));assert.ok(tides.some(x=>Number.isFinite(x.rateFtPerHr)&&Math.abs(x.rateFtPerHr)>.01));});
+await check("falling tide starts at the high and decreases to the low while rising stays unchanged",()=>{
+  const t0=Date.parse("2026-10-05T00:00:00Z"), stamp=t=>new Date(t).toISOString();
+  const obs={ok:true,stale:false,values:{rows:[{type:"H",time:stamp(t0),heightFt:1.04},{type:"L",time:stamp(t0+6*3600000),heightFt:.32},{type:"H",time:stamp(t0+12*3600000),heightFt:1.06}]}};
+  const justAfter=tideAt(obs,stamp(t0+1000)), falling=[0,1,2,3,4,5,6].map(h=>tideAt(obs,stamp(t0+h*3600000)).height);
+  assert.ok(Math.abs(justAfter.height-1.04)<.001,"just after high was "+justAfter.height);
+  assert.ok(falling.every((v,i)=>i===0||v<falling[i-1]),JSON.stringify(falling));assert.ok(Math.abs(falling.at(-1)-.32)<1e-12);
+  const risingObs={...obs,values:{rows:[{type:"L",time:stamp(t0),heightFt:.32},{type:"H",time:stamp(t0+6*3600000),heightFt:1.04},{type:"L",time:stamp(t0+12*3600000),heightFt:.3}]}};
+  const rising=[0,1,2,3,4,5,6].map(h=>tideAt(risingObs,stamp(t0+h*3600000)).height);
+  assert.ok(Math.abs(rising[0]-.32)<1e-12);assert.ok(Math.abs(rising.at(-1)-1.04)<1e-12);assert.ok(rising.every((v,i)=>i===0||v>rising[i-1]),JSON.stringify(rising));
+});
+await check("pressure uses station change while covered, then a model-only six-hour pair",()=>{
+  const t=Date.parse("2026-10-05T18:00:00Z"), stamp=x=>new Date(x).toISOString();
+  const forecast={ok:true,stale:false,values:{rows:[{at:stamp(t-6*3600000),pressureHpa:1010},{at:stamp(t),pressureHpa:1007}]}};
+  const station={ok:true,stale:false,values:{rows:[{at:stamp(t-6*3600000),pressureHpa:1012},{at:stamp(t),pressureHpa:1013}]}};
+  assert.equal(pressureChange(station,forecast,stamp(t)),1);
+  const oldStation={...station,values:{rows:[{at:stamp(t-9*3600000),pressureHpa:1012}]}};
+  assert.equal(pressureChange(oldStation,forecast,stamp(t)),-3);
+  assert.equal(pressureChange(oldStation,{...forecast,stale:true},stamp(t)),null);
+  // Station covers now but not six hours back (live KFIN often has ~6 h of rows): use the forecast pair.
+  const shortStation={...station,values:{rows:[{at:stamp(t-3*3600000),pressureHpa:1012},{at:stamp(t),pressureHpa:1013}]}};
+  assert.equal(pressureChange(shortStation,forecast,stamp(t)),-3);
+});
+await check("forecast pressure reaches future slot conditions and normalized run inputs",async()=>{
+  const location=miniLocations[0],start=Date.parse(fixture.now)-6*3600000,stamp=x=>new Date(x).toISOString();
+  const rows=Array.from({length:8*24+7},(_,i)=>({at:stamp(start+i*3600000),pressureHpa:1020-i*.05}));
+  const pressureForecast={provider:"open-meteo",kind:"pressureForecast",locationId:location.id,station:null,
+    units:{pressureHpa:"hPa"},observedAt:null,issuedAt:null,validFrom:rows[0].at,validTo:rows.at(-1).at,
+    fetchedAt:fixture.now,values:{rows},ok:true,stale:false,usedFallback:true,safeErrorCode:null};
+  const observations=fixture.observations.filter(x=>x.locationId===location.id).concat(pressureForecast);
+  const run=await build({...smallParams,observations}),slots=Object.values(run.details).flatMap(x=>x.rows??[]).flatMap(x=>x.slots??[]);
+  assert.ok(slots.some(x=>Number.isFinite(x.conditions?.pressureChange6hHpa)));
+  assert.ok(run.today.inputs.observations.some(x=>x.kind==="pressureForecast"&&x.provider==="open-meteo"));
+});
 await check("winning water provider and documented distant tide note reach location confidence metadata",()=>{assert.ok(built.today.locations.some(x=>Number.isFinite(x.tideDistanceMi)&&x.tideDistanceMi>15));const rows=Object.values(built.details).flatMap(x=>x.rows??[]).flatMap(x=>x.slots??[]);assert.ok(rows.some(x=>x.conditions.waterTempSource==="ocean-buoy"||x.conditions.waterTempSource==="co-ops-water-temperature"));});
 await check("pressure does not fabricate a neutral trend beyond the newest reading",()=>{const refs=built.tomorrow.detailsRefs??[];const rows=Object.values(built.details).flatMap(x=>x.rows??[]).flatMap(x=>x.slots??[]);assert.ok(rows.some(x=>x.conditions&&x.conditions.pressureChange6hHpa===null));});
 await check("late evening closes today cleanly while tomorrow refreshes",async()=>{const late=await build({now:"2026-10-06T02:15:00.000Z"});assert.equal(validatePredictionRun(late.today),true);assert.equal(validatePredictionRun(late.tomorrow),true);assert.equal(late.today.recommendation.state?.kind,"closed");assert.equal(late.today.recommendation.state?.code,"noRemainingWindowsToday");assert.equal(late.tomorrow.generatedAt,"2026-10-06T02:15:00.000Z");});

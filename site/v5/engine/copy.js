@@ -7,6 +7,7 @@ export const REASON_COPY = Object.freeze({
   notRealistic: "Survey history is too low to make this a realistic target.",
   bycatch: "This fish is treated as bycatch, not a target.",
   structureRequired: "This fish needs structure such as a pier, bridge, or rocks.",
+  closedForConstruction: "This fishing mode is closed during construction.",
   notOnSpotList: "Not usually caught at the spots we cover.",
   belowRealisticFloor: "Survey history is too low to make this a realistic target.",
   realistic: "Survey history supports this as a realistic target.",
@@ -79,7 +80,7 @@ export function formatConfidence(run, _now) {
   const {level,score,detail}=formatConfidenceParts(run);
   return [level,score,detail].filter(Boolean).join(" · ");
 }
-const SOURCE_LABELS=Object.freeze({gridForecast:"Forecast grid",points:"NWS location lookup",hourlyForecast:"Hourly forecast",pressureObservations:"Pressure",tidePredictions:"Tide predictions",waterTemperature:"Water temperature",waveForecast:"Wave forecast",waves:"Wave buoy",alerts:"Alerts"});
+const SOURCE_LABELS=Object.freeze({gridForecast:"Forecast grid",points:"NWS location lookup",hourlyForecast:"Hourly forecast",pressureObservations:"Pressure",pressureForecast:"Pressure forecast",tidePredictions:"Tide predictions",waterTemperature:"Water temperature",waveForecast:"Wave forecast",waves:"Wave buoy",alerts:"Alerts"});
 export function sourceSummaries(sources, aging=false, timeLabel=(v)=>v??"") {
   const groups=new Map(),rank={current:0,fallback:1,stale:2,unavailable:3};
   for(const s of sources??[]){
@@ -113,12 +114,12 @@ export function slotIndexAt(slots, now) {
   for(let i=0;i<times.length;i++)if(t>=times[i]&&(i===times.length-1||t<times[i+1]))return i;
   return -1;
 }
-// Default scrubber selection: today -> the current hour (or the next window before the series, the last slot after it); other days -> first window.
+// Default scrubber selection: today -> the current hour, or the next window when one is still ahead (the next window before the series, the last slot after it); other days -> first window.
 export function defaultSlotIndex(slots, now, isToday, inWindow=()=>false) {
   const n=(slots??[]).length; if(!n)return 0;
   const first=Math.max(0,slots.findIndex(x=>inWindow(x.at)));
   if(!isToday)return first;
-  const i=slotIndexAt(slots,now); if(i>=0)return i;
+  const i=slotIndexAt(slots,now); if(i>=0){ if(inWindow(slots[i].at))return i; const ahead=slots.findIndex((x,j)=>j>i&&inWindow(x.at)); return ahead>=0?ahead:i; }
   const t=+new Date(now);
   if(Number.isFinite(t)&&t<Date.parse(slots[0].at)){ const up=slots.findIndex(x=>Date.parse(x.at)>=t&&inWindow(x.at)); return up>=0?up:0; }
   return n-1;

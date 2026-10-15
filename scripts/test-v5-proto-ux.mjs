@@ -62,6 +62,7 @@ assert.deepEqual(presentChildren("a", null, false, ["b", null]), ["a", "b"]);
 const protoSource = readFileSync("site/v5/proto/proto.js", "utf8");
 assert.doesNotMatch(protoSource, /readout\.replaceChildren\(/);
 assert.match(protoSource, /fill\(readout,/);
+assert.match(protoSource, /c\.source === "sample"\) \{ sv = "sample"; tag = refreshInProgress \? "Sample · loading live data · " : "Sample · not live · "; \}/);
 const phaseWin = { start: "2026-10-05T10:00:00Z", end: "2026-10-05T11:00:00Z" };
 assert.equal(windowPhase(phaseWin, "2026-10-05T09:00:00Z"), "upcoming");
 assert.equal(windowPhase(phaseWin, "2026-10-05T10:30:00Z"), "open");
@@ -84,6 +85,7 @@ assert.equal(backupTitle(skipRec.backup, skipRec, "Flagler Beach ICW (Veterans P
   const win = (at) => at === hrs[1].at || at === hrs[2].at; // 6–8 AM window
   assert.equal(defaultSlotIndex(hrs, "2026-10-09T13:30:00Z", true, win), 4);  // 9:30 AM, window over -> 9 AM, not 6 AM
   assert.equal(defaultSlotIndex(hrs, "2026-10-09T10:15:00Z", true, win), 1);  // 6:15 AM, inside window -> now
+  assert.equal(defaultSlotIndex(hrs, "2026-10-09T09:30:00Z", true, win), 1);  // 5:30 AM, window still ahead -> next window, not an empty hour
   assert.equal(defaultSlotIndex(hrs, "2026-10-09T07:00:00Z", true, win), 1);  // 3 AM, before series -> next window
   assert.equal(defaultSlotIndex(hrs, "2026-10-09T20:00:00Z", true, win), 6);  // 4 PM, after series -> last slot
   assert.equal(defaultSlotIndex(hrs, "2026-10-09T13:30:00Z", false, win), 1); // Tomorrow tab -> first window

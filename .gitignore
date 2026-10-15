@@ -1,4 +1,13 @@
 node_modules
+ios-www/
+ios/App/Pods/
+DerivedData/
 .DS_Store
 site/api/
 .cache/
+.agent-handoff/shots/
+.claude/
+.playwright-cli/
+
+# Local Xcode device builds
+/build/

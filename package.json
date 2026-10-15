@@ -1,4 +1,24 @@
 {
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "ios:web": "node scripts/build-ios-web.mjs",
+    "ios:sync": "npm run ios:web && npx cap sync ios",
+    "ios:open": "npx cap open ios",
+    "ios:build": "xcodebuild -project ios/App/App.xcodeproj -scheme App -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build"
+  },
+  "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.5.3",
+    "@capacitor/geolocation": "^8.2.3",
+    "@capacitor/haptics": "^8.0.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/share": "^8.0.3",
+    "@capacitor/status-bar": "^8.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/ios": "^8.5.3"
+  }
 }

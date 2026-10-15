@@ -50,18 +50,22 @@ function hourlyAt(obs, at) {
     rainPct:has(x.probabilityOfPrecipitation)?x.probabilityOfPrecipitation:null, thunder:typeof x.thunder==="boolean"?x.thunder:/thunder/i.test(x.shortForecast??"")?true:false,
     windDirectionDeg:({N:0,NNE:22.5,NE:45,ENE:67.5,E:90,ESE:112.5,SE:135,SSE:157.5,S:180,SSW:202.5,SW:225,WSW:247.5,W:270,WNW:292.5,NW:315,NNW:337.5})[x.windDirection]??null, validFrom:x.startTime??x.validFrom??null, validTo:x.endTime??x.validTo??null };
 }
-function pressureChange(obs, at) {
-  if(!obs?.ok||obs.stale)return null;
-  const rows=valueRows(obs).filter(x=>has(x.pressureHpa??x.pressurePa??x.value)&&Number.isFinite(Date.parse(x.at??x.timestamp??x.time))).map(x=>({t:Date.parse(x.at??x.timestamp??x.time),v:has(x.pressureHpa)?x.pressureHpa:has(x.pressurePa)?x.pressurePa/100:x.value})).sort((a,b)=>a.t-b.t);
-  const t=Date.parse(at), newest=rows.at(-1);if(newest&&t-newest.t>3600000)return null;const now=rows.filter(x=>x.t<=t).at(-1), old=rows.filter(x=>x.t<=t-6*3600000).at(-1);
-  return now&&old?now.v-old.v:null;
+export function pressureChange(obs, forecast, at) {
+  const rowsFor=(source, keys)=>valueRows(source).filter(x=>has(x.pressureHpa??x.pressurePa??x.value)&&Number.isFinite(Date.parse(keys.map(k=>x[k]).find(v=>v!=null)??"")))
+    .map(x=>({t:Date.parse(keys.map(k=>x[k]).find(v=>v!=null)),v:has(x.pressureHpa)?x.pressureHpa:has(x.pressurePa)?x.pressurePa/100:x.value})).sort((a,b)=>a.t-b.t);
+  const t=Date.parse(at), station=obs?.ok&&!obs.stale?rowsFor(obs,["at","timestamp","time"]):[], newest=station.at(-1);
+  if(newest&&station[0]&&t>=station[0].t&&t-newest.t<=3600000){const current=station.filter(x=>x.t<=t).at(-1),old=station.filter(x=>x.t<=t-6*3600000).at(-1);if(current&&old)return current.v-old.v;}
+  if(!forecast?.ok||forecast.stale)return null;
+  const modeled=rowsFor(forecast,["at","timestamp","time","validFrom"]), near=target=>modeled.reduce((best,row)=>Math.abs(row.t-target)<Math.abs((best?.t??Infinity)-target)?row:best,null);
+  const current=near(t),old=near(t-6*3600000);
+  return current&&old&&Math.abs(current.t-t)<=3600000&&Math.abs(old.t-(t-6*3600000))<=3600000?current.v-old.v:null;
 }
-function tideAt(obs, at) {
+export function tideAt(obs, at) {
   if(!obs?.ok||obs.stale)return {height:null,rate:null,direction:null};
   const rows=valueRows(obs).filter(x=>has(x.heightFt)&&["H","L"].includes(String(x.type).toUpperCase())&&Number.isFinite(Date.parse(x.time))).sort((a,b)=>Date.parse(a.time)-Date.parse(b.time)),t=Date.parse(at);
   let i=rows.findIndex(x=>Date.parse(x.time)>t);if(i<1||i<0)return {height:null,rate:null,direction:null};
   const a=rows[i-1],b=rows[i],t0=Date.parse(a.time),t1=Date.parse(b.time),span=t1-t0;if(span<=0||span>12*3600000)return {height:null,rate:null,direction:null};
-  const f=Math.max(0,Math.min(1,(t-t0)/span)),r0=String(a.type).toUpperCase(),rise=r0==="L",lo=rise?a.heightFt:b.heightFt,hi=rise?b.heightFt:a.heightFt,mid=(hi+lo)/2,amp=(hi-lo)/2,phase=Math.PI*f,height=mid-amp*Math.cos(phase),signed=rise?1:-1,rate=signed*amp*Math.PI*Math.sin(phase)/(span/3600000);
+  const f=Math.max(0,Math.min(1,(t-t0)/span)),r0=String(a.type).toUpperCase(),rise=r0==="L",lo=rise?a.heightFt:b.heightFt,hi=rise?b.heightFt:a.heightFt,mid=(hi+lo)/2,amp=(hi-lo)/2,phase=Math.PI*f,height=mid+(rise?-1:1)*amp*Math.cos(phase),signed=rise?1:-1,rate=signed*amp*Math.PI*Math.sin(phase)/(span/3600000);
   return {height,rate,direction:Math.abs(rate)<0.02?"slack":rate>0?"incoming":"outgoing"};
 }
 function gridAt(obs, at) {
@@ -81,7 +85,7 @@ function conditionsAtFor(loc, map, now) {
       waterTempF:water?.ok&&!water.stale&&has(waterRow?.temperatureC)?waterRow.temperatureC*9/5+32:water?.ok&&!water.stale&&has(waterRow?.waterTempF)?waterRow.waterTempF:null,
       waterTempSource:water?.ok&&!water.stale?(water.provider==="secoora"||water.provider==="ndbc"?"ocean-buoy":water.provider==="coops"?"co-ops-water-temperature":water.provider??"water-source"):null,
       waveHeightM:has(wf?.waveHeightM)?wf.waveHeightM:obsWave?.waveHeightM??null,
-      tideHeightFt:tides.height,tideRateFtPerHr:tides.rate,tideDirection:tides.direction,pressureChange6hHpa:pressureChange(current,at),pressureHpa:null,
+      tideHeightFt:tides.height,tideRateFtPerHr:tides.rate,tideDirection:tides.direction,pressureChange6hHpa:pressureChange(current,get("pressureForecast"),at),pressureHpa:null,
       alerts:get("alerts")?.ok?valueRows(get("alerts")):[], validFrom:weather.validFrom??wf?.validFrom??null,validTo:weather.validTo??wf?.validTo??null,
       lightPhase:null,moonPhase:null};
   };
@@ -200,7 +204,7 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
     const sourceStatus=carried.observations.filter(x=>active.some(l=>l.id===x.locationId)).map(x=>freshness(x,nowMs,x.kind));
     const missingInputs=sourceStatus.filter(x=>x.status==="unavailable"||x.stale).map(x=>({kind:x.kind,reason:x.status,locationId:carried.observations.find(o=>o.kind===x.kind)?.locationId??null,text:copy(`missing.${x.kind}`,`${x.label} unavailable or stale.`)}));
     const metWeatherFallback=new Set(carried.observations.filter(x=>x.provider==="open-meteo"&&x.kind==="gridForecast").map(x=>x.locationId));
-    const requiredObs=carried.observations.filter(x=>["hourlyForecast","gridForecast","alerts","tidePredictions","waves","waterTemperature","pressureObservations","waveForecast"].includes(x.kind))
+    const requiredObs=carried.observations.filter(x=>["hourlyForecast","gridForecast","alerts","tidePredictions","waves","waterTemperature","pressureObservations","pressureForecast","waveForecast"].includes(x.kind))
       .filter(x=>!(x.provider==="open-meteo"&&x.kind==="hourlyForecast"&&metWeatherFallback.has(x.locationId)));
     const candidatePredictions=list.map(x=>compactSpeciesPrediction(x,x.window,x.detailsRef));
     const run=createPredictionRun({schemaVersion:{...SCHEMA_VERSION},id:runId,modelVersion:MODEL_VERSION,paramsHash,historyHash,inputsHash,catalogHash,codeRevision,horizon,targetDate,generatedAt:utc(nowMs),validFrom:utc(modeSlotsStart(horizonSlots[horizon],nowMs)),validTo:utc(modeSlotsEnd(horizonSlots[horizon],nowMs)),region:"First Coast",status:!sourceStatus.length||sourceStatus.every(x=>x.status==="unavailable")?"degraded":missingInputs.length?"partial":"ok",carriedForward:carried.carried.length>0,missingInputs,recommendation,scopeViews:{best:{recommendationId:recommendation.id},byLocation,bySpecies},locations:active.map(l=>({id:l.id,name:l.name,area:l.area,county:l.county,active:true,modes:l.modes,structure:l.structure,lat:l.lat,lon:l.lon,tideDistanceMi:l.tideDistanceMi})),bySpecies,candidates:candidatePredictions,slots:timeline,days:[],inputs:{sourceStatus,observations:requiredObs,priorSelection:sameDatePrior?{runId:sameDatePrior.id,recommendationId:sameDatePrior.recommendation?.id??null,targetDate}:null},notes:catalogWarnings,detailsRefs:Object.keys(details).filter(k=>k.startsWith(`details/${horizon}-`))});

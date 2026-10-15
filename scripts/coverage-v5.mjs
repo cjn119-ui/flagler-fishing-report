@@ -18,6 +18,7 @@ const candidateParams={...MODEL_PARAMS,history:{...MODEL_PARAMS.history,realisti
 const modes=["surf","pier","inshore"],summary=Object.fromEntries(modes.map(m=>[m,{cells:0,realisticCells:0,goCells:0,goLocations:new Set(),speciesCandidates:0,bySpot:{}}]));
 const noTarget=[];
 for(const spot of ACTIVE_SPOTS)for(const mode of spot.modes)for(let month=1;month<=12;month++){
+ if(spot.closures?.some(x=>x.status==="closed"&&x.modes?.includes(mode)))continue;
  const s=summary[mode];s.cells++;const loc=s.bySpot[spot.id]??(s.bySpot[spot.id]={cells:0,realistic:0,go:0});loc.cells++;
  const choices=SPECIES.filter(x=>x.modes.includes(mode)&&spot.targets.includes(x.id)&&!x.bycatch&&!(x.needsStructure&&!new Set(["pier","jetty","bridge","dock","seawall","rocks"]).has(spot.structure)));
  let best=null,hasRealistic=false;
@@ -46,6 +47,7 @@ if(noTarget.length)console.log(`Factor screen cells without realistic targets: $
 function runCoverage(historyInput,tideAmplitudeFtPerHr){
   const result=Object.fromEntries(modes.map(mode=>[mode,{denominator:0,realisticCells:0,windowCells:0,goCells:0,goWindows:0,basis:{relativeCapped:0,absoluteOnly:0,unavailable:0},bySpot:{}}]));
   for(const spot of ACTIVE_SPOTS)for(const mode of spot.modes)for(let month=1;month<=12;month++){
+    if(spot.closures?.some(x=>x.status==="closed"&&x.modes?.includes(mode)))continue;
     const summary=result[mode];summary.denominator++;const loc=summary.bySpot[spot.id]??(summary.bySpot[spot.id]={denominator:0,realistic:0,window:0,go:0});loc.denominator++;
     const day=`2026-${String(month).padStart(2,"0")}-15`,slots=Array.from({length:6},(_,i)=>new Date(Date.UTC(2026,month-1,15,14,i*30)).toISOString());let anyRealistic=false,bestWindows=[];
     for(const species of SPECIES.filter(x=>x.modes.includes(mode)&&spot.targets.includes(x.id))){

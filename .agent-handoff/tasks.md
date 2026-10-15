@@ -1,0 +1,9 @@
+# Tasks for Codex (owner of all file edits until it finishes)
+Work ONLY in /Users/christiannunez/flagler-fishing-ios (branch feature/capacitor-ios). First run: pwd; git rev-parse --show-toplevel; git status --short.
+Read .agent-handoff/project-state.md, architecture.md, AGENTS.md, site/main.js (getJson / saved-data logic), site/index.html, site/v5/proto/proto-data.js first.
+1. Install capacitor deps (npm i @capacitor/core @capacitor/app @capacitor/haptics @capacitor/share @capacitor/geolocation @capacitor/status-bar @capacitor/browser; npm i -D @capacitor/cli @capacitor/ios), pick versions compatible with Xcode 27 / node 26 (check npm view + peer deps). Add capacitor.config.json (appName Flagler Fishing, appId com.trointelligence.flaglerfishing, webDir ios-www). gitignore ios-www, node_modules, ios/App/Pods, DerivedData builds.
+2. scripts/build-ios-web.mjs + ios/bridge.js + ios/bridge.css per architecture.md. Add unit test scripts/test-ios-bridge.mjs (node, no deps) covering URL rewriting + cache/stale fallback logic.
+3. `npx cap add ios`; configure Info.plist (location string, display name, portrait iPhone orientations, ATS untouched), app icon from site/icons/icon-512.png if feasible (1024 required: upscale or note), splash/background color #0B1117.
+4. Do not edit protected files under site/ (root app, v1-v3) except if provably required; if you must, say exactly why.
+5. Run: existing node tests (list in .github/workflows/pages.yml; scripts/generate*.mjs not needed), build-ios-web, `npx cap sync ios`, then `xcodebuild -project/-workspace ... -scheme App -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build`. If a simulator runtime exists, boot and launch; if not, state BLOCKED. Never fake results.
+6. Do not commit/push. Write evidence (commands, exit codes, tail of logs, versions) to .agent-handoff/codex-results.md. No secrets in logs.

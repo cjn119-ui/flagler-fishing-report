@@ -38,6 +38,7 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
   const all = [];
   await Promise.all(locations.map(async location => {
     const id = location.id ?? String(location.lat) + "," + String(location.lon);
+    const openMeteoPromise = fetchOpenMeteoWeather(location, { fetchImpl, now, timeoutMs: Math.max(timeoutMs, 15_000) });
     const points = await cached("points-land:" + id, "points", now, () => fetchNwsPoints(location, { fetchImpl, now, timeoutMs }));
     const marine = includeWaveForecast && location.modes?.some(mode => mode === "surf" || mode === "pier");
     const marineCoordinates = marine ? { lat: location.lat, lon: Number((Number(location.lon) + 0.05).toFixed(4)) } : null;
@@ -57,15 +58,17 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
     if (marine) {
       jobs.push(["grid", "grid:" + id, () => fetchNwsWaveForecast(location, { points: marinePoints, fetchImpl, now, timeoutMs })]);
     }
-    const results = await Promise.all(jobs.map(async ([kind,key,fn]) => cached(key, kind, now, fn)));
+    const [results, openMeteo] = await Promise.all([
+      Promise.all(jobs.map(async ([kind,key,fn]) => cached(key, kind, now, fn))),
+      openMeteoPromise,
+    ]);
     let [hourly, landGrid, alerts, pressure, tide, coopsWater, secooraWaves, secooraWater, waveForecast] = results;
     if (!hourly?.ok || hourly.stale || !landGrid?.ok || landGrid.stale) {
-      const fallback = await fetchOpenMeteoWeather(location, { fetchImpl, now, timeoutMs: Math.max(timeoutMs, 15_000) });
-      if ((!hourly?.ok || hourly.stale) && fallback.hourly.ok) hourly = fallback.hourly;
-      if ((!landGrid?.ok || landGrid.stale) && fallback.grid.ok) landGrid = fallback.grid;
+      if ((!hourly?.ok || hourly.stale) && openMeteo.hourly.ok) hourly = openMeteo.hourly;
+      if ((!landGrid?.ok || landGrid.stale) && openMeteo.grid.ok) landGrid = openMeteo.grid;
       const unavailable = [
-        (!hourly?.ok || hourly.stale) && !fallback.hourly.ok ? fallback.hourly.error : null,
-        (!landGrid?.ok || landGrid.stale) && !fallback.grid.ok ? fallback.grid.error : null,
+        (!hourly?.ok || hourly.stale) && !openMeteo.hourly.ok ? openMeteo.hourly.error : null,
+        (!landGrid?.ok || landGrid.stale) && !openMeteo.grid.ok ? openMeteo.grid.error : null,
       ].filter(Boolean);
       if (unavailable.length) console.warn(`Open-Meteo weather fallback failed for ${id}: ${unavailable.join("; ")}`);
     }
@@ -83,7 +86,7 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
     const fallbackWaves = waves?.provider === "ndbc" ? { ...waves, kind: "waves", values: { waveHeightM: waves.values?.waveHeightM,
       periodS: waves.values?.periodS, directionDeg: waves.values?.directionDeg } } : waves;
     const fallbackWater = water?.provider === "ndbc" ? { ...water, kind: "waterTemperature", values: { temperatureC: water.values?.temperatureC } } : water;
-    all.push(points, marinePoints, hourly, landGrid, alerts, pressure, tide, coopsWater, fallbackWaves, fallbackWater, waveForecast);
+    all.push(points, marinePoints, hourly, landGrid, alerts, pressure, openMeteo.pressureForecast, tide, coopsWater, fallbackWaves, fallbackWater, waveForecast);
   }));
   return all.filter(Boolean);
 }

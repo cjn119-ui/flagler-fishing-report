@@ -40,7 +40,7 @@ export async function fetchOpenMeteoWeather(location, { fetchImpl, now = Date.no
   url.search = new URLSearchParams({
     latitude: String(location.lat),
     longitude: String(location.lon),
-    hourly: "temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
+    hourly: "temperature_2m,precipitation_probability,wind_speed_10m,wind_direction_10m,wind_gusts_10m,pressure_msl",
     temperature_unit: "fahrenheit",
     wind_speed_unit: "mph",
     forecast_days: "7",
@@ -71,11 +71,24 @@ export async function fetchOpenMeteoWeather(location, { fetchImpl, now = Date.no
       validFrom: rows[0].validFrom, validTo: rows.at(-1).validTo,
       units: "Open-Meteo hourly values; wind mph; temperature °F",
       values: { rows: commonRows.map((row) => ({ ...row, startTime: row.validFrom, endTime: row.validTo })) } });
-    return { hourly, grid };
+    let pressureForecast;
+    try {
+      const pressureTimes = forecastTimes(json?.hourly, ["pressure_msl"]);
+      const pressureRows = pressureTimes.map((at, i) => ({ at, pressureHpa: finiteOrNull(json.hourly.pressure_msl[i]) }));
+      if (!pressureRows.some((row) => Number.isFinite(row.pressureHpa))) throw new Error("Open-Meteo pressure values are unavailable");
+      // Pressure forecast is a primary source, not a stand-in for NWS.
+      pressureForecast = observation({ ...shared, usedFallback: false, kind: "pressureForecast", validFrom: pressureTimes[0],
+        validTo: new Date(Date.parse(pressureTimes.at(-1)) + 60 * 60 * 1000).toISOString(),
+        units: { pressureHpa: "hPa" }, values: { rows: pressureRows } });
+    } catch (error) {
+      pressureForecast = failure({ provider: "open-meteo", kind: "pressureForecast", locationId, url: url.toString() }, error);
+    }
+    return { hourly, grid, pressureForecast };
   } catch (error) {
     return {
       hourly: failure({ provider: "open-meteo", kind: "hourlyForecast", locationId, url: url.toString() }, error),
       grid: failure({ provider: "open-meteo", kind: "gridForecast", locationId, url: url.toString() }, error),
+      pressureForecast: failure({ provider: "open-meteo", kind: "pressureForecast", locationId, url: url.toString() }, error),
     };
   }
 }
