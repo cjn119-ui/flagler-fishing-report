@@ -101,3 +101,8 @@ body.ios-keyboard-open main {
 .card, .btn, .btn-s, .pill, .tab, .sp, .row, .bet { transition: transform .18s cubic-bezier(.32,.72,0,1); }
 .btn:active, .btn-s:active, .pill:active, .mark:active, #refresh:active, .tab:active, .sp:active, .row:active { transform: scale(.97); }
 @media (prefers-reduced-motion: reduce) { .card, .btn, .btn-s, .pill, .tab, .sp, .row, .bet { transition: none; } .btn:active, .btn-s:active, .pill:active, .tab:active, .mark:active, #refresh:active, .sp:active, .row:active { transform: none; } }
+
+/* Stand-in for the native MapKit view while it is hidden (tab swipes, swipe previews, sheets). */
+.native-map-slot {
+  background: var(--ff-map-snapshot, none) center / cover no-repeat;
+}
