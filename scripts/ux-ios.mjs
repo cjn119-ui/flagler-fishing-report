@@ -124,8 +124,8 @@ async function cleanNavigationState(tab) {
   assert.equal(state.stagger, false, "tab slide does not replay stagger classes");
 }
 async function dragSheet(distance, steps, delay) {
-  const box = await page.locator(".sheet-h").boundingBox();
-  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  const box = await page.locator(".sheet-b").boundingBox();
+  const x = box.x + Math.min(18, box.width / 8), y = box.y + Math.min(18, box.height / 8);
   await page.mouse.move(x, y); await page.mouse.down();
   for (let i = 1; i <= steps; i++) {
     await page.mouse.move(x, y + distance * i / steps);
@@ -263,7 +263,7 @@ try {
     const animation = [...document.querySelector("#view").getAnimations()].find((item) => item.effect?.getKeyframes().some((frame) => frame.transform));
     return { keyframes: animation?.effect?.getKeyframes() ?? [], vIn: document.querySelector("#view").classList.contains("v-in"), stagger: !!document.querySelector("#view .stagger") };
   });
-  assert.ok(String(tapSlide.keyframes[0]?.transform).includes("18px"), `Today to Spots tap enters from the next tab direction: ${JSON.stringify(tapSlide.keyframes)}`);
+  assert.equal(tapSlide.keyframes[0]?.transform, `translateX(${await page.evaluate(() => innerWidth)}px)`, `Today to Spots tap enters from the next tab direction: ${JSON.stringify(tapSlide.keyframes)}`);
   assert.equal(tapSlide.vIn, false, "tap navigation does not run v-in");
   assert.equal(tapSlide.stagger, false, "tap navigation does not replay stagger");
   await cleanNavigationState("spots");

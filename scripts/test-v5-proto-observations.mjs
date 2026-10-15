@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF } from "../site/v5/proto/proto-observations.js";
+import { fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideDirectionAt } from "../site/v5/proto/proto-observations.js";
 
 const run = { inputs: { observations: [
   { kind: "hourlyForecast", locationId: "spot", ok: true, values: { rows: [
@@ -34,5 +34,13 @@ assert.equal(hourlyOutlook(null, true), "—");
   assert.equal(water.time, "2026-10-14T17:28:20Z");
   assert.equal(wave.waveHeightM, 0.51);
   assert.equal(observationFor([wave], "2026-10-14T18:00:00Z"), wave);
+}
+{ // tide direction from high/low predictions, any hour of the day
+  const rows = [{ time: "2026-10-15T04:00:00Z", type: "L" }, { time: "2026-10-15T10:15:00Z", type: "H" }, { time: "2026-10-15T16:30:00Z", type: "L" }];
+  assert.equal(tideDirectionAt(rows, "2026-10-15T07:00:00Z"), "incoming");
+  assert.equal(tideDirectionAt(rows, "2026-10-15T13:00:00Z"), "outgoing");
+  assert.equal(tideDirectionAt(rows, "2026-10-15T10:05:00Z"), "slack");
+  assert.equal(tideDirectionAt(rows, "2026-10-15T20:00:00Z"), null);
+  assert.equal(tideDirectionAt(rows, Date.parse("2026-10-15T07:00:00Z")), "incoming", "accepts epoch ms (the app passes ctx.now)");
 }
 console.log("test-v5-proto-observations: observation shapes, period selection, unit conversion input, and wind formatting passed");

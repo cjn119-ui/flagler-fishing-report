@@ -45,3 +45,14 @@ export function observationFor(rows, at) {
       .sort((a, b) => Math.abs(Date.parse(a.startTime ?? a.validFrom ?? a.time) - t) - Math.abs(Date.parse(b.startTime ?? b.validFrom ?? b.time) - t))[0]
     ?? null;
 }
+
+// Tide direction at `at` from high/low predictions: heading to a high is incoming, to a low outgoing; within 20 min of a turn it's slack.
+export function tideDirectionAt(rows, at) {
+  const t = +new Date(at);
+  const events = (rows ?? []).map((x) => ({ t: Date.parse(x.time), type: String(x.type ?? "").toUpperCase() }))
+    .filter((x) => Number.isFinite(x.t) && (x.type === "H" || x.type === "L")).sort((a, b) => a.t - b.t);
+  const next = events.find((x) => x.t > t), prev = events.filter((x) => x.t <= t).at(-1);
+  if (!Number.isFinite(t) || !next) return null;
+  if (next.t - t <= 20 * 60e3 || (prev && t - prev.t <= 20 * 60e3)) return "slack";
+  return next.type === "H" ? "incoming" : "outgoing";
+}

@@ -1,7 +1,9 @@
 # Codex job M — motion & interactivity pass (fluid, coherent, iOS-native feel)
 
 Repo /Users/christiannunez/flagler-fishing-ios, branch feature/capacitor-ios. Start: `pwd; git rev-parse --show-toplevel; git status --short`.
-The working tree already contains UNCOMMITTED, accepted job-C changes (proto.js, proto.css, proto-data.js, tests, SceneDelegate.swift, FFMapPlugin.swift, AppIcon). Build on top of them; never revert, reset, stash or reformat them. Do not commit. Do not invoke Claude. Do not uninstall the app. You own `site/v5/proto/proto.js`, `site/v5/proto/proto.css` and motion-related tests for this job. No npm deps, no build step (AGENTS.md).
+Job C and the 2026-10-14 fixes are committed (HEAD aef790e, merged to main as PR #25). Do not commit, push, or touch site/api/ or site/v5/engine/.
+Preserve the 2026-10-14 swipe gating in proto.js (search `lastScrollAt`): no swipe while the page is momentum-scrolling (<150 ms since last scroll event) or when touch starts on horizontal rows (`scrollsHorizontally` list); horizontal intent needs |dx| > 18 and |dx| > 2·|dy|; commit needs sign(projected) === sign(dx) and |projected| >= max(80, 22% width). You may replace the velocity estimate (item 3) but keep these guards and their behaviour.
+Also preserve: targeting chip on all tabs except Log, `segment()` press() immediate aria-pressed update, live factor hydration (`hydrateFactors`, `fetchRunDetails`).
 
 ## Goal
 Every movement should feel like one physical system: content follows the finger 1:1, releases continue with the finger's velocity, nothing animates twice, nothing jumps, and every transition tells the user where they went (direction = tab order). 60 fps on iPhone (WKWebView). Respect `prefers-reduced-motion` (replace motion with ≤120 ms opacity crossfades, never remove feedback entirely).

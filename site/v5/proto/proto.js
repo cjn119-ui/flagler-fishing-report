@@ -9,7 +9,7 @@ import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCa
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
 import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesTripRate } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
-import { fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF } from "./proto-observations.js";
+import { fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideDirectionAt } from "./proto-observations.js";
 
 const TZ = "America/New_York";
 const RICH = "live-today", TOMORROW = "live-tomorrow";
@@ -330,10 +330,12 @@ function render({ resetScroll = false, navigation = false } = {}) {
 function animateView(view, { navigation = false } = {}) {
   const key = `${st.tab}|${st.h}`, seal = view.querySelector(".seal"), sealKey = seal && `${seal.parentElement.closest("#verdict")?.dataset.level}|${seal.dataset.cert}|${seal.dataset.phase}|${seal.textContent}`;
   if (!navigation && seal && motion.seal && sealKey !== motion.seal) seal.classList.add("swap");
+  if (navigation && seal) motion.seen.add(`seal:${sealKey}`);
   if (!navigation && seal && !motion.seen.has(`seal:${sealKey}`)) { motion.seen.add(`seal:${sealKey}`); seal.classList.add("intro"); }
   motion.seal = sealKey ?? motion.seal;
   if (key === motion.shown) return;
   const first = motion.shown == null; motion.shown = key;
+  if (navigation) motion.seen.add(st.tab);
   if (!navigation && !motion.seen.has(st.tab)) { // light stagger, once per view; the verdict is never held back
     motion.seen.add(st.tab);
     [...view.querySelectorAll(".col-a > :not(#verdict), .col-b > *, .spotlist .list > li, .grid > li, .days > li, .plan-layout > .card")].slice(0, 12)
@@ -414,6 +416,7 @@ function go(tab, opts = {}) {
     const direction = Math.sign(newIndex - oldIndex) || 1;
     const animation = reduce
       ? view.animate([{ opacity: .72 }, { opacity: 1 }], { duration: 100, easing: "ease-out" })
+      // Taps get a short slide in the tab's direction (the outgoing page is already gone, so a full-width entry would leave a blank band).
       : view.animate([{ opacity: .88, transform: `translateX(${carriedX || direction * 18}px)` }, { opacity: 1, transform: "translateX(0)" }], { duration: gestureDuration(Math.abs(carriedX || 18), 0, 340), easing: motionEase });
     tabSettleAnimation = animation;
     animation.finished.finally(() => { if (tabSettleAnimation === animation) { tabSettleAnimation = null; view.style.removeProperty("transform"); } }).catch(() => {});
@@ -789,7 +792,7 @@ function conditionsStrip(c) {
   const water = waterFactor ?? waterObs;
   const wave = observationFor([...observationRows(c.run, "waves", spotId), ...observationRows(c.run, "waveForecast", spotId)], c.now);
   // Ocean buoy waves mean little in the ICW; tide direction is what matters there.
-  const tideNow = c.rec.mode === "inshore" ? slotSeries(c).filter((p) => Date.parse(p.at) <= c.now).at(-1)?.tide?.direction : null;
+  const tideNow = c.rec.mode === "inshore" ? tideDirectionAt(observationRows(c.run, "tidePredictions", spotId), c.now) : null;
   const rows = [
     [tempF != null ? `${Math.round(tempF)}°F` : "—", "Air"],
     [windValue || "—", "Wind"],
@@ -1522,7 +1525,11 @@ async function init() {
     const index = tabIndexAt(event.clientX); tabDrag.moved ||= Math.abs(event.clientX - tabDrag.startX) > 10;
     if (tabDrag.moved && !tabs.hasPointerCapture(event.pointerId)) { tabs.setPointerCapture(event.pointerId); tabs.classList.add("dragging"); }
     const box = tabs.getBoundingClientRect(), step = box.width / tabButtons.length;
-    if (tabDrag.moved) tabs.style.setProperty("--tab-i", Math.max(0, Math.min(tabButtons.length - 1, (event.clientX - box.left) / step)));
+    if (tabDrag.moved) {
+      const rawIndex = (event.clientX - box.left) / step, maxIndex = tabButtons.length - 1;
+      const index = rawIndex < 0 ? rubberBand(rawIndex * step, step) / step : rawIndex > maxIndex ? maxIndex + rubberBand((rawIndex - maxIndex) * step, step) / step : rawIndex;
+      tabs.style.setProperty("--tab-i", index);
+    }
     if (index !== tabDrag.index) tabDrag.index = index;
   });
   const finishTabDrag = (event) => {
@@ -1547,17 +1554,23 @@ async function init() {
     if (pullStart == null || cOffline()) return;
     const distance = Math.max(0, e.touches[0].clientY - pullStart);
     if (!distance) return;
+    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
     pullDistance = Math.min(92, distance * .48);
-    if (distance > 18) $("main").style.transform = `translateY(${pullDistance}px)`;
+    if (distance > 18) {
+      if (reduce) $("main").style.opacity = String(1 - Math.min(.2, pullDistance / 460));
+      else $("main").style.transform = `translateY(${pullDistance}px)`;
+    }
     if (distance > 64) { pulled = true; let indicator = $("pull-refresh"); if (!indicator) { indicator = h("div", { id: "pull-refresh", role: "status" }, h("span", { class: "pull-spinner", "aria-hidden": "true" }), h("span", {}, "Release to refresh")); $("ctl").append(indicator); } indicator.style.setProperty("--pull-progress", Math.min(1, distance / 92)); }
   }, {passive:true});
-  document.addEventListener("touchend", () => {
+  const finishPull = (event) => {
     const main = $("main"), reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (main.animate && main.style.transform) main.animate([{ transform: main.style.transform }, { transform: "translateY(0)" }], { duration: reduce ? 0 : 240, easing: "cubic-bezier(.32,.72,0,1)" }).finished.finally(() => { main.style.transform = ""; }).catch(() => {});
-    if (pulled) $("refresh").click();
+    if (reduce && main.style.opacity) main.animate?.([{ opacity: Number(main.style.opacity) }, { opacity: 1 }], { duration: 100, easing: "ease-out" }).finished.finally(() => { main.style.opacity = ""; }).catch(() => {});
+    else if (main.animate && main.style.transform) main.animate([{ transform: main.style.transform }, { transform: "translateY(0)" }], { duration: 240, easing: motionEase }).finished.finally(() => { main.style.transform = ""; }).catch(() => {});
+    if (pulled && event.type === "touchend") $("refresh").click();
     $("pull-refresh")?.remove(); pullStart=null; pulled=false; pullDistance=0;
-  });
-  document.addEventListener("touchcancel", () => { $("main").style.transform = ""; $("pull-refresh")?.remove(); pullStart = null; pulled = false; pullDistance = 0; });
+  };
+  document.addEventListener("touchend", finishPull);
+  document.addEventListener("touchcancel", finishPull);
   const cOffline = () => ctx().offline;
   const nav = $("tabbar"), wide = matchMedia("(min-width:900px)"); const placeNav = () => { if(wide.matches) document.querySelector(".bar").append(nav); else document.body.insertBefore(nav,$("sheet-root")); }; placeNav(); wide.addEventListener("change",placeNav);
   initReview();
@@ -1662,7 +1675,9 @@ async function init() {
         swipe.interrupted = true;
       }
       tabs.classList.add("content-drag");
-      tabs.style.setProperty("--tab-i", Math.max(0, Math.min(TAB_ORDER.length - 1, i - swipe.dx / innerWidth)));
+      const rawIndex = i - swipe.dx / innerWidth, maxIndex = TAB_ORDER.length - 1, tabWidth = tabs.getBoundingClientRect().width / TAB_ORDER.length;
+      const indicatorIndex = rawIndex < 0 ? rubberBand(rawIndex * tabWidth, tabWidth) / tabWidth : rawIndex > maxIndex ? maxIndex + rubberBand((rawIndex - maxIndex) * tabWidth, tabWidth) / tabWidth : rawIndex;
+      tabs.style.setProperty("--tab-i", indicatorIndex);
       if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
         swipe.view.style.willChange = "transform"; swipe.view.style.transform = `translateX(${dx}px)`;
         if (next && next !== swipePreviewTab) { swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next; if (swipePreview) { swipePreview.style.zIndex = "20"; swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`; } }
