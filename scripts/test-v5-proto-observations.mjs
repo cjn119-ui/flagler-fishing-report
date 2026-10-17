@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideDirectionAt } from "../site/v5/proto/proto-observations.js";
+import { fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "../site/v5/proto/proto-observations.js";
 
 const run = { inputs: { observations: [
   { kind: "hourlyForecast", locationId: "spot", ok: true, values: { rows: [
@@ -24,6 +24,10 @@ assert.equal(hourlyOutlook(50, true), "Good");
 assert.equal(hourlyOutlook(70, true), "Great");
 assert.equal(hourlyOutlook(99, false), "Outside windows · fit 99");
 assert.equal(hourlyOutlook(null, true), "—");
+assert.equal(waveHeightFeetLabel({ waveHeightM: 0.51 }, "surf"), "1.7 ft");
+assert.equal(waveHeightFeetLabel({ waveHeightM: 0.51 }, "pier"), "1.7 ft");
+assert.equal(waveHeightFeetLabel({ waveHeightM: 0.51 }, "inshore"), null, "inshore tables omit ocean-wave height");
+assert.equal(waveHeightFeetLabel({ waveHeightM: null }, "surf"), null);
 { // live buoy shapes: Celsius water temperature and single-reading waves (SECOORA)
   const live = { inputs: { observations: [
     { kind: "waterTemperature", locationId: "icw", ok: true, observedAt: "2026-10-14T17:28:20Z", values: { temperatureC: 27.4 } },
@@ -42,5 +46,10 @@ assert.equal(hourlyOutlook(null, true), "—");
   assert.equal(tideDirectionAt(rows, "2026-10-15T10:05:00Z"), "slack");
   assert.equal(tideDirectionAt(rows, "2026-10-15T20:00:00Z"), null);
   assert.equal(tideDirectionAt(rows, Date.parse("2026-10-15T07:00:00Z")), "incoming", "accepts epoch ms (the app passes ctx.now)");
+  assert.deepEqual(tideChartXPositions([
+    { time: "2026-10-15T04:00:00Z" },
+    { time: "2026-10-15T06:00:00Z" },
+    { time: "2026-10-15T12:00:00Z" },
+  ]), [0, 25, 100], "chart event spacing follows actual elapsed time");
 }
 console.log("test-v5-proto-observations: observation shapes, period selection, unit conversion input, and wind formatting passed");

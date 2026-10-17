@@ -11,6 +11,17 @@ export function temperatureF(row) {
   return row?.temperatureUnit === "C" || row?.temperatureC != null ? value * 9 / 5 + 32 : value;
 }
 
+// Published runs keep only the compact gridForecast; read the air temperature for `at` from it when no hourly row exists.
+export function gridTemperatureF(run, locationId, at) {
+  const t = +new Date(at);
+  for (const o of run?.inputs?.observations ?? []) {
+    if (o?.kind !== "gridForecast" || !o.ok || (o.locationId && o.locationId !== locationId)) continue;
+    const row = (o.values?.temperature ?? []).find((x) => Date.parse(x?.validFrom) <= t && t < Date.parse(x?.validTo));
+    if (row && row.value != null && Number.isFinite(+row.value)) return +row.value;
+  }
+  return null;
+}
+
 export function hourlyOutlook(suitability, insideWindow) {
   if (!insideWindow) return Number.isFinite(suitability) ? `Outside windows · fit ${suitability}` : "Outside windows";
   if (!Number.isFinite(suitability)) return "—";
@@ -55,4 +66,15 @@ export function tideDirectionAt(rows, at) {
   if (!Number.isFinite(t) || !next) return null;
   if (next.t - t <= 20 * 60e3 || (prev && t - prev.t <= 20 * 60e3)) return "slack";
   return next.type === "H" ? "incoming" : "outgoing";
+}
+
+export function tideChartXPositions(rows) {
+  if (!rows.length) return [];
+  const start = Date.parse(rows[0].time), span = Math.max(1, Date.parse(rows.at(-1).time) - start);
+  return rows.map((row) => (Date.parse(row.time) - start) / span * 100);
+}
+
+export function waveHeightFeetLabel(wave, mode) {
+  if (mode === "inshore" || wave?.waveHeightM == null || !Number.isFinite(+wave.waveHeightM)) return null;
+  return `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`;
 }

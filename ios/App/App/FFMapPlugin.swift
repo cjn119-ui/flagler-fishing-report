@@ -55,6 +55,8 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
     private var annotations: [String: FishingSpotAnnotation] = [:]
     private var selectedID: String?
     private var lastSpots: String?
+    private var lastFitKey: String?
+    private var compactRegionWasManuallyAdjusted = false
     private var offsetObservation: NSKeyValueObservation?
     private var generation = 0
     private var headerBottom: CGFloat = 0
@@ -109,8 +111,11 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
             let map = self.mapView ?? self.makeMapView()
             self.mapView = map
             let frame = CGRect(x: x, y: y, width: width, height: height)
+            let previousMapSize = map.bounds.size
             if map.superview !== scrollView { scrollView.addSubview(map) }
             map.frame = frame
+            map.setNeedsLayout()
+            map.layoutIfNeeded()
             if self.expandBadge.superview !== map { map.addSubview(self.expandBadge) }
             self.expandBadge.frame.origin = CGPoint(x: frame.width - 34 - 12, y: 12)
             map.alpha = 1
@@ -121,12 +126,28 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
             let values = call.getArray("spots", JSObject.self) ?? []
             let encodedSpots = try? JSONSerialization.data(withJSONObject: values, options: [.sortedKeys])
             let fingerprint = (encodedSpots.flatMap { String(data: $0, encoding: .utf8) } ?? "") + "|\(call.getString("selectedId") ?? "")"
-            if fingerprint != self.lastSpots {
+            let previousRegion = map.region
+            let spotsChanged = fingerprint != self.lastSpots
+            if spotsChanged {
                 self.lastSpots = fingerprint
                 self.updateSpots(values, selectedID: call.getString("selectedId"))
-                self.fitMap()
             }
             self.selectedID = call.getString("selectedId")
+            let fitKey = self.mapFitKey(values, selectedID: self.selectedID)
+            let focusChanged = fitKey != self.lastFitKey
+            let sizeChanged = abs(previousMapSize.width - map.bounds.width) > 0.5
+                || abs(previousMapSize.height - map.bounds.height) > 0.5
+            if focusChanged {
+                self.lastFitKey = fitKey
+                self.compactRegionWasManuallyAdjusted = false
+            } else if spotsChanged && !(sizeChanged && !self.compactRegionWasManuallyAdjusted) {
+                // Annotation metadata can change without changing the geographic focus.
+                // Keep MapKit's selection refresh from nudging a user-adjusted camera.
+                map.setRegion(previousRegion, animated: false)
+            }
+            if focusChanged || (sizeChanged && !self.compactRegionWasManuallyAdjusted) {
+                self.fitMap()
+            }
             self.updateMask()
             self.installOffsetObservation(on: scrollView)
             self.scheduleSnapshot()
@@ -255,8 +276,14 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
-    @objc private func zoomIn(_ sender: UIButton) { zoom(sender.tag == 0 ? mapView : expandedMap, by: 0.5) }
-    @objc private func zoomOut(_ sender: UIButton) { zoom(sender.tag == 0 ? mapView : expandedMap, by: 2) }
+    @objc private func zoomIn(_ sender: UIButton) {
+        if sender.tag == 0 { compactRegionWasManuallyAdjusted = true }
+        zoom(sender.tag == 0 ? mapView : expandedMap, by: 0.5)
+    }
+    @objc private func zoomOut(_ sender: UIButton) {
+        if sender.tag == 0 { compactRegionWasManuallyAdjusted = true }
+        zoom(sender.tag == 0 ? mapView : expandedMap, by: 2)
+    }
 
     private func zoom(_ map: MKMapView?, by factor: Double) {
         guard let map else { return }
@@ -325,7 +352,10 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
     private func fitMap() {
         guard let map = mapView, !annotations.isEmpty else { return }
         if let selectedID, let spot = annotations[selectedID] {
-            map.setRegion(MKCoordinateRegion(center: spot.coordinate, latitudinalMeters: 2_400, longitudinalMeters: 2_400), animated: true)
+            var region = MKCoordinateRegion(center: spot.coordinate, latitudinalMeters: 2_400, longitudinalMeters: 2_400)
+            // Place the selected pin a little below center so its callout clears the top-left map control.
+            region.center.latitude += region.span.latitudeDelta * 0.12
+            map.setRegion(region, animated: true)
             return
         }
         if annotations.count == 1, let spot = annotations.values.first {
@@ -336,7 +366,20 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
         let rect = points.dropFirst().reduce(MKMapRect(origin: points[0], size: MKMapSize(width: 0, height: 0))) { current, point in
             current.union(MKMapRect(origin: point, size: MKMapSize(width: 0, height: 0)))
         }
-        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 24, left: 28, bottom: 24, right: 28), animated: true)
+        // Keep the northern pin heads and labels below Road/Satellite and the expand badge.
+        // The asymmetric top/right inset reserves those controls without hiding any spots.
+        map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 62, left: 16, bottom: 18, right: 54), animated: true)
+    }
+
+    private func mapFitKey(_ values: [JSObject], selectedID: String?) -> String {
+        let coordinates = values.compactMap { value -> String? in
+            guard let id = value["id"] as? String,
+                  let lat = value["lat"] as? Double,
+                  let lon = value["lon"] as? Double,
+                  CLLocationCoordinate2DIsValid(CLLocationCoordinate2D(latitude: lat, longitude: lon)) else { return nil }
+            return "\(id):\(lat),\(lon)"
+        }.sorted()
+        return "\(selectedID ?? "")|\(coordinates.joined(separator: ";"))"
     }
 
     private func installOffsetObservation(on scrollView: UIScrollView) {

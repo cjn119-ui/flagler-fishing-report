@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import { createCachedFetch, rewriteApiUrl } from "../ios/bridge.js";
+import { createCachedFetch, nativeBackgroundColor, rewriteApiUrl } from "../ios/bridge.js";
 
 const bundleSource = await readFile(new URL("./build-ios-web.mjs", import.meta.url), "utf8");
 for (const excluded of ["v5/proto/shots/", "v5/proto/NOTES.md", "v5/proto/img/hero-licensed.jpg", "v5/proto/img/fish/ref/"]) assert.ok(bundleSource.includes(excluded), `native bundle excludes ${excluded}`);
@@ -11,6 +11,9 @@ assert.equal(rewriteApiUrl("api/live/marine.json?check=1", { base, pagesBase }),
 assert.equal(rewriteApiUrl("../../api/v5/today.json", { base: "capacitor://localhost/v5/proto/", pagesBase }), `${pagesBase}api/v5/today.json`);
 assert.equal(rewriteApiUrl("https://api.weather.gov/gridpoints/JAX/89,29/forecast", { base, pagesBase }), "https://api.weather.gov/gridpoints/JAX/89,29/forecast");
 assert.equal(rewriteApiUrl("https://cjn119-ui.github.io/flagler-fishing-report/api/live/marine.json", { base, pagesBase }), "https://cjn119-ui.github.io/flagler-fishing-report/api/live/marine.json");
+assert.equal(nativeBackgroundColor({ theme: "light", background: "#F3F6F9" }), "#F3F6F9");
+assert.equal(nativeBackgroundColor({ theme: "dark", night: "1", background: "#000000" }), "#000000");
+assert.equal(nativeBackgroundColor({ theme: "dark" }), "#0B1117");
 
 const memory = new Map();
 const storage = { getItem: (key) => memory.get(key) ?? null, setItem: (key, value) => memory.set(key, value) };

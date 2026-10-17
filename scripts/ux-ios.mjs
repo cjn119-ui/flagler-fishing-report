@@ -190,14 +190,19 @@ try {
   await openApp();
   const longestSpot = [...ACTIVE_SPOTS].sort((a, b) => b.name.length - a.name.length)[0];
   assert.ok(longestSpot, "ACTIVE_SPOTS must include a longest spot name");
-  for (const width of [320, 375, 430]) {
+  for (const width of [320, 375, 393, 430]) {
     await page.setViewportSize({ width, height: 812 });
     for (const tab of ["today", "spots", "species", "plan", "log"]) {
       await page.goto(base + "#spot=" + encodeURIComponent(longestSpot.id) + "&tab=" + tab, { waitUntil: "domcontentloaded" });
       await page.locator("#view[aria-busy=false]").waitFor();
       assert.equal(await page.locator("#spot-label").innerText(), longestSpot.name, "longest active spot name should be scoped in the header");
-      const metrics = await page.evaluate(() => ({ width: innerWidth, pill: document.querySelector("#spot-pill").getBoundingClientRect().right, toolsLeft: document.querySelector(".tools").getBoundingClientRect().left, toolsRight: document.querySelector(".tools").getBoundingClientRect().right, doc: document.documentElement.scrollWidth, body: document.body.scrollWidth }));
-      assert.ok(metrics.pill <= metrics.toolsLeft + 1 && metrics.toolsRight <= width + 1 && metrics.doc <= width + 1 && metrics.body <= width + 1, "long-name header overflow at " + width + "px on " + tab + ": " + JSON.stringify(metrics));
+      const metrics = await page.evaluate(() => {
+        const rect = (selector) => { const { left, right } = document.querySelector(selector).getBoundingClientRect(); return { left, right }; };
+        return { width: innerWidth, bar: rect(".bar"), brand: rect(".brand"), pill: rect("#spot-pill"), refresh: rect("#refresh"), more: rect("#more"), fresh: rect("#fresh"), doc: document.documentElement.scrollWidth, body: document.body.scrollWidth };
+      });
+      const inWindow = [metrics.bar, metrics.brand, metrics.pill, metrics.refresh, metrics.more, metrics.fresh].every((box) => box.left >= -1 && box.right <= width + 1);
+      const noOverlap = metrics.brand.right <= metrics.refresh.left + 1 && metrics.refresh.right <= metrics.more.left + 1 && metrics.pill.right <= metrics.brand.right + 1;
+      assert.ok(inWindow && noOverlap && metrics.doc <= width + 1 && metrics.body <= width + 1, "long-name header overlap or viewport overflow at " + width + "px on " + tab + ": " + JSON.stringify(metrics));
     }
   }
   await page.goto(base, { waitUntil: "domcontentloaded" }); await page.locator("#view[aria-busy=false]").waitFor();
@@ -352,7 +357,21 @@ try {
   await page.getByRole("button", { name: "Log your first catch" }).click();
   await page.getByRole("button", { name: "Save catch" }).click();
   assert.ok(await page.locator(".field-error:not(:empty)").count(), "empty form should show inline validation errors");
+  assert.equal(await page.locator("#catch-species").getAttribute("aria-invalid"), "true", "species validation is connected to its control");
+  assert.equal(await page.locator("#catch-species").getAttribute("aria-describedby"), "error-species");
+  assert.equal(await page.locator("#catch-species").evaluate((el) => document.activeElement === el), true, "invalid submit focuses the first invalid field");
+  await page.locator("#catch-species").selectOption("other");
+  await page.getByRole("button", { name: "Save catch" }).click();
+  assert.equal(await page.locator("#catch-other").getAttribute("aria-invalid"), "true", "missing custom species name is attached to its text field");
+  assert.equal(await page.locator("#catch-other").getAttribute("aria-describedby"), "error-species");
+  assert.equal(await page.locator("#catch-other").evaluate((el) => document.activeElement === el), true, "invalid custom species name receives focus");
   await page.locator("#catch-species").selectOption("whiting");
+  await page.locator("#catch-count").fill("0");
+  await page.getByRole("button", { name: "Save catch" }).click();
+  assert.equal(await page.locator("#catch-species").getAttribute("aria-invalid"), null, "valid fields clear their prior error state on revalidation");
+  assert.equal(await page.locator("#catch-count").getAttribute("aria-invalid"), "true");
+  assert.equal(await page.locator("#catch-count").evaluate((el) => document.activeElement === el), true);
+  await page.locator("#catch-count").fill("1");
   const catchRun = JSON.parse(liveMode ? todayBody : sampleToday);
   await page.locator("#catch-occurredAt").fill(`${catchRun.targetDate}T08:00`);
   await page.getByRole("button", { name: "Save catch" }).click();
@@ -427,7 +446,7 @@ try {
     }
   }
   assert.deepEqual(consoleErrors, [], `browser console errors: ${consoleErrors.join(" | ")}`);
-  console.log("ux-ios: passed on " + browserName + "; 4 theme persistence cases, hash override, motion direction/settling/rapid input/interruption/sheet flick/reduced-motion checks, content swipes, tab-bar drags, long-name header checks (320/375/430 × 5 tabs), sheet close cycles, catch add/edit/delete/validation/export, " + (process.env.UX_NO_SCREENSHOTS === "1" ? "screenshots skipped (UX_NO_SCREENSHOTS=1), " : "screenshots, ") + "frame samples " + JSON.stringify({ overall: frameStats, swipe: swipeFrameStats, sheetDrag: sheetFrameStats }) + ", zero console errors.");
+  console.log("ux-ios: passed on " + browserName + "; 4 theme persistence cases, hash override, motion direction/settling/rapid input/interruption/sheet flick/reduced-motion checks, content swipes, tab-bar drags, long-name header checks (320/375/393/430 × 5 tabs), sheet close cycles, catch add/edit/delete/validation/export, " + (process.env.UX_NO_SCREENSHOTS === "1" ? "screenshots skipped (UX_NO_SCREENSHOTS=1), " : "screenshots, ") + "frame samples " + JSON.stringify({ overall: frameStats, swipe: swipeFrameStats, sheetDrag: sheetFrameStats }) + ", zero console errors.");
 } finally {
   await context.close(); await browser.close(); server.close();
 }

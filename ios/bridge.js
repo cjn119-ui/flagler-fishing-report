@@ -1,6 +1,12 @@
 const PAGES_BASE = "https://cjn119-ui.github.io/flagler-fishing-report/";
 const CACHE_PREFIX = "flagler-ios-api-v1:";
 
+export function nativeBackgroundColor({ theme = "", night = "", background = "" } = {}) {
+  if (night === "1") return "#000000";
+  if (background) return background;
+  return theme === "light" ? "#F3F6F9" : "#0B1117";
+}
+
 export function rewriteApiUrl(input, { base = globalThis.location?.href ?? "http://localhost/", pagesBase = PAGES_BASE } = {}) {
   let url;
   try { url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, base); }
@@ -300,14 +306,16 @@ if (native && globalThis.fetch) {
   document.addEventListener("v5:tab", () => plugins.Haptics?.impact?.({ style: "LIGHT" }).catch?.(() => {}));
 
   document.addEventListener("DOMContentLoaded", () => {
-    const savedTheme = (() => { try { return localStorage.getItem("v5proto.theme") ?? "dark"; } catch { return "dark"; } })();
     const syncNativeBackground = () => {
-      let theme = savedTheme;
-      try { theme = localStorage.getItem("v5proto.theme") ?? savedTheme; } catch {}
-      const backgroundColor = theme === "night" ? "#000000" : theme === "light" ? "#F3F6F9" : "#0B1117";
+      const root = document.documentElement;
+      const backgroundColor = nativeBackgroundColor({
+        theme: root.getAttribute("data-theme"),
+        night: root.getAttribute("data-night"),
+        background: getComputedStyle(root).getPropertyValue("--bg").trim(),
+      });
       document.documentElement.style.backgroundColor = backgroundColor;
       document.body.style.backgroundColor = backgroundColor;
-      document.querySelectorAll("#root, main").forEach((element) => { if (getComputedStyle(element).backgroundColor === "rgba(0, 0, 0, 0)") element.style.backgroundColor = backgroundColor; });
+      document.querySelectorAll("#root").forEach((element) => { if (getComputedStyle(element).backgroundColor === "rgba(0, 0, 0, 0)") element.style.backgroundColor = backgroundColor; });
       globalThis.Capacitor?.Plugins?.FFMap?.setBackgroundColor?.({ color: backgroundColor }).catch?.(() => {});
     };
     syncNativeBackground();
