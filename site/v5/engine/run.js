@@ -1,5 +1,6 @@
 import { SCHEMA_VERSION, MODEL_VERSION, createPredictionRun, validatePredictionRun } from "./contracts.js";
 import { MODEL_PARAMS, hashModelParams } from "./params.js";
+import { observedWindAt } from "./observed-wind.js";
 import { scoreSpecies, selectDriver, chooseBackup, orderTargets, generateSlots } from "./model.js";
 import { getHistoricalTiming } from "./history.js";
 import { getAstronomy } from "./astro.js";
@@ -80,7 +81,8 @@ function conditionsAtFor(loc, map, now) {
   return at=>{
     const hourly=hourlyAt(get("hourlyForecast"),at),grid=gridAt(get("gridForecast"),at), current=get("pressureObservations"), tides=tideAt(get("tidePredictions"),at), buoy=get("waves"), water=get("waterTemperature"), wf=intervalAt(get("waveForecast")?.ok&&!get("waveForecast").stale?valueRows(get("waveForecast")):[],at);
     const weather={...hourly,...Object.fromEntries(Object.entries(grid).filter(([,v])=>v!==null&&v!==undefined))}, obsWave=freshEnough(buoy,now,3*3600000)?buoy.values:null, waterRow=valueRows(water).at(-1)??water?.values;
-    return {at, windMph:weather.windMph??null, windGustMph:weather.windGustMph??null, windDirectionDeg:weather.windDirectionDeg??null,
+    const seen=observedWindAt(current,get("windObservations"),at,now);
+    return {at, windMph:seen?.windMph??weather.windMph??null, windGustMph:seen?.windGustMph??weather.windGustMph??null, windDirectionDeg:seen?.windDirectionDeg??weather.windDirectionDeg??null, windSource:seen?.source??"forecast",
       rainPct:weather.rainPct??null, thunder:weather.thunder??null, airTempF:weather.airTempF??null,
       waterTempF:water?.ok&&!water.stale&&has(waterRow?.temperatureC)?waterRow.temperatureC*9/5+32:water?.ok&&!water.stale&&has(waterRow?.waterTempF)?waterRow.waterTempF:null,
       waterTempSource:water?.ok&&!water.stale?(water.provider==="secoora"||water.provider==="ndbc"?"ocean-buoy":water.provider==="coops"?"co-ops-water-temperature":water.provider??"water-source"):null,
@@ -204,7 +206,7 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
     const sourceStatus=carried.observations.filter(x=>active.some(l=>l.id===x.locationId)).map(x=>freshness(x,nowMs,x.kind));
     const missingInputs=sourceStatus.filter(x=>x.status==="unavailable"||x.stale).map(x=>({kind:x.kind,reason:x.status,locationId:carried.observations.find(o=>o.kind===x.kind)?.locationId??null,text:copy(`missing.${x.kind}`,`${x.label} unavailable or stale.`)}));
     const metWeatherFallback=new Set(carried.observations.filter(x=>x.provider==="open-meteo"&&x.kind==="gridForecast").map(x=>x.locationId));
-    const requiredObs=carried.observations.filter(x=>["hourlyForecast","gridForecast","alerts","tidePredictions","waves","waterTemperature","pressureObservations","pressureForecast","waveForecast"].includes(x.kind))
+    const requiredObs=carried.observations.filter(x=>["hourlyForecast","gridForecast","alerts","tidePredictions","waves","waterTemperature","pressureObservations","pressureForecast","waveForecast","windObservations"].includes(x.kind))
       .filter(x=>!(x.provider==="open-meteo"&&x.kind==="hourlyForecast"&&metWeatherFallback.has(x.locationId)));
     const candidatePredictions=list.map(x=>compactSpeciesPrediction(x,x.window,x.detailsRef));
     const run=createPredictionRun({schemaVersion:{...SCHEMA_VERSION},id:runId,modelVersion:MODEL_VERSION,paramsHash,historyHash,inputsHash,catalogHash,codeRevision,horizon,targetDate,generatedAt:utc(nowMs),validFrom:utc(modeSlotsStart(horizonSlots[horizon],nowMs)),validTo:utc(modeSlotsEnd(horizonSlots[horizon],nowMs)),region:"First Coast",status:!sourceStatus.length||sourceStatus.every(x=>x.status==="unavailable")?"degraded":missingInputs.length?"partial":"ok",carriedForward:carried.carried.length>0,missingInputs,recommendation,scopeViews:{best:{recommendationId:recommendation.id},byLocation,bySpecies},locations:active.map(l=>({id:l.id,name:l.name,area:l.area,county:l.county,active:true,modes:l.modes,structure:l.structure,lat:l.lat,lon:l.lon,tideDistanceMi:l.tideDistanceMi})),bySpecies,candidates:candidatePredictions,slots:timeline,days:[],inputs:{sourceStatus,observations:requiredObs,priorSelection:sameDatePrior?{runId:sameDatePrior.id,recommendationId:sameDatePrior.recommendation?.id??null,targetDate}:null},notes:catalogWarnings,detailsRefs:Object.keys(details).filter(k=>k.startsWith(`details/${horizon}-`))});

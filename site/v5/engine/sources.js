@@ -8,14 +8,15 @@ import { fetchCoopsWaterTemperature } from "./adapters/coops-water-temperature.j
 import { fetchSecoora } from "./adapters/secoora.js";
 import { fetchNdbcFallback } from "./adapters/ndbc-fallback.js";
 import { fetchNwsWaveForecast } from "./adapters/nws-wave.js";
+import { fetchRiverkeeperWind, RIVERKEEPER, RIVERKEEPER_MAX_MILES } from "./adapters/riverkeeper-wind.js";
 import { fetchOpenMeteoMarineForecast, fetchOpenMeteoWeather } from "./adapters/open-meteo.js";
 
 const cache = new Map();
 export function clearSourceCache() { cache.clear(); }
 const TTL = { points: 7*86400000, hourly: 30*60000, grid: 30*60000, alerts: 10*60000,
-  observations: 15*60000, tide: 6*3600000, waterTemperature: 30*60000, buoy: 30*60000 };
+  observations: 15*60000, wind: 5*60000, tide: 6*3600000, waterTemperature: 30*60000, buoy: 30*60000 };
 const STALE_MAX = { points: 30*86400000, hourly: 6*3600000, grid: 6*3600000, alerts: 60*60000,
-  observations: 60*60000, tide: 24*3600000, waterTemperature: 3*3600000, buoy: 3*3600000 };
+  observations: 60*60000, wind: 3*3600000, tide: 24*3600000, waterTemperature: 3*3600000, buoy: 3*3600000 };
 
 async function cached(key, kind, now, fetcher) {
   const old = cache.get(key), age = old ? now - Date.parse(old.fetchedAt) : Infinity;
@@ -36,6 +37,8 @@ async function cached(key, kind, now, fetcher) {
 export async function fetchSources({ locations = [], fetchImpl = globalThis.fetch, now = Date.now(), timeoutMs = 8000,
   ndbcUrl, includeWaveForecast = true } = {}) {
   const all = [];
+  const miles = (a, b) => { const r = Math.PI / 180, x = Math.sin((b.lat - a.lat) * r / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lon - a.lon) * r / 2) ** 2; return 3958.8 * 2 * Math.asin(Math.sqrt(x)); };
+  let riverkeeper = null;
   await Promise.all(locations.map(async location => {
     const id = location.id ?? String(location.lat) + "," + String(location.lon);
     const openMeteoPromise = fetchOpenMeteoWeather(location, { fetchImpl, now, timeoutMs: Math.max(timeoutMs, 15_000) });
@@ -86,7 +89,15 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
     const fallbackWaves = waves?.provider === "ndbc" ? { ...waves, kind: "waves", values: { waveHeightM: waves.values?.waveHeightM,
       periodS: waves.values?.periodS, directionDeg: waves.values?.directionDeg } } : waves;
     const fallbackWater = water?.provider === "ndbc" ? { ...water, kind: "waterTemperature", values: { temperatureC: water.values?.temperatureC } } : water;
-    all.push(points, marinePoints, hourly, landGrid, alerts, pressure, openMeteo.pressureForecast, tide, coopsWater, fallbackWaves, fallbackWater, waveForecast);
+    // Sheltered river anemometer: only for spots close enough to be on the same water; failures are dropped, not reported.
+    const nearRiverkeeper = Number.isFinite(Number(location.lat)) && Number.isFinite(Number(location.lon)) && miles(location, RIVERKEEPER) <= RIVERKEEPER_MAX_MILES;
+    let riverWind = null;
+    if (nearRiverkeeper) {
+      riverkeeper ??= cached("riverkeeper-wind", "wind", now, () => fetchRiverkeeperWind({}, { fetchImpl, now, timeoutMs }));
+      const shared = await riverkeeper;
+      riverWind = shared?.ok ? { ...shared, locationId: id } : null;
+    }
+    all.push(riverWind, points, marinePoints, hourly, landGrid, alerts, pressure, openMeteo.pressureForecast, tide, coopsWater, fallbackWaves, fallbackWater, waveForecast);
   }));
   return all.filter(Boolean);
 }

@@ -14,7 +14,10 @@ export async function fetchNwsObservations(location, { points, fetchImpl, now = 
     if (!Array.isArray(data?.features)) throw new Error("NWS station observations missing features");
     const values = data.features.map(f => ({ time: f.properties?.timestamp, pressurePa: f.properties?.barometricPressure?.value ?? null,
       temperatureC: f.properties?.temperature?.value ?? null, windSpeedMs: f.properties?.windSpeed?.value ?? null,
-      windGustMs: f.properties?.windGust?.value ?? null, textDescription: f.properties?.textDescription ?? null }))
+      windGustMs: f.properties?.windGust?.value ?? null,
+      // NWS station winds are km/h (wmoUnit:km_h-1); the *Ms fields above predate that finding and are unused.
+      windSpeedKmh: f.properties?.windSpeed?.value ?? null, windGustKmh: f.properties?.windGust?.value ?? null,
+      windDirectionDeg: f.properties?.windDirection?.value ?? null, textDescription: f.properties?.textDescription ?? null }))
       .sort((a, b) => Date.parse(b.time ?? "") - Date.parse(a.time ?? ""));
     return observation({ provider: "nws", kind: "pressureObservations", locationId, station: stationId, url: observationsUrl,
       fetchedAt: new Date(now).toISOString(), observedAt: values[0]?.time ?? null, values: { rows: values }, units: "pressure Pa; temperature °C; wind m/s",
