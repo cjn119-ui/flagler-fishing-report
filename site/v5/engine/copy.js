@@ -41,7 +41,7 @@ export function windowPhase(win, now) {
   return end <= current ? "ended" : start <= current ? "open" : "upcoming";
 }
 export function scrubWindows(rec, days, { skip } = {}) {
-  return [...(skip ? [] : [rec?.window]), ...(days ?? []).flatMap(d => d.windows ?? []).filter(w => w.locationId === rec?.locationId && w.mode === rec?.mode)].filter(Boolean);
+  return [...(skip ? [] : [rec?.window]), ...(days ?? []).flatMap(d => d.verdict === "SKIP" ? [] : d.windows ?? []).filter(w => w.locationId === rec?.locationId && w.mode === rec?.mode)].filter(Boolean);
 }
 export const slotInWindow = (at, wins) => (wins ?? []).some(w => Number.isFinite(Date.parse(w.start)) && Number.isFinite(Date.parse(w.end)) && Date.parse(at) >= Date.parse(w.start) && Date.parse(at) < Date.parse(w.end));
 export const slotHeld = (at, gates) => (gates ?? []).some(g => Number.isFinite(Date.parse(g.startsAt)) && Number.isFinite(Date.parse(g.endsAt)) && Date.parse(at) >= Date.parse(g.startsAt) && Date.parse(at) < Date.parse(g.endsAt));

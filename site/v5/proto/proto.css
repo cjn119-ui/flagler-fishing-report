@@ -1068,3 +1068,5 @@ html,body,button,input,select,textarea,summary,svg text { font-family:var(--font
 #verdict .seal > svg:not(.seal-edge) { display:none; }
 #verdict .seal { place-content:center; justify-items:center; text-align:center; padding:0 4px; }
 #verdict .seal-word { font-size:15px; letter-spacing:-.01em; text-align:center; }
+/* Skip hours held by a safety gate: muted, hatched, never the window color. */
+.scrub .sb.held, .scrub .sb.held.in { background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--skip) 28%,transparent) 0 4px,color-mix(in srgb,var(--skip) 12%,transparent) 4px 8px); box-shadow:none; }

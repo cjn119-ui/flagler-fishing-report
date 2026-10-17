@@ -751,7 +751,7 @@ function timesCard(c) {
   const nowIdx = slotIndexAt(pts, c.now);
 
   const strip = h("div", { class: "scrub", role: "slider", tabindex: "0", "aria-orientation": "horizontal", "aria-label": "Time of day", "aria-valuemin": 0, "aria-valuemax": n - 1, "data-fk": "scrub" });
-  const bars = pts.map((p, i) => h("span", { class: `sb${p.suitability == null ? " none" : ""}${inWin(p.at) ? " in" : ""}${i === nowIdx && c.now <= Date.parse(pts[n - 1].at) + step ? " now" : ""}`, style: `--h:${p.suitability == null ? 7 : Math.max(10, p.suitability)}%` }));
+  const bars = pts.map((p, i) => h("span", { class: `sb${p.suitability == null ? " none" : ""}${inWin(p.at) ? " in" : ""}${c.skip && slotHeld(p.at, r.window?.gates ?? r.gates ?? []) ? " held" : ""}${i === nowIdx && c.now <= Date.parse(pts[n - 1].at) + step ? " now" : ""}`, style: `--h:${p.suitability == null ? 7 : Math.max(10, p.suitability)}%` }));
   strip.append(...bars);
   const axis = h("div", { class: "axis", "aria-hidden": "true" });
   // Half-hour slots: label with minutes when the chart is short, and never print the same label twice ("8p 8p").
@@ -1498,6 +1498,7 @@ function openSpecies(id, opener) {
   const useFocused = !!focused && best?.locationId === focused.locationId && best?.mode === focused.mode;
   const ended = !!best?.window?.end && Date.parse(best.window.end) <= c.now;
   const suit = useFocused ? focused.suitability : best?.suitability ?? null;
+  const capped = unsafeCapped(useFocused ? focused : best) || unsafeCapped(best);
   const curve = best?.seasonCurve ?? [];
   const mx = Math.max(0.0001, ...curve.filter((v) => v != null));
   const month = best?.historicalRate?.month;
@@ -1515,7 +1516,7 @@ function openSpecies(id, opener) {
       body.querySelectorAll(".species-tab").forEach((b) => b.setAttribute("aria-current", String(b === e.currentTarget)));
     } }, label))),
     sp.alt ? h("p", { class: "muted" }, sp.alt) : null,
-    h("div", { class: "kv", style: "margin-top:10px" }, h("span", { class: "stat-big" }, suit ?? "—"), h("span", { class: "muted" }, suit == null ? "No fishing window in this run" : `Suitability${best?.band ? ` · ${best.band}` : ""}`), sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
+    h("div", { class: "kv", style: "margin-top:10px" }, h("span", { class: "stat-big" }, capped ? "—" : suit ?? "—"), h("span", { class: "muted" }, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : `Suitability${best?.band ? ` · ${best.band}` : ""}`), sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
     !realistic && reason ? h("p", { class: "fine eligibility" }, reason) : null,
     best?.historicalRate ? h("p", { class: "fine trip-rate" }, speciesTripRate(best)) : null,
     place?.displayName ? h("div", { class: "block" }, h("h3", {}, "Best place and time"), h("p", { style: "font-weight:600" }, place.displayName, " ", h("span", { class: "mchip" }, modeIcon(place.mode), modeLabel(place.mode))), place.window ? h("p", { class: "muted" }, fmtRange(place.window.start, place.window.end)) : null) : null,
@@ -1543,9 +1544,9 @@ function openSpecies(id, opener) {
   const placeBlock = blocks.find((x) => x.querySelector("h3")?.textContent === "Best place and time");
   const actionHost = body.querySelector(":scope > .cta"); const action = actionHost?.querySelector("button");
   if (action) { if (!action.classList.contains("target-hide")) action.textContent = st.species === id ? "Stop targeting" : "Target this"; body.querySelector(".kv").append(action); }
-  if(placeBlock) { const verdict = VERDICT_SPOKEN[place.verdict]; placeBlock.replaceChildren(h("h3",{},"Best for this fish"),h("button",{class:"bet",type:"button",onclick:()=>scope({spot:place.locationId ?? best?.locationId,mode:place.mode})},h("span",{},place.displayName," · ",fmtRange(place.window?.start,place.window?.end),ended?" · ended":""),verdict ? h("span",{class:"vchip","data-v":place.verdict},verdict) : null)); }
+  if(placeBlock) { const verdict = VERDICT_SPOKEN[place.verdict]; placeBlock.replaceChildren(h("h3",{},"Best for this fish"),h("button",{class:"bet",type:"button",onclick:()=>scope({spot:place.locationId ?? best?.locationId,mode:place.mode})},h("span",{},place.displayName," · ",capped || place.verdict === "SKIP" ? skipShort(useFocused ? focused : best) : fmtRange(place.window?.start,place.window?.end),ended && !capped?" · ended":""),verdict ? h("span",{class:"vchip","data-v":place.verdict},verdict) : null)); }
   const reasons = (useFocused ? focused?.why ?? [] : best?.why ?? []).filter((x)=>!/unavailable|thin|buoy|stale|missing/i.test(x.code??""));
-  const why = h("div",{class:"block"},h("h3",{},"Why now"),h("ul",{class:"whys"},[...reasons.filter((x)=>x.effect==="helps").slice(0,2),...reasons.filter((x)=>x.effect==="hurts").slice(0,1)].map((x)=>h("li",{},effectMark(x.effect),msg(x)))));
+  const why = h("div",{class:"block"},h("h3",{},"Why now"),h("ul",{class:"whys"},(capped ? reasons.filter((x)=>x.effect==="hurts").slice(0,2) : [...reasons.filter((x)=>x.effect==="helps").slice(0,2),...reasons.filter((x)=>x.effect==="hurts").slice(0,1)]).map((x)=>h("li",{},effectMark(x.effect),msg(x)))));
   if(setupBlock) { setupBlock.querySelector("h3").textContent="Use"; setupBlock.querySelector(".fine")?.remove(); }
   if(seasonBlock) { seasonBlock.querySelector("h3").textContent="Local history"; seasonBlock.querySelector(".fine").textContent="Share of surveyed trips that caught it, by month"; if(historyBlock) { seasonBlock.append(...[...historyBlock.children].slice(1)); historyBlock.remove(); } }
   if (!why.querySelector("li")) {
@@ -1553,7 +1554,7 @@ function openSpecies(id, opener) {
     const at = best?.window?.start ?? best?.at ?? c.now;
     fetchRunDetails(run, best?.locationId, best?.mode).then((details) => {
       const rows = factorReasons(factorsAt(details, id, at));
-      const pick = [...rows.filter((x) => x.effect === "helps").slice(0, 2), ...rows.filter((x) => x.effect === "hurts").slice(0, 1)];
+      const pick = capped ? rows.filter((x) => x.effect === "hurts").slice(0, 2) : [...rows.filter((x) => x.effect === "helps").slice(0, 2), ...rows.filter((x) => x.effect === "hurts").slice(0, 1)];
       if (!pick.length) { note.textContent = "Condition details unavailable for this fish."; return; }
       note.replaceWith(h("ul",{class:"whys"},pick.map((x) => h("li",{},effectMark(x.effect),h("span",{},x.text)))));
     });
