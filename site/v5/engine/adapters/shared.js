@@ -22,14 +22,30 @@ export function observation({
     safeErrorCode, error: error ? String(error).slice(0, 240) : null };
 }
 
-export async function fetchJson(url, { fetchImpl = globalThis.fetch, timeoutMs = 8000, headers = {}, signal } = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetchImpl(url, { headers, signal: signal ?? controller.signal });
-    if (!response?.ok) throw new Error("HTTP " + (response?.status ?? "failure"));
-    return { json: await response.json(), response };
-  } finally { clearTimeout(timer); }
+// One retry for transient failures (network error, timeout, 429, 5xx). api.weather.gov in particular
+// sheds load with brief 5xx/429 responses; without a retry a single blip sends a spot to the backup provider.
+const TRANSIENT = (status) => status === 429 || status >= 500;
+export async function fetchJson(url, { fetchImpl = globalThis.fetch, timeoutMs = 8000, headers = {}, signal, retries = 1, retryDelayMs = 700 } = {}) {
+  let lastError;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetchImpl(url, { headers, signal: signal ?? controller.signal });
+      if (!response?.ok) {
+        const error = new Error("HTTP " + (response?.status ?? "failure"));
+        error.transient = response?.status === undefined || TRANSIENT(response.status);
+        throw error;
+      }
+      return { json: await response.json(), response };
+    } catch (error) {
+      lastError = error;
+      const transient = error.transient ?? true;
+      if (attempt >= retries || !transient || signal?.aborted) break;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    } finally { clearTimeout(timer); }
+  }
+  throw lastError;
 }
 
 export function failure(args, error) {

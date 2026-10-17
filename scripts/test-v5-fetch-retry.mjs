@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { fetchJson } from "../site/v5/engine/adapters/shared.js";
+const seq = (...codes) => { let n = 0; const f = async () => { const code = codes[Math.min(n++, codes.length - 1)]; return code === "throw" ? Promise.reject(new Error("net")) : { ok: code === 200, status: code, json: async () => ({ ok: true }) }; }; f.calls = () => n; return f; };
+const opts = (fetchImpl) => ({ fetchImpl, retryDelayMs: 1 });
+let f = seq(503, 200); assert.deepEqual((await fetchJson("u", opts(f))).json, { ok: true }); assert.equal(f.calls(), 2, "retries a 503 once");
+f = seq(429, 200); await fetchJson("u", opts(f)); assert.equal(f.calls(), 2);
+f = seq("throw", 200); await fetchJson("u", opts(f)); assert.equal(f.calls(), 2, "retries a network error");
+f = seq(404, 200); await assert.rejects(fetchJson("u", opts(f)), /HTTP 404/); assert.equal(f.calls(), 1, "does not retry a 404");
+f = seq(500, 500, 200); await assert.rejects(fetchJson("u", opts(f)), /HTTP 500/); assert.equal(f.calls(), 2, "gives up after one retry");
+f = seq(503, 200); await assert.rejects(fetchJson("u", { ...opts(f), retries: 0 }), /HTTP 503/); assert.equal(f.calls(), 1);
+console.log("test-v5-fetch-retry: transient retry, no retry on 4xx, bounded attempts passed");
