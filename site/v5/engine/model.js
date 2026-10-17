@@ -53,7 +53,7 @@ export function calculateConfidence({conditions={},mode,spot={},historyN=null,hi
   return {confidence,confidenceLevel:confidence>=params.thresholds.highConfidenceMin?"High":confidence>=params.thresholds.moderateConfidenceMin?"Moderate":"Low",confidenceReasons:reasons,amberQualifier:confidence>=50?reasons.find(x=>x.kind==="live")?.text??null:null};
 }
 export function safetyGates(c,{mode="surf",params=MODEL_PARAMS}={}){
-  const out=[];const add=(code,text)=>out.push({code,text:{code,params:{},text},startsAt:c.validFrom??null,endsAt:c.validTo??null,severity:"safety"});
+  const out=[];const utc=v=>{const t=Date.parse(v??"");return Number.isFinite(t)?new Date(t).toISOString():null;};const add=(code,text)=>out.push({code,text:{code,params:{},text},startsAt:utc(c.validFrom),endsAt:utc(c.validTo),severity:"safety"});
   if(c.thunder===true)add("thunder","Thunderstorms are expected during this window.");
   if((has(c.windMph)&&c.windMph>=params.factors.safety.windSkipMph)||(has(c.windGustMph)&&c.windGustMph>=params.factors.safety.gustSkipMph))add("wind","Wind reaches unsafe levels during this window.");
   const rank={Minor:0,Moderate:1,Severe:2,Extreme:3}, from=Date.parse(c.validFrom??""), to=Date.parse(c.validTo??"");
