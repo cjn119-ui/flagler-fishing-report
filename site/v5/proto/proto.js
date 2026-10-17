@@ -7,7 +7,7 @@ import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
 import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
-import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesTripRate } from "./species-presentation.js";
+import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesTripRate, unsafeCapped } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
 import { observedWindAt } from "../engine/observed-wind.js";
 import { fmtWind, gridTemperatureF, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
@@ -129,7 +129,7 @@ const localMin = (d) => Number(localParts(d).minute);
 const dayKey = (d) => !validDate(d) ? "" : new Intl.DateTimeFormat("en-CA", { timeZone: TZ }).format(new Date(d));
 const partWord = (d) => { const hr = localHour(d); return hr < 12 ? "morning" : hr < 17 ? "afternoon" : "evening"; };
 const ageText = (min) => min < 60 ? `${min} min ago` : `${Math.round(min / 60)} hr${Math.round(min / 60) === 1 ? "" : "s"} ago`;
-const modeLabel = (m, spotId = null) => ({ surf: spotId === "flagler-pier" || spotId === "staug-pier" ? `${SPOTS.find((x) => x.id === spotId)?.area ?? "Beach"} beach (by the pier)` : "Surf", pier: "Pier", inshore: "Inshore" }[m] ?? m);
+const modeLabel = (m, spotId = null) => ({ surf: spotId === "flagler-pier" || spotId === "staug-pier" ? "Surf by the pier" : "Surf", pier: "Pier", inshore: "Inshore" }[m] ?? m);
 const closureFor = (spotId, mode = null) => SPOTS.find((x) => x.id === spotId)?.closures?.find((x) => x.status === "closed" && (!mode || x.modes.includes(mode))) ?? null;
 const isModeClosed = (spotId, mode) => catalogModeClosed(spotId, mode, SPOTS);
 const closureBadgeText = (spotId) => {
@@ -390,7 +390,7 @@ function animateTabPreview(preview, tab) {
 }
 function announce(c) {
   const r = c.rec, focus = c.focus ? ` for ${r.targets?.[0]?.name ?? spName(st.species)}` : "";
-  const text = `${VERDICT_SPOKEN[r.verdict]}${focus}. ${c.skip ? formatHeadline({recommendation:r}) : `${r.displayName}, ${r.mode}, ${fmtRange(r.window?.start, r.window?.end)}`}.${c.stale ? " Last known report." : ""}`;
+  const text = `${VERDICT_SPOKEN[r.verdict]}${focus}. ${c.skip ? skipReason(r) : `${r.displayName}, ${r.mode}, ${fmtRange(r.window?.start, r.window?.end)}`}.${c.stale ? " Last known report." : ""}`;
   if (text !== lastSpoken) { lastSpoken = text; $("live").textContent = text; }
 }
 let tabSettleAnimation = null;
@@ -532,9 +532,12 @@ function todayView(c) {
   out.push(h("section", { class: "today-hero", "aria-label": "Current fishing location" }, spotImage(heroSpot, "today-hero-photo", `${locOf(c.run, heroSpot)?.name ?? "Fishing spot"} fishing location`),
     h("div", { class: "today-hero-shade" }), h("button", { class: "today-hero-place", type: "button", onclick: (e) => openSpotSheet(e.currentTarget) }, icon("pin"), h("span", {}, locOf(c.run, heroSpot)?.name ?? "Flagler Beach"), h("small", {}, wk(c.run.targetDate, { weekday: "long", month: "short", day: "numeric" }))), conditionsStrip(c)));
   if (c.focusMissing) out.unshift(h("p", { class: "notice", role: "status" }, `${spName(st.species)} has no usable window in this run, so Today shows the overall best. Remove the chip to clear it.`));
+  // Lead with the actual reason (the safety gate or the engine's reason), before scores and sources.
+  const reasonLines = c.rec.gates?.length ? [...new Set(c.rec.gates.map((g) => msg(g.text)).filter(Boolean))] : [msg(c.rec.reason?.text)].filter(Boolean);
   const disclosure = h("details", { class: "why-verdict" }, h("summary", {}, "Why this verdict"),
+    reasonLines.length ? h("ul", { class: "verdict-reasons" }, reasonLines.map((x) => h("li", {}, x))) : null,
     h("p", { class: "fine" }, "Suitability describes how well conditions fit each fish. It is not a catch chance."),
-    h("p", { class: "local-history" }, (c.rec.targets ?? []).slice(0, 3).map((x) => `${x.name}: ${formatHistoricalRate(x.historicalRate, c.rec.mode)}`).join(" · ")),
+    c.rec.targets?.length ? h("p", { class: "local-history" }, c.rec.targets.slice(0, 3).map((x) => `${x.name}: ${formatHistoricalRate(x.historicalRate, c.rec.mode)}`).join(" · ")) : null,
     whyCard(c), confCard(c), sourcesCard(c));
   const setup = useCard(c); setup.classList.add("setup-disclosure");
   out.push(verdictCard(c, disclosure), targetSpeciesRow(c), timesCard(c), setup, tvCard(c), spotsTeaser(c));
@@ -564,7 +567,7 @@ function verdictCard(c, disclosure = null) {
     const cmp = r.comparison?.kind;
     if (cmp) notes.push(h("p", { class: "note" }, h("b", {}, "vs today: "), DELTA[cmp].replace(" tomorrow", "")));
     const tw = todayRun?.recommendation?.window;
-    if (tw && Date.parse(tw.end) > c.now) notes.push(h("p", { class: "note" }, `Today's window: ${fmtRange(tw.start, tw.end)}`));
+    if (tw && todayRun?.recommendation?.verdict !== "SKIP" && Date.parse(tw.end) > c.now) notes.push(h("p", { class: "note" }, `Today's window: ${fmtRange(tw.start, tw.end)}`));
   }
   const bet = c.skip ? nextOption(c) : betRow(c);
   return h("section", { class: `card hero${c.stale ? " dim" : ""}`, id: "verdict", "data-level": lvl, "aria-label": `Verdict: ${VERDICT_SPOKEN[r.verdict]}` },
@@ -583,7 +586,7 @@ function targetSpeciesRow(c) {
   const rows = all.filter((row) => !hidden.has(row.speciesId)).slice(0, 6);
   if (!rows.length) return null;
   return h("section", { class: "target-species card", "aria-label": "Targets" }, h("div", { class: "card-h" }, h("h2", {}, "Targets"), st.species ? h("button", { class: "btn alt target-clear", type: "button", onclick: () => scope({ spot: st.spot, mode: st.mode, tab: st.tab }) }, "Clear target") : null),
-    h("div", { class: "target-species-scroll" }, rows.map((row) => h("button", { class: `target-species-item${st.species === row.speciesId ? " on" : ""}`, type: "button", "aria-pressed": st.species === row.speciesId ? "true" : "false", "aria-label": `${row.name}, ${speciesFitBand(row.suitability)}. ${st.species === row.speciesId ? "Targeted. Tap to stop targeting" : "Open species"}`, onclick: (e) => st.species === row.speciesId ? scope({ spot: st.spot, mode: st.mode, tab: st.tab }) : openSpecies(row.speciesId, e.currentTarget) }, fishImage(row.speciesId, "target-species-image"), h("b", {}, row.name), h("span", { class: "fit-word" }, speciesFitBand(row.suitability))))));
+    h("div", { class: "target-species-scroll" }, rows.map((row) => h("button", { class: `target-species-item${st.species === row.speciesId ? " on" : ""}`, type: "button", "aria-pressed": st.species === row.speciesId ? "true" : "false", "aria-label": `${row.name}, ${speciesFitBand(row.suitability, row.caps ? row : c.rec)}. ${st.species === row.speciesId ? "Targeted. Tap to stop targeting" : "Open species"}`, onclick: (e) => st.species === row.speciesId ? scope({ spot: st.spot, mode: st.mode, tab: st.tab }) : openSpecies(row.speciesId, e.currentTarget) }, fishImage(row.speciesId, "target-species-image"), h("b", {}, row.name), h("span", { class: "fit-word" }, speciesFitBand(row.suitability, row.caps ? row : c.rec))))));
 }
 function windowLine(c) {
   const w = c.rec.window;
@@ -606,27 +609,39 @@ function betRow(c) {
   return h("button", { class: "bet", type: "button", "data-fk": "bet", onclick: (e) => openSpotDetail(r.locationId, r.mode, e.currentTarget) },
     h("div", {}, h("p", { class: "k" }, label), h("div", { class: "nm" }, headline.includes(r.displayName) ? null : h("span",{class:"bet-name"},r.displayName), h("span", { class: "mchip" }, modeIcon(r.mode), modeDisplay(r.mode,r.locationId))), windowLine(c) ?? h("p", { class: "win muted" }, "Time unavailable")), icon("arrow", "go-i"));
 }
-// Skip headline: say why, never name a species (the "best" species at a skipped spot reads like a recommendation).
-function skipHeadline(c) {
-  const day = st.h === "tomorrow" ? "tomorrow" : "today", codes = (c.rec.gates ?? c.rec.window?.gates ?? []).map((g) => g.code);
-  if (codes.includes("thunder")) return `Thunderstorms expected ${day}`;
-  if (codes.includes("warning")) return `Weather alert ${day}`;
-  if (codes.includes("wind")) return `Too windy ${day}`;
-  if (codes.includes("waves")) return `Surf too rough ${day}`;
-  return `Poor conditions ${day}`;
+// Skip copy says why, never names a species (the "best" species at a skipped spot reads like a recommendation),
+// and never shows a time (a time on a Skip reads like an invitation).
+const gateCodes = (rec) => (rec?.gates?.length ? rec.gates : rec?.window?.gates ?? []).map((g) => g.code);
+function skipShort(rec) {
+  const codes = gateCodes(rec);
+  if (codes.includes("thunder")) return "Thunderstorms";
+  if (codes.includes("warning")) return "Weather alert";
+  if (codes.includes("wind")) return "Too windy";
+  if (codes.includes("waves")) return "Surf too rough";
+  if (rec?.reason?.code === "severeConditions" || (rec?.caps ?? []).some((x) => x?.code === "severeConditions")) return "Rough conditions";
+  return "Poor conditions";
 }
+function skipReason(rec, day = st.h === "tomorrow" ? "tomorrow" : "today") {
+  const short = skipShort(rec);
+  return short === "Thunderstorms" ? `Thunderstorms expected ${day}` : `${short} ${day}`;
+}
+function skipHeadline(c) { return skipReason(c.rec); }
 // With no next spot to suggest: the next day whose headline run is not a Skip, else say there is no safe window.
 function nextWindowLine(c) {
-  const other = st.h === "tomorrow" ? null : D[TOMORROW]?.recommendation;
-  if (other && other.verdict !== "SKIP" && validDate(other.window?.start) && validDate(other.window?.end)) return `Next window: Tomorrow ${fmtRange(other.window.start, other.window.end)}`;
-  return `No safe window ${st.h === "tomorrow" ? "tomorrow" : "today"}`;
+  // Same scope as the card: this spot (and mode) when one is chosen, otherwise the best anywhere.
+  const tom = st.h === "tomorrow" ? null : D[TOMORROW];
+  const other = !tom ? null : st.spot ? (st.mode ? tom.scopeViews?.byLocation?.[`${st.spot}:${st.mode}`]?.recommendation : bestModeRec(tom, st.spot)) : tom.recommendation;
+  if (other && other.verdict !== "SKIP" && validDate(other.window?.start) && validDate(other.window?.end)) return `Next window: Tomorrow ${fmtRange(other.window.start, other.window.end)}${st.spot ? "" : ` at ${other.displayName}`}`;
+  return `${gateCodes(c.rec).length ? "No safe window" : "No good window"} ${st.h === "tomorrow" ? "tomorrow" : "today"}`;
 }
 function nextOption(c) {
   const n = c.rec.nextOption;
   const body = n ? [h("div", { class: "nm" }, n.displayName, h("span", { class: "mchip" }, modeIcon(n.mode), modeDisplay(n.mode,n.locationId)), n.verdict ? h("span", { class: "vchip", "data-v": n.verdict }, VERDICT_SPOKEN[n.verdict]) : null),
       h("p", { class: "win" }, n.label ? msg(n.label) : "", " · ", fmtRange(n.window?.start, n.window?.end))]
     : [h("p", { class: "win" }, nextWindowLine(c))];
-  return h("button", { class: "bet", type: "button", onclick: () => { if (n && dayKey(n.window?.start) !== dayKey(c.now)) { st.h = "tomorrow"; st.t = null; render(); } else if (n) scope({ spot: n.locationId, mode: n.mode }); } }, h("div", {}, h("p", { class: "k" }, "Next best option"), body), icon("arrow", "go-i"));
+  // Nothing to go to: plain text, not a button with a chevron that does nothing.
+  if (!n) return h("div", { class: "bet bet-static" }, h("div", {}, body));
+  return h("button", { class: "bet", type: "button", onclick: () => { if (dayKey(n.window?.start) !== dayKey(c.now)) { st.h = "tomorrow"; st.t = null; render(); } else scope({ spot: n.locationId, mode: n.mode }); } }, h("div", {}, h("p", { class: "k" }, "Next best option"), body), icon("arrow", "go-i"));
 }
 function targetsCard(c) {
   const r = c.rec, targets = (r.targets ?? []).slice(0, 2);
@@ -666,7 +681,7 @@ function confCard(c) {
   const { word, suffix, scoreNote } = confidenceDisplay(formatConfidenceParts({ recommendation: r }), { stale: c.stale });
   const det = h("details", { class: "how", open: session.conf || null });
   det.addEventListener("toggle", () => { session.conf = det.open; });
-  det.append(h("summary", { "data-fk": "conf" }, "Why?"), h("ul", {}, [scoreNote ? h("li", {}, scoreNote) : null, ...(r.confidenceReasons ?? []).map((x) => h("li", {}, msg(x.text))), r.reason?.code === "provisionalGoThreshold" ? h("li",{},SHORT_REASON.provisionalGoThreshold) : null]));
+  det.append(h("summary", { "data-fk": "conf" }, "Why?"), h("ul", {}, [scoreNote ? h("li", {}, `Confidence ${scoreNote.charAt(0).toLowerCase()}${scoreNote.slice(1)}`) : null, ...(r.confidenceReasons ?? []).map((x) => h("li", {}, x.code === "forecastAging" ? "Latest forecast was issued a few hours ago" : msg(x.text))), r.reason?.code === "provisionalGoThreshold" ? h("li",{},SHORT_REASON.provisionalGoThreshold) : null]));
   return h("section", { class: "card conf", "aria-label": "Confidence" },
     h("div", { class: "conf-row" }, h("p", { class: "conf-line" }, "Confidence: ", h("b", {}, word), suffix ? h("span", { class: "muted" }, ` · ${suffix}`) : null),
       c.partial ? h("span", { class: "vchip amber" }, icon("warn"), "Partial data") : null),
@@ -739,7 +754,10 @@ function timesCard(c) {
   const bars = pts.map((p, i) => h("span", { class: `sb${p.suitability == null ? " none" : ""}${inWin(p.at) ? " in" : ""}${i === nowIdx && c.now <= Date.parse(pts[n - 1].at) + step ? " now" : ""}`, style: `--h:${p.suitability == null ? 7 : Math.max(10, p.suitability)}%` }));
   strip.append(...bars);
   const axis = h("div", { class: "axis", "aria-hidden": "true" });
-  pts.forEach((p, i) => { if (i % Math.ceil(n / 5) === 0) axis.append(h("span", { style: `left:${((i + 0.5) / n) * 100}%` }, `${localHour(p.at) % 12 || 12}${localHour(p.at) < 12 ? "a" : "p"}`)); });
+  // Half-hour slots: label with minutes when the chart is short, and never print the same label twice ("8p 8p").
+  const axisLabel = (at) => { const hr = localHour(at), mins = new Date(at).getUTCMinutes(); return `${hr % 12 || 12}${mins ? `:${String(mins).padStart(2, "0")}` : ""}${hr < 12 ? "a" : "p"}`; };
+  let lastAxis = null;
+  pts.forEach((p, i) => { if (i % Math.ceil(n / 5) !== 0) return; const label = n <= 6 ? axisLabel(p.at) : axisLabel(p.at).replace(/:\d\d/, ""); if (label === lastAxis) return; lastAxis = label; axis.append(h("span", { style: `left:${((i + 0.5) / n) * 100}%` }, label)); });
   const heights = pts.map((p) => p.tide?.heightFt).filter(Number.isFinite);
   if (heights.length > 1) { const lo = Math.min(...heights), hi = Math.max(...heights); strip.append(s("svg", { class: "tide-curve", viewBox: "0 0 100 100", preserveAspectRatio: "none", "aria-hidden": "true" }, s("polyline", { points: pts.flatMap((p,i) => Number.isFinite(p.tide?.heightFt) ? [`${(i+.5)/n*100},${90-(p.tide.heightFt-lo)/(hi-lo || 1)*70}`] : []).join(" "), fill: "none", stroke: "var(--accent)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }))); }
   const day = h("div", { class: "daybar", "aria-hidden": "true" });
@@ -761,14 +779,15 @@ function timesCard(c) {
     const lightTxt = lightAt(light, p.at);
     const tide = p.tide?.heightFt != null ? { v: p.tide.direction ? cap(p.tide.direction) : "", d: `${p.tide.heightFt.toFixed(1)} ft` } : null;
     const outsideWindow = !slotInWindow(p.at, wins);
-    const detailParts = [p.suitability == null ? "Fit —" : outsideWindow ? `Fit ${p.suitability}` : `${speciesFitBand(p.suitability)} · fit ${p.suitability}`];
+    const held = c.skip && slotHeld(p.at, r.window?.gates ?? []);
+    const detailParts = [held ? "Unsafe conditions" : p.suitability == null ? "Fit —" : outsideWindow ? `Fit ${p.suitability}` : `${speciesFitBand(p.suitability)} · fit ${p.suitability}`];
     if (tide) detailParts.push(`${tide.v ? `${tide.v} tide` : "Tide"} ${tide.d}`);
     if (lightTxt?.v) detailParts.push(`Light ${lightTxt.v.toLowerCase()}`);
-    const speciesDisclosure = speciesAt(p) ? h("details", { class: "hour-species" }, h("summary", {}, "Species at this time"), speciesAt(p)) : null;
+    const speciesDisclosure = !held && speciesAt(p) ? h("details", { class: "hour-species" }, h("summary", {}, "Species at this time"), speciesAt(p)) : null;
     fill(readout,
       h("div", { class: "ro-top" }, h("span", { class: "t" }, fmtTime(p.at)),
         isNow ? null : h("button", { class: "btn-s", type: "button", "data-fk": "now", onclick: () => { st.t = null; update(nowIdx >= 0 ? nowIdx : nearestSlotIndex(pts, c.now), { user: true }); writeHash(); strip.focus({ preventScroll: true }); } }, "Back to now"),
-        h("span", { class: "vchip", "data-v": null }, c.skip && slotHeld(p.at, r.window?.gates ?? []) ? "On hold" : hourlyOutlook(p.suitability, !outsideWindow))),
+        h("span", { class: "vchip", "data-v": null }, held ? "Unsafe" : hourlyOutlook(p.suitability, !outsideWindow))),
       h("p", { class: "hour-detail-line" }, detailParts.join(" · ")), speciesDisclosure);
     if (commit) { st.t = p.at; writeHash(); }
   }
@@ -817,29 +836,35 @@ function conditionsCard(c) {
       h("p", { class: "d" }, x.value == null || typeof x.value === "string" ? "" : `${+x.value.toFixed(1)} ${x.unit ?? ""}`.trim())))));
 }
 function conditionsStrip(c) {
-  const spotId = c.rec.locationId, factors = c.run._proto?.factors ?? [];
+  // Today: what it is like now (observed where we have it). Tomorrow: the forecast for the recommended window,
+  // never today's live readings under tomorrow's date.
+  const spotId = c.rec.locationId, factors = c.run._proto?.factors ?? [], future = st.h === "tomorrow";
+  const atMs = future ? (validDate(c.rec.window?.start) ? Date.parse(c.rec.window.start) : null) : c.now;
+  const at = atMs ?? c.now;
   const hourlyRows = observationRows(c.run, "hourlyForecast", spotId);
-  const hourly = observationFor(hourlyRows, c.now) ?? hourlyRows.find((x) => dayKey(x.startTime ?? x.validFrom) === dayKey(c.now));
-  const tempF = temperatureF(hourly) ?? gridTemperatureF(c.run, spotId, c.now);
-  const windFactor = factors.find((x) => x.key === "wind");
+  const hourly = observationFor(hourlyRows, at) ?? (future ? null : hourlyRows.find((x) => dayKey(x.startTime ?? x.validFrom) === dayKey(c.now)));
+  const tempF = temperatureF(hourly) ?? gridTemperatureF(c.run, spotId, at);
+  const windFactor = future ? null : factors.find((x) => x.key === "wind");
   const windRaw = hourly?.windSpeed;
   const obsOf = (kind) => (c.run?.inputs?.observations ?? []).find((o) => o?.kind === kind && o.locationId === spotId && o.ok);
-  const seen = observedWindAt(obsOf("pressureObservations"), obsOf("windObservations"), new Date(c.now).toISOString(), c.now);
+  const seen = future ? null : observedWindAt(obsOf("pressureObservations"), obsOf("windObservations"), new Date(c.now).toISOString(), c.now);
   const compass = (deg) => ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"][Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
   const windValue = seen ? `${seen.windDirectionDeg != null ? `${compass(seen.windDirectionDeg)} ` : ""}${Math.round(seen.windMph)} mph` : windRaw != null ? fmtWind(hourly) : windFactor?.value != null ? `${windFactor.value} ${windFactor.unit ?? ""}`.trim() : msg(windFactor?.humanLabel ?? "");
   const waterFactor = factors.find((x) => x.key === "waterTemp")?.value;
   const waterObs = observationFor(observationRows(c.run, "waterTemperature", spotId), c.now)?.temperatureF;
   const water = waterFactor ?? waterObs;
-  const wave = observationFor([...observationRows(c.run, "waves", spotId), ...observationRows(c.run, "waveForecast", spotId)], c.now);
+  // Tomorrow has no buoy reading yet, so only the wave forecast counts there.
+  const wave = observationFor([...(future ? [] : observationRows(c.run, "waves", spotId)), ...observationRows(c.run, "waveForecast", spotId)], at);
   // Ocean buoy waves mean little in the ICW; tide direction is what matters there.
-  const tideNow = c.rec.mode === "inshore" ? tideDirectionAt(observationRows(c.run, "tidePredictions", spotId), c.now) : null;
+  const tideNow = c.rec.mode === "inshore" ? tideDirectionAt(observationRows(c.run, "tidePredictions", spotId), at) : null;
   const rows = [
     [tempF != null ? `${Math.round(tempF)}°F` : "—", "Air"],
     [windValue || "—", "Wind"],
     c.rec.mode === "inshore" ? [tideNow ? cap(tideNow) : "—", "Tide"] : [wave ? `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft` : "—", "Waves"],
     [water != null && Number.isFinite(+water) ? `${(+water).toFixed(0)}°F` : "—", "Water"],
   ];
-  return h("section", { class: "card conditions-strip", "aria-label": "Conditions strip" }, h("p", { class: "conditions-caption" }, "Current conditions"), rows.map(([value, label]) => h("div", { class: "condition-cell" }, h("b", {}, value), h("small", {}, label))));
+  const caption = future ? (atMs != null ? `Forecast · ${fmtTime(atMs)}` : "Forecast") : "Current conditions";
+  return h("section", { class: "card conditions-strip", "aria-label": future ? "Forecast conditions" : "Current conditions" }, h("p", { class: "conditions-caption" }, caption), rows.map(([value, label]) => h("div", { class: "condition-cell" }, h("b", {}, value), h("small", {}, label))));
 }
 function tvCard(c) {
   const d = c.run.days ?? [];
@@ -850,7 +875,7 @@ function tvCard(c) {
     return h("button", { class: "tv-c", type: "button", style: "text-align:left;cursor:pointer;color:inherit", onclick: () => { st.h = target; st.t = null; render({ resetScroll: false }); window.scrollTo({ top: 0 }); } },
       h("p", { class: "k" }, label, h("span", { class: "vchip", "data-v": onlyClosed ? null : day.verdict }, dayVerdictLabel(day))),
       w ? h("p", { class: "w" }, fmtRange(w.start, w.end)) : h("p", { class: "w" }, onlyClosed ? "No open window" : "No good window"),
-      w ? h("p", { class: "s" }, [w.displayName, cap(partWord(w.start))].filter(Boolean).join(" · ")) : h("p", { class: "s" }, cap(msg(day.reason)))); };
+      w ? h("p", { class: "s" }, [w.displayName, cap(partWord(w.start))].filter(Boolean).join(" · ")) : day.verdict === "SKIP" ? null : h("p", { class: "s" }, cap(msg(day.reason)))); };
   return h("section", { class: "card", "aria-label": "Today versus tomorrow" }, h("div", { class: "card-h" }, h("h2", {}, "Today vs tomorrow")),
     cmp ? h("p", { class: "delta" }, DELTA[cmp]) : null, h("div", { class: "tv" }, card("Today", d[0], "today"), card("Tomorrow", d[1], "tomorrow")));
 }
@@ -858,12 +883,13 @@ function spotsTeaser(c) {
   const rows = excludeSpot(spotRows(c.run, "all", c.now, st.h), st.spot ?? c.rec?.locationId).slice(0, 6);
   if (!rows.length) return null;
   return h("section", { class: "card", "aria-label": "Other spots" }, h("div", { class: "card-h" }, h("h2", {}, "Other spots"), h("button", { class: "btn-s", type: "button", "data-fk": "allspots", onclick: () => go("spots") }, "See all spots")),
-    h("div", { class: "other-spots-scroll" }, rows.map(({loc,rec}) => h("button", { class: "other-spot-card", type: "button", onclick: (e) => openSpotDetail(loc.id,rec.mode,e.currentTarget) }, spotPhoto(loc.id,"other-spot-photo",loc.name), h("b",{},loc.name), h("span",{class:"vchip","data-v":rec.verdict},VERDICT_SPOKEN[rec.verdict]), h("small",{},fmtRange(rec.window?.start,rec.window?.end))))));
+    h("div", { class: "other-spots-scroll" }, rows.map(({loc,rec}) => h("button", { class: "other-spot-card", type: "button", onclick: (e) => openSpotDetail(loc.id,rec.mode,e.currentTarget) }, spotPhoto(loc.id,"other-spot-photo",loc.name), h("b",{},loc.name), h("span",{class:"vchip","data-v":rec.verdict},VERDICT_SPOKEN[rec.verdict]), h("small",{},rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start,rec.window?.end))))));
 }
 function sourcesCard(c) {
   const run = c.run, srcs = run.inputs?.sourceStatus ?? [], missing = srcs.filter((x) => x.available === false || x.stale);
   const missingKinds = [...new Set(missing.map((x) => x.kind))];
   const usesOpenMeteo = srcs.some((x) => x.provider === "open-meteo");
+  const openMeteoFallback = srcs.some((x) => x.provider === "open-meteo" && x.status === "fallback");
   const summaries = sourceSummaries(srcs, c.fr.level !== "fresh", fmtTime);
   const det = h("details", { class: "card use", open: session.sources || null, id: "sources" });
   det.addEventListener("toggle", () => { session.sources = det.open; });
@@ -871,10 +897,10 @@ function sourcesCard(c) {
     h("div", { class: "det-body" }, h("ul", { class: "src-list" }, summaries.map((x) =>
       h("li", { "data-bad": x.status !== "current" ? "" : null }, h("span", {}, x.label), h("span", {}, x.status === "unavailable" || c.fr.level !== "fresh" && x.status === "current" ? x.state : `${x.state} · ${fmtTime(x.fetchedAt)}`)))),
       missingKinds.length ? h("p", { class: "fine" }, `Missing right now: ${missingKinds.map((kind) => (summaries.find((x) => x.kind === kind)?.label ?? kind).toLowerCase()).join(", ")}.`) : null,
-      usesOpenMeteo ? h("p", { class: "fine" }, "Weather and marine forecast fallback: Open-Meteo. Its API does not expose a model issue time here, so fallback forecasts cannot satisfy GO freshness checks or tomorrow's wave gate. Data by ",
+      usesOpenMeteo ? h("p", { class: "fine" }, openMeteoFallback ? "Some forecasts here are from the Open-Meteo backup, which can't confirm when its forecast was issued, so they can't produce a Go. " : "", "Data by ",
         h("a", { href: "https://open-meteo.com/", target: "_blank", rel: "noopener noreferrer" }, "Open-Meteo"),
         " under ", h("a", { href: "https://creativecommons.org/licenses/by/4.0/", target: "_blank", rel: "noopener noreferrer" }, "CC BY 4.0"), ".") : null,
-      h("p", { class: "fine" }, `Model ${run.modelVersion} · run ${fmtTime(run.generatedAt)} · all times Eastern. Prototype data.`)));
+      h("p", { class: "fine" }, `Model ${run.modelVersion} · run ${fmtTime(run.generatedAt)} · all times Eastern.`)));
   return det;
 }
 
@@ -899,11 +925,11 @@ function spotRowEl(r, c, { star = true, onPick } = {}) {
   const pick = () => matchMedia("(min-width:900px)").matches && st.tab === "spots" ? openSpotDetail(loc.id, rec.mode) : (onPick ?? ((l, m) => scope({ spot: l, mode: m, persist: true })))(loc.id, st.f === "all" ? (loc.modes.length > 1 ? null : loc.modes[0]) : st.f);
   const favs = store.get("favs", []);
   return h("li", { class: `row${st.spot === loc.id ? " sel" : ""}${star ? "" : " nostar"}` },
-    h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${rec.verdict}, ${rec.mode}, ${fmtRange(rec.window?.start, rec.window?.end)}${r.ended ? ", ended" : ""}${top ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
+    h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${VERDICT_SPOKEN[rec.verdict]}, ${rec.mode}, ${rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start, rec.window?.end)}${r.ended ? ", ended" : ""}${top && rec.verdict !== "SKIP" ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
       spotPhoto(loc.id, "spot-row-photo", loc.name),
       h("div", { class: "r1" }, h("span", { class: "nm" }, loc.name), closureFor(loc.id) ? h("span", { class: "closure-badge" }, closureBadgeText(loc.id)) : null),
-      h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.filter((mode) => !isModeClosed(loc.id, mode)).map((m) => modeIcon(m))), `${modeDisplay(rec.mode,loc.id)} · ${loc.area} · `, h("span", { class: "when" }, fmtRange(rec.window?.start,rec.window?.end)), r.ended ? h("span", { class: "ended-tag" }, "Ended") : null, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
-      h("p", { class: "r2 r3" }, top ? `${top.name} ${top.suitability}` : "")),
+      h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.filter((mode) => !isModeClosed(loc.id, mode)).map((m) => modeIcon(m))), `${modeDisplay(rec.mode,loc.id)} · ${loc.area} · `, h("span", { class: "when" }, rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start,rec.window?.end)), r.ended ? h("span", { class: "ended-tag" }, "Ended") : null, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
+      h("p", { class: "r2 r3" }, top && rec.verdict !== "SKIP" ? `${top.name} ${top.suitability}` : "")),
     star ? h("button", { class: "star", type: "button", "data-fk": `star-${loc.id}`, "aria-pressed": String(favs.includes(loc.id)), "aria-label": `Favourite ${loc.name}`, onclick: () => { const f = store.get("favs", []); tick(); store.set("favs", f.includes(loc.id) ? f.filter((x) => x !== loc.id) : [...f, loc.id]); rerenderList(); } }, icon("star")) : null);
 }
 let listHost = null;
@@ -961,7 +987,7 @@ function spotsView(c) {
   const featureCard = featured ? h("section", { class: "card spot-feature" }, spotPhoto(featured.id, "spot-feature-photo", featured.name),
     h("div", { class: "spot-feature-head" }, h("div", {}, h("p", { class: "eyebrow" }, "Selected spot"), h("h2", {}, featured.name), closureFor(featured.id) ? h("span", { class: "closure-badge" }, closureBadgeText(featured.id)) : null),
       h("button", { class: "star", type: "button", "aria-pressed": String(favs.includes(featured.id)), "aria-label": `Favourite ${featured.name}`, onclick: () => { store.set("favs", favs.includes(featured.id) ? favs.filter((x) => x !== featured.id) : [...favs, featured.id]); render(); } }, icon("star"))),
-    h("p", {}, h("span", { class: "vchip", "data-v": rec.verdict }, `${rec.verdict} · ${formatHeadline({ recommendation: rec })}`)),
+    h("p", {}, h("span", { class: "vchip", "data-v": rec.verdict }, `${VERDICT_SPOKEN[rec.verdict]} · ${rec.verdict === "SKIP" ? skipReason(rec) : formatHeadline({ recommendation: rec })}`)),
     h("p", { class: "fine" }, (rec.targets ?? []).slice(0, 3).map((x) => x.name).join(" · ")),
     spotMiniStats(c, featured.id),
     h("button", { class: "btn", type: "button", onclick: (e) => openSpotDetail(featured.id, rec.mode, e.currentTarget) }, "View details")) : null;
@@ -1005,9 +1031,9 @@ function speciesView(c) {
     const notRealistic = !focused && best?.eligibility !== "realistic";
     const showScore = suit != null && !notRealistic;
     return h("li", {}, h("button", { class: `sp${!showScore ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
-      "aria-label": `${sp.name}, ${showScore ? `suitability ${suit}` : notRealistic ? speciesEligibilityLabel(best) : "no reading"}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
+      "aria-label": `${sp.name}, ${showScore ? (unsafeCapped(focused ?? best) ? "unsafe conditions" : `suitability ${suit}`) : notRealistic ? speciesEligibilityLabel(best) : "no reading"}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-      showScore ? h("div", { class: "big" }, h("b", {}, suit), h("span", {}, speciesFitBand(suit))) : null,
+      showScore ? h("div", { class: "big" }, h("b", {}, unsafeCapped(focused ?? best) ? "—" : suit), h("span", {}, speciesFitBand(suit, focused ?? best))) : null,
       best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
       best?.historicalRate ? h("small", { class: "trip-rate" }, speciesTripRate(best)) : null,
       showScore ? h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${suit}%` })) : null));
@@ -1022,13 +1048,14 @@ function speciesView(c) {
 }
 
 /* ---------- PLAN ---------- */
-function dayOpenWindows(day) { return openModeRows(day?.windows ?? [], SPOTS); }
-function dayOnlyClosedWindows(day) { return (day?.windows?.length ?? 0) > 0 && dayOpenWindows(day).length === 0; }
+// A Skip day has no window worth showing; closures are judged on the raw windows.
+function dayOpenWindows(day) { return day?.verdict === "SKIP" ? [] : openModeRows(day?.windows ?? [], SPOTS); }
+function dayOnlyClosedWindows(day) { return (day?.windows?.length ?? 0) > 0 && openModeRows(day.windows, SPOTS).length === 0; }
 function dayVerdictLabel(day) { return dayOnlyClosedWindows(day) ? "No open window" : VERDICT_SPOKEN[day?.verdict] ?? day?.verdict ?? "Outlook"; }
 function daySummary(c, day, index) {
   if (!day || day.kind !== "forecast") return "";
   const forecastRun = [c.run, D[RICH], D[TOMORROW], D[c.def.file], D[TOMORROW_SAMPLE]].find((candidate) => candidate?.targetDate === day.date) ?? (index === 1 ? (c.def.live ? D[TOMORROW] : D[TOMORROW_SAMPLE]) ?? c.run : c.run);
-  const rec = forecastRun?.recommendation, window = openModeRows(day.windows ?? [], SPOTS)[0], target = day.topSpecies?.[0];
+  const rec = forecastRun?.recommendation, window = dayOpenWindows(day)[0], target = day.verdict === "SKIP" ? null : day.topSpecies?.[0];
   const pieces = [dayVerdictLabel(day)];
   if (window) pieces.push(`${fmtRange(window.start,window.end)} at ${window.displayName ?? locOf(forecastRun,window.locationId)?.name ?? "the selected spot"}`);
   if (target?.name) pieces.push(target.name.toLowerCase());
@@ -1439,7 +1466,7 @@ function openSpotDetail(id, mode, opener) {
   const closure = closureFor(id), month = closure?.reopensEst ? wk(`${closure.reopensEst}-01`, { month: "long", year: "numeric" }) : null;
   const body = h("div", {}, spotPhoto(id,"spot-detail-photo",cat.name,true), closure ? h("section", { class: "closure-detail" }, h("span", { class: "closure-badge" }, closureBadgeText(id)), h("p", {}, closure.reason),
       h("p", {}, `Reopening was estimated for ${month}; check before you go (${closure.reopensNote}).`), h("p", {}, closure.nearbyNote), h("p", { class: "fine" }, "Checked Oct 10, 2026 · ", h("a", { href: closure.source, target: "_blank", rel: "noopener noreferrer" }, "Source"))) : null,
-    rec && !isModeClosed(id, mode) ? h("div", {}, h("p", {}, h("span", {class:"vchip", "data-v":rec.verdict},VERDICT_SPOKEN[rec.verdict]), " ", fmtRange(rec.window?.start,rec.window?.end)), h("p",{class:"fine"},(rec.targets??[]).slice(0,3).map((t)=>`${t.name} ${t.suitability}`).join(" · "))) : null,
+    rec && !isModeClosed(id, mode) ? h("div", {}, h("p", {}, h("span", {class:"vchip", "data-v":rec.verdict},VERDICT_SPOKEN[rec.verdict]), " ", rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start,rec.window?.end)), h("p",{class:"fine"},(rec.targets??[]).slice(0,3).map((t)=>`${t.name} ${t.suitability}`).join(" · "))) : null,
     h("p", { class: "muted" }, `${loc?.area ?? ""} · ${loc?.modes?.filter((m) => !isModeClosed(id,m)).map((m) => modeDisplay(m,id)).join(" / ") ?? ""}`),
     cat.notes ? h("p", { style: "margin-top:10px" }, cat.notes) : null,
     cat.access?.length ? h("div", { class: "block" }, h("h3", {}, "Access"), h("ul", { style: "margin:0;padding-left:18px" }, cat.access.map((a) => h("li", {}, a)))) : null,

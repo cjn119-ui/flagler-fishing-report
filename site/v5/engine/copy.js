@@ -80,7 +80,7 @@ export function formatConfidence(run, _now) {
   const {level,score,detail}=formatConfidenceParts(run);
   return [level,score,detail].filter(Boolean).join(" · ");
 }
-const SOURCE_LABELS=Object.freeze({gridForecast:"Forecast grid",points:"NWS location lookup",hourlyForecast:"Hourly forecast",pressureObservations:"Pressure",pressureForecast:"Pressure forecast",tidePredictions:"Tide predictions",waterTemperature:"Water temperature",waveForecast:"Wave forecast",waves:"Wave buoy",alerts:"Alerts"});
+const SOURCE_LABELS=Object.freeze({gridForecast:"Forecast grid",points:"NWS location lookup",hourlyForecast:"Hourly forecast",pressureObservations:"Pressure",pressureForecast:"Pressure forecast",tidePredictions:"Tide predictions",waterTemperature:"Water temperature",waveForecast:"Wave forecast",waves:"Wave buoy",alerts:"Alerts",windObservations:"Observed wind (river station)"});
 export function sourceSummaries(sources, aging=false, timeLabel=(v)=>v??"") {
   const groups=new Map(),rank={current:0,fallback:1,stale:2,unavailable:3};
   for(const s of sources??[]){
@@ -91,7 +91,7 @@ export function sourceSummaries(sources, aging=false, timeLabel=(v)=>v??"") {
     else if(rank[status]===rank[row.status]&&Date.parse(s.fetchedAt)>Date.parse(row.fetchedAt))row.fetchedAt=s.fetchedAt;
     groups.set(key,row);
   }
-  const providerLabel=x=>({nws:"NWS","open-meteo":"Open-Meteo",ndbc:"NDBC",secoora:"SECOORA",coops:"NOAA CO-OPS"}[x]??x);
+  const providerLabel=x=>({nws:"NWS","open-meteo":"Open-Meteo",ndbc:"NDBC",secoora:"SECOORA",coops:"NOAA CO-OPS","matanzas-riverkeeper":"Matanzas Riverkeeper"}[x]??x);
   return [...groups.values()].map(x=>({
     ...x,label:SOURCE_LABELS[x.kind]??String(x.kind).replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/^./,v=>v.toUpperCase()),
     state:x.status==="unavailable"?"Unavailable":x.status==="stale"?"Stale":x.status==="fallback"?`Fallback${x.provider?` · ${providerLabel(x.provider)}`:""}`:aging?`As of ${timeLabel(x.fetchedAt)}`:`${x.provider?`${providerLabel(x.provider)} · `:""}Current`,
