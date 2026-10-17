@@ -6,7 +6,9 @@ const KMH_TO_MPH = 0.621371, MS_TO_MPH = 2.23694;
 
 export function observedWindAt(nws, river, at, now) {
   const t = Date.parse(at);
-  const fresh = (ms) => Number.isFinite(ms) && Number.isFinite(t) && now - ms <= 90 * 60000 && ms <= now + 5 * 60000 && ms - t >= -45 * 60000 && ms - t < 75 * 60000;
+  // Only the slot that contains "now" (or "now" itself) takes an observation; later slots stay on the forecast.
+  const currentSlot = Number.isFinite(t) && t <= now + 5 * 60000 && t > now - 60 * 60000;
+  const fresh = (ms) => currentSlot && Number.isFinite(ms) && now - ms <= 90 * 60000 && ms <= now + 5 * 60000;
   const pick = (obs, rows, label) => {
     if (!obs?.ok) return null;
     const row = rows.filter((r) => fresh(Date.parse(r.time)) && has(r.speed)).sort((a, b) => Date.parse(b.time) - Date.parse(a.time))[0];

@@ -21,6 +21,11 @@ assert.equal(observedWindAt({ ok: false, values: {} }, null, slot, now), null);
 assert.equal(observedWindAt(nws([{ ...near, windSpeedKmh: null }]), null, slot, now), null);
 assert.equal(observedWindAt(nws([near]), null, Date.parse(slot) - 3 * 3600000, now), null);
 
+// UI asks for "now" itself: an observation 56 minutes old still counts; the next slot (an hour out) does not.
+r = observedWindAt(nws([{ ...near, time: "2026-10-17T19:14:00Z" }]), river([riverRow]), new Date(now).toISOString(), now);
+assert.equal(r.source, "nws:KSGJ");
+assert.equal(observedWindAt(nws([near]), null, "2026-10-17T21:00:00.000Z", now), null, "next slot stays on the forecast");
+
 const table = { table: { columnNames: ["time", "wind_speed_cm_time__mean_over_pt5m", "wind_speed_cm_time__maximum_over_pt5m", "wind_from_direction_cm_time__mean_over_pt5m", "wind_speed_cm_time__mean_over_pt5m_qc_agg"],
   rows: [["2026-10-17T20:02:54Z", 2.1, 2.6, 23, 1], ["2026-10-17T20:07:55Z", 4.8, 5.4, 19, 3], ["2026-10-17T20:12:56Z", 3.4, 3.8, 28, 1], ["2026-10-17T20:17:57Z", null, null, null, 9]] } };
 const ok = await fetchRiverkeeperWind({ id: "salt-run" }, { fetchImpl: async () => ({ ok: true, json: async () => table }), now: Date.parse("2026-10-17T20:20:00Z") });
