@@ -9,7 +9,7 @@ Static review prototype. Serve `site/`; open `/v5/proto/`. Vanilla ES modules, n
 - Desktop/tablet: single DOM navigation moves into header at 900 px; Today has sticky answer/evidence columns; Spots has a selected-detail pane; Species opens a 400 px detail pane; Plan has rows/detail panes. Dialogs center from 768 px.
 - P2-3,5,6 done: optional vibration helper, Plan scope caption, session disclosure memory.
 - P2-1,2 deferred: manifest path is outside the authorized `proto/` boundary; install/splash assets belong with the real PWA shell, not this illustrative prototype.
-- P2-4 deferred: changing ring arc meaning requires owner approval. It still renders JSON suitability.
+- P2-4 superseded (2026-10-09, PR #21): the ring is replaced by a verdict seal with no suitability arc. Dropping the arc awaits owner approval (`.ai/PROJECT_STATE.md`, pending decision 6).
 
 ## Fold and implementation choices
 
