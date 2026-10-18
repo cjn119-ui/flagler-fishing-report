@@ -1106,3 +1106,22 @@ html,body,button,input,select,textarea,summary,svg text { font-family:var(--font
 .species-group .sp { min-height:0; }
 .ended-note { margin:0 0 10px; }
 .times-empty .btn-s, .target-species .btn-s { margin-top:10px; }
+
+/* Type scale pass: nothing below 11px; values readable; card titles above body; one size per role. */
+.condition-cell small { font-size:11px; letter-spacing:.01em; }
+.conditions-caption { font-size:12px; }
+.condition-cell b { font-size:clamp(14px,3.9vw,16px); }
+.today-hero-place small { font-size:14px; }
+.closure-badge { font-size:11px; }
+.tv .w { font-size:16px; line-height:1.25; }
+.delta { font-size:15px; }
+.species-group-head h2 { font-size:18px; }
+.species-band, .species-group .sp b.species-band, .sp .big span { font-weight:700; }
+.sp .n { font-size:15px; }
+.why-verdict li, .verdict-reasons li { font-size:15px; }
+.log-summary .stat .v, .stat .v { font-size:18px; }
+.plan-day-chips small, .day-row small { font-size:12px; }
+.day-row > span:first-child { font-size:15px; }
+.src-list li, .fine { font-size:13px; }
+.r2, .r2 .when { font-size:14px; }
+.page-heading h1 { font-size:28px; }

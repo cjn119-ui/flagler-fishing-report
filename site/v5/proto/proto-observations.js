@@ -12,6 +12,16 @@ export function temperatureF(row) {
 }
 
 // Published runs keep only the compact gridForecast; read the air temperature for `at` from it when no hourly row exists.
+// Any gridForecast field (temperature °F, windSpeed mph, windDirection °) for `at`.
+export function gridValueAt(run, locationId, field, at) {
+  const t = +new Date(at);
+  for (const o of run?.inputs?.observations ?? []) {
+    if (o?.kind !== "gridForecast" || !o.ok || (o.locationId && o.locationId !== locationId)) continue;
+    const row = (o.values?.[field] ?? []).find((x) => Date.parse(x?.validFrom) <= t && t < Date.parse(x?.validTo));
+    if (row && row.value != null && Number.isFinite(+row.value)) return +row.value;
+  }
+  return null;
+}
 export function gridTemperatureF(run, locationId, at) {
   const t = +new Date(at);
   for (const o of run?.inputs?.observations ?? []) {

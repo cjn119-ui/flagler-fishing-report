@@ -10,7 +10,7 @@ import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch
 import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesFitWord, speciesTripRate, unsafeCapped } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
 import { observedWindAt } from "../engine/observed-wind.js";
-import { fmtWind, gridTemperatureF, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
+import { fmtWind, gridTemperatureF, gridValueAt, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
 
 const TZ = "America/New_York";
 const RICH = "live-today", TOMORROW = "live-tomorrow";
@@ -549,8 +549,7 @@ function todayView(c) {
     h("p", { class: "fine" }, "Suitability describes how well conditions fit each fish. It is not a catch chance."),
     c.rec.targets?.length ? h("p", { class: "local-history" }, c.rec.targets.slice(0, 3).map((x) => `${x.name}: ${formatHistoricalRate(x.historicalRate, c.rec.mode)}`).join(" · ")) : null,
     whyCard(c), confCard(c), sourcesCard(c));
-  const setup = useCard(c); setup?.classList.add("setup-disclosure");
-  out.push(verdictCard(c, disclosure), targetSpeciesRow(c), timesCard(c), setup, tvCard(c), spotsTeaser(c));
+  out.push(verdictCard(c, disclosure), targetSpeciesRow(c), timesCard(c), tvCard(c), spotsTeaser(c));
   return out.filter(Boolean);
 }
 function verdictCard(c, disclosure = null) {
@@ -871,7 +870,8 @@ function conditionsStrip(c) {
   const obsOf = (kind) => (oRun?.inputs?.observations ?? []).find((o) => o?.kind === kind && o.locationId === spotId && o.ok);
   const seen = future ? null : observedWindAt(obsOf("pressureObservations"), obsOf("windObservations"), new Date(c.now).toISOString(), c.now);
   const compass = (deg) => ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"][Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
-  const windValue = seen ? `${seen.windDirectionDeg != null ? `${compass(seen.windDirectionDeg)} ` : ""}${Math.round(seen.windMph)} mph` : windRaw != null ? fmtWind(hourly) : windFactor?.value != null ? `${windFactor.value} ${windFactor.unit ?? ""}`.trim() : msg(windFactor?.humanLabel ?? "");
+  const gridWind = gridValueAt(oRun, spotId, "windSpeed", at), gridDir = gridValueAt(oRun, spotId, "windDirection", at);
+  const windValue = seen ? `${seen.windDirectionDeg != null ? `${compass(seen.windDirectionDeg)} ` : ""}${Math.round(seen.windMph)} mph` : windRaw != null ? fmtWind(hourly) : windFactor?.value != null ? `${windFactor.value} ${windFactor.unit ?? ""}`.trim() : gridWind != null ? `${gridDir != null ? `${compass(gridDir)} ` : ""}${Math.round(gridWind)} mph` : msg(windFactor?.humanLabel ?? "");
   const waterFactor = factors.find((x) => x.key === "waterTemp")?.value;
   const waterObs = observationFor(observationRows(oRun, "waterTemperature", spotId), c.now)?.temperatureF;
   const water = waterFactor ?? waterObs;
@@ -881,8 +881,9 @@ function conditionsStrip(c) {
   const tideNow = c.rec.mode === "inshore" ? tideDirectionAt(observationRows(oRun, "tidePredictions", spotId), at) : null;
   const rows = [
     [tempF != null ? `${Math.round(tempF)}°F` : "—", "Air"],
-    [windValue || "—", "Wind"],
-    c.rec.mode === "inshore" ? [tideNow ? cap(tideNow) : "—", "Tide"] : [wave ? `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft` : "—", !future && c.rec.mode !== "inshore" && wave?.kind === "waves" ? "Offshore waves" : "Waves"],
+    // Unit goes in the label so "NNE 18 mph" fits a quarter-width cell.
+    [windValue ? windValue.replace(/\s*mph$/i, "") : "—", windValue && /mph$/i.test(windValue) ? "Wind mph" : "Wind"],
+    c.rec.mode === "inshore" ? [tideNow ? cap(tideNow) : "—", "Tide"] : [wave ? `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft` : "—", !future && c.rec.mode !== "inshore" && wave?.kind === "waves" ? "Swell" : "Waves"],
     [water != null && Number.isFinite(+water) ? `${(+water).toFixed(0)}°F` : "—", "Water"],
   ];
   const caption = future ? (atMs != null ? `Forecast · ${fmtTime(atMs)}` : "Forecast") : "Current conditions";
@@ -1190,7 +1191,7 @@ function planView(c) {
   const selectedCopy = daySummary(c, selected, st.day) || selected?.reason?.text || selected?.reason || "";
   const tide = selected?.date === forecastRun.targetDate ? planTideChart(c, selectedLoc, selected.date, forecastRun) : null;
   const hourlyTable = selected?.date === forecastRun.targetDate ? planHourlyTable(c, selectedLoc, selected.date, selectedMode, forecastRun) : null;
-  const summary = h("section", { class: "card daily-outlook" }, h("div", { class: "card-h" }, h("span", { class: "vchip", "data-v": selected?.kind === "outlook" || dayOnlyClosedWindows(selected) ? null : selected?.verdict }, selectedOutlook), h("h2", {}, "Daily outlook")), h("p", {}, msg(selectedCopy)),
+  const summary = h("section", { class: "card daily-outlook" }, h("div", { class: "card-h" }, h("span", { class: "vchip", "data-v": selected?.kind === "outlook" || dayOnlyClosedWindows(selected) ? null : selected?.verdict }, selectedOutlook), h("h2", {}, "Daily outlook")), h("p", {}, String(msg(selectedCopy) ?? "").replace(/No Remaining Windows Today\.?/i, "fishing hours are over for today")),
     observations.length ? h("div", { class: "plan-conditions" }, temperature ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, weatherGlyph(temperature.shortForecast)), h("b", {}, `${Math.round(temperature.temperature)}°F`), h("small", {}, temperature.shortForecast ?? "Air")) : null,
       firstHour?.windSpeed ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "↗"), h("b", {}, fmtWind(firstHour)), h("small", {}, "Wind")) : null,
       selectedMode !== "inshore" && (() => { const waves = observations.filter((x) => x.waveHeightM != null && Number.isFinite(+x.waveHeightM)); const wave = observationFor(waves, selectedAt) ?? waves[0]; return wave ? h("div", {}, h("i", { class: "condition-icon", "aria-hidden": "true" }, "〰"), h("b", {}, `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`), h("small", {}, "Waves")) : null; })(),
