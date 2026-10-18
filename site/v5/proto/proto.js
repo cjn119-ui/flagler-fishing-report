@@ -170,6 +170,12 @@ function bestModeRec(run, id) {
   const cands = modesOf(run, id).filter((m) => !isModeClosed(id, m)).map((m) => run.scopeViews?.byLocation?.[`${id}:${m}`]?.recommendation).filter(Boolean);
   return cands.sort((a, b) => TIER[a.verdict] - TIER[b.verdict] || b.suitability - a.suitability)[0] ?? null;
 }
+// After today's last fishing slot the today report carries no spot data (older ones no observations either).
+// Lists then use tomorrow's report, built in the same pass, and say so.
+function dayEnded(c) { return st.h === "today" && !(c.run.candidates?.length) && !!D[TOMORROW]?.candidates?.length && !!c.def?.live; }
+function listSource(c) { return dayEnded(c) ? { run: D[TOMORROW], horizon: "tomorrow", ended: true } : { run: c.run, horizon: st.h, ended: false }; }
+function obsRun(c) { return c.run.inputs?.observations?.length ? c.run : D[TOMORROW]?.inputs?.observations?.length ? D[TOMORROW] : c.run; }
+const endedNote = (what) => h("p", { class: "fine ended-note" }, `Today's fishing hours are over · ${what}`);
 function ctx() {
   const def = stateDef(), rich = D[RICH], tom = D[TOMORROW];
   const scoped = !!(st.spot || st.species);
@@ -447,7 +453,7 @@ function syncNativeSpots(c = ctx()) {
   const nativeMap = window.FFNativeMap;
   if (!nativeMap) return;
   if (st.tab !== "spots") { nativeMap.hide?.(); return; }
-  const rows = spotRows(c.run, st.f, c.now, st.h);
+  const src = listSource(c), rows = spotRows(src.run, st.f, c.now, src.horizon);
   nativeMap.show?.({ spots: rows.map(({ loc, rec, fav }) => ({ id: loc.id, name: loc.name, lat: loc.lat, lon: loc.lon, verdict: rec.verdict, favorite: fav, closureBadge: closureFor(loc.id) ? closureBadgeText(loc.id) : null })), selectedId: st.spot, mode: st.mode ?? c.rec.mode ?? "all" });
 }
 
@@ -526,7 +532,8 @@ function renderBanner(c) {
 }
 
 /* ---------- TODAY ---------- */
-function whenOf(c) { if (!c.skip && (!validDate(c.rec.window?.start) || !validDate(c.rec.window?.end))) return "Time unavailable"; return c.skip ? msg(c.rec.whenLabel) : formatWhenLabel({ recommendation: c.rec }, c.now); }
+function whenOf(c) { if (c.rec?.state?.kind === "closed" || c.rec?.reason?.code === "noRemainingWindowsToday") return "Today — after hours"; return whenOfWindow(c); }
+function whenOfWindow(c) { if (!c.skip && (!validDate(c.rec.window?.start) || !validDate(c.rec.window?.end))) return "Time unavailable"; return c.skip ? msg(c.rec.whenLabel) : formatWhenLabel({ recommendation: c.rec }, c.now); }
 function todayView(c) {
   const out = [];
   const heroSpot = st.spot ? (locOf(c.run, st.spot)?.id ?? c.rec.locationId) : c.rec.locationId;
@@ -584,7 +591,12 @@ function setTargetHidden(id, hidden, quiet = false) {
 function targetSpeciesRow(c) {
   const all = c.rec.targets ?? [], hidden = new Set(hiddenTargets());
   const rows = all.filter((row) => !hidden.has(row.speciesId)).slice(0, 6);
-  if (!rows.length) return null;
+  if (!rows.length) {
+    const ended = dayEnded(c), removed = all.length > 0;
+    const text = ended ? "Today's fishing hours are over." : removed ? "You removed all of today's targets." : c.skip ? "No targets while conditions are unsafe." : "No target species for this window.";
+    return h("section", { class: "target-species card", "aria-label": "Targets" }, h("div", { class: "card-h" }, h("h2", {}, "Targets")), h("p", { class: "muted" }, text),
+      ended ? h("button", { class: "btn-s", type: "button", onclick: () => { st.h = "tomorrow"; st.t = null; render(); } }, "See tomorrow") : removed ? h("button", { class: "btn-s", type: "button", onclick: () => { store.set("hiddenTargets", []); render(); } }, "Show targets again") : null);
+  }
   return h("section", { class: "target-species card", "aria-label": "Targets" }, h("div", { class: "card-h" }, h("h2", {}, "Targets"), st.species ? h("button", { class: "btn alt target-clear", type: "button", onclick: () => scope({ spot: st.spot, mode: st.mode, tab: st.tab }) }, "Clear target") : null),
     h("div", { class: "target-species-scroll" }, rows.map((row) => h("button", { class: `target-species-item${st.species === row.speciesId ? " on" : ""}`, type: "button", "aria-pressed": st.species === row.speciesId ? "true" : "false", "aria-label": `${row.name}, ${speciesFitBand(row.suitability, row.caps ? row : c.rec)}. ${st.species === row.speciesId ? "Targeted. Tap to stop targeting" : "Open species"}`, onclick: (e) => st.species === row.speciesId ? scope({ spot: st.spot, mode: st.mode, tab: st.tab }) : openSpecies(row.speciesId, e.currentTarget) }, fishImage(row.speciesId, "target-species-image"), h("b", {}, row.name), h("span", { class: "fit-word" }, speciesFitBand(row.suitability, row.caps ? row : c.rec))))));
 }
@@ -622,6 +634,7 @@ function skipShort(rec) {
   return "Poor conditions";
 }
 function skipReason(rec, day = st.h === "tomorrow" ? "tomorrow" : "today") {
+  if (rec?.state?.kind === "closed" || rec?.reason?.code === "noRemainingWindowsToday") return "Fishing hours are over for today";
   const short = skipShort(rec);
   return short === "Thunderstorms" ? `Thunderstorms expected ${day}` : `${short} ${day}`;
 }
@@ -632,6 +645,7 @@ function nextWindowLine(c) {
   const tom = st.h === "tomorrow" ? null : D[TOMORROW];
   const other = !tom ? null : st.spot ? (st.mode ? tom.scopeViews?.byLocation?.[`${st.spot}:${st.mode}`]?.recommendation : bestModeRec(tom, st.spot)) : tom.recommendation;
   if (other && other.verdict !== "SKIP" && validDate(other.window?.start) && validDate(other.window?.end)) return `Next window: Tomorrow ${fmtRange(other.window.start, other.window.end)}${st.spot ? "" : ` at ${other.displayName}`}`;
+  if (c.rec?.state?.kind === "closed" || c.rec?.reason?.code === "noRemainingWindowsToday") return "Tomorrow doesn't look good either";
   return `${gateCodes(c.rec).length ? "No safe window" : "No good window"} ${st.h === "tomorrow" ? "tomorrow" : "today"}`;
 }
 function nextOption(c) {
@@ -664,9 +678,8 @@ function targetsCard(c) {
 }
 function useCard(c) {
   const r = c.rec, set = r.setup ?? {};
-  const useLine = msg(r.useLine);
-  const details = !!(set.where && set.where !== useLine || set.bait?.length || set.lures?.length || set.rig || set.tip || r.tip);
-  if (useLine === "Use a presentation suited to this location." && !details) return null;
+  const generic = "Use a presentation suited to this location.", spotTip = activeSpot(r.locationId)?.tips?.[0];
+  const useLine = msg(r.useLine) === generic && spotTip ? spotTip : msg(r.useLine);
   const det = h("details", { class: `card use${c.skip ? " quiet" : ""}`, open: session.use || null });
   det.addEventListener("toggle", () => { session.use = det.open; });
   det.append(h("summary", { "data-fk": "use" }, h("b", {}, "Use"), h("span", {}, useLine)),
@@ -742,7 +755,9 @@ function slotSeries(c) {
 }
 function timesCard(c) {
   const pts = slotSeries(c);
-  if (pts.length < 2) return null;
+  if (pts.length < 2) return h("section", { class: "card times-empty", "aria-label": "Best times" }, h("div", { class: "card-h" }, h("h2", {}, "Best times")),
+    h("p", { class: "muted" }, dayEnded(c) || st.h === "today" ? "Today's fishing hours are over (they run until 9 PM)." : "No hourly outlook for this day yet."),
+    st.h === "today" ? h("button", { class: "btn-s", type: "button", onclick: () => { st.h = "tomorrow"; st.t = null; render(); } }, "See tomorrow's best times") : null);
   const n = pts.length, r = c.rec, light = c.run._proto?.light;
   const t0 = Date.parse(pts[0].at), step = (Date.parse(pts[n - 1].at) - t0) / (n - 1), span = step * n;
   const wins = scrubWindows(r, c.run.days ?? [], { skip: c.skip });
@@ -843,25 +858,26 @@ function conditionsCard(c) {
 function conditionsStrip(c) {
   // Today: what it is like now (observed where we have it). Tomorrow: the forecast for the recommended window,
   // never today's live readings under tomorrow's date.
+  const oRun = obsRun(c);
   const spotId = c.rec.locationId, factors = c.run._proto?.factors ?? [], future = st.h === "tomorrow";
   const atMs = future ? (validDate(c.rec.window?.start) ? Date.parse(c.rec.window.start) : null) : c.now;
   const at = atMs ?? c.now;
-  const hourlyRows = observationRows(c.run, "hourlyForecast", spotId);
+  const hourlyRows = observationRows(oRun, "hourlyForecast", spotId);
   const hourly = observationFor(hourlyRows, at) ?? (future ? null : hourlyRows.find((x) => dayKey(x.startTime ?? x.validFrom) === dayKey(c.now)));
-  const tempF = temperatureF(hourly) ?? gridTemperatureF(c.run, spotId, at);
+  const tempF = temperatureF(hourly) ?? gridTemperatureF(oRun, spotId, at);
   const windFactor = future ? null : factors.find((x) => x.key === "wind");
   const windRaw = hourly?.windSpeed;
-  const obsOf = (kind) => (c.run?.inputs?.observations ?? []).find((o) => o?.kind === kind && o.locationId === spotId && o.ok);
+  const obsOf = (kind) => (oRun?.inputs?.observations ?? []).find((o) => o?.kind === kind && o.locationId === spotId && o.ok);
   const seen = future ? null : observedWindAt(obsOf("pressureObservations"), obsOf("windObservations"), new Date(c.now).toISOString(), c.now);
   const compass = (deg) => ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"][Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
   const windValue = seen ? `${seen.windDirectionDeg != null ? `${compass(seen.windDirectionDeg)} ` : ""}${Math.round(seen.windMph)} mph` : windRaw != null ? fmtWind(hourly) : windFactor?.value != null ? `${windFactor.value} ${windFactor.unit ?? ""}`.trim() : msg(windFactor?.humanLabel ?? "");
   const waterFactor = factors.find((x) => x.key === "waterTemp")?.value;
-  const waterObs = observationFor(observationRows(c.run, "waterTemperature", spotId), c.now)?.temperatureF;
+  const waterObs = observationFor(observationRows(oRun, "waterTemperature", spotId), c.now)?.temperatureF;
   const water = waterFactor ?? waterObs;
   // Tomorrow has no buoy reading yet, so only the wave forecast counts there.
-  const wave = observationFor([...(future ? [] : observationRows(c.run, "waves", spotId).map((x) => ({ ...x, kind: "waves" }))), ...observationRows(c.run, "waveForecast", spotId).map((x) => ({ ...x, kind: "waveForecast" }))], at);
+  const wave = observationFor([...(future ? [] : observationRows(oRun, "waves", spotId).map((x) => ({ ...x, kind: "waves" }))), ...observationRows(oRun, "waveForecast", spotId).map((x) => ({ ...x, kind: "waveForecast" }))], at);
   // Ocean buoy waves mean little in the ICW; tide direction is what matters there.
-  const tideNow = c.rec.mode === "inshore" ? tideDirectionAt(observationRows(c.run, "tidePredictions", spotId), at) : null;
+  const tideNow = c.rec.mode === "inshore" ? tideDirectionAt(observationRows(oRun, "tidePredictions", spotId), at) : null;
   const rows = [
     [tempF != null ? `${Math.round(tempF)}°F` : "—", "Air"],
     [windValue || "—", "Wind"],
@@ -885,9 +901,9 @@ function tvCard(c) {
     cmp ? h("p", { class: "delta" }, DELTA[cmp]) : null, h("div", { class: "tv" }, card("Today", d[0], "today"), card("Tomorrow", d[1], "tomorrow")));
 }
 function spotsTeaser(c) {
-  const rows = excludeSpot(spotRows(c.run, "all", c.now, st.h), st.spot ?? c.rec?.locationId).slice(0, 6);
+  const src = listSource(c), rows = excludeSpot(spotRows(src.run, "all", c.now, src.horizon), st.spot ?? c.rec?.locationId).slice(0, 6);
   if (!rows.length) return null;
-  return h("section", { class: "card", "aria-label": "Other spots" }, h("div", { class: "card-h" }, h("h2", {}, "Other spots"), h("button", { class: "btn-s", type: "button", "data-fk": "allspots", onclick: () => go("spots") }, "See all spots")),
+  return h("section", { class: "card", "aria-label": "Other spots" }, h("div", { class: "card-h" }, h("h2", {}, src.ended ? "Other spots tomorrow" : "Other spots"), h("button", { class: "btn-s", type: "button", "data-fk": "allspots", onclick: () => go("spots") }, "See all spots")),
     h("div", { class: "other-spots-scroll" }, rows.map(({loc,rec}) => h("button", { class: "other-spot-card", type: "button", onclick: (e) => openSpotDetail(loc.id,rec.mode,e.currentTarget) }, spotPhoto(loc.id,"other-spot-photo",loc.name), h("b",{},loc.name), h("span",{class:"vchip","data-v":rec.verdict},VERDICT_SPOKEN[rec.verdict]), h("small",{},rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start,rec.window?.end))))));
 }
 function sourcesCard(c) {
@@ -945,7 +961,7 @@ function spotList(c, { onPick, externalFilters = false, onResultsChange } = {}) 
     h("button", { class: "btn-s near", type: "button", "data-fk": "near", "aria-pressed": String(!!session.near && session.near !== "denied"), onclick: askNear, "aria-label": "Sort by distance" }, icon("pin")));
   if (externalFilters) el.filters = filterBar;
   const rebuild = () => {
-    const rows = spotRows(c.run, st.f, c.now, st.h).filter((r) => !st.spotSearch || r.loc.name.toLowerCase().includes(st.spotSearch.toLowerCase()));
+    const spotSrc = listSource(c), rows = spotRows(spotSrc.run, st.f, c.now, spotSrc.horizon).filter((r) => !st.spotSearch || r.loc.name.toLowerCase().includes(st.spotSearch.toLowerCase()));
     onResultsChange?.({ count: rows.length, filter: st.f, search: st.spotSearch });
     const best = c.overall ?? c.rec ?? c.run.recommendation;
     const anyRow = h("li", { class: `row any nostar${!st.spot ? " sel" : ""}` }, h("button", { class: "main", type: "button", "data-fk": "spot-any", "aria-label": `Best anywhere, ${best.verdict}, currently ${best.displayName}`, onclick: () => (onPick ?? (() => scope({ persist: true })))(null, null) },
@@ -1018,7 +1034,7 @@ function spotMiniStats(c, locationId) {
 
 /* ---------- SPECIES ---------- */
 function speciesRows(c) {
-  const run = c.run;
+  const run = listSource(c).run;
   const rows = SPECIES.map((sp) => {
     const cands = (run.candidates ?? []).filter((x) => !isModeClosed(x.locationId,x.mode) && x.speciesId === sp.id && (st.f === "all" || x.mode === st.f));
     const best = bestSpeciesCandidate(cands);
@@ -1060,6 +1076,7 @@ function speciesView(c) {
   const noMatches = !!st.speciesSearch && matching.length === 0;
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
     h("div", { class: "page-heading" }, h("h1", {}, "Species")),
+    listSource(c).ended ? endedNote("ratings below are for tomorrow") : null,
     searchBox("Search species", st.speciesSearch, (e) => { st.speciesSearch = e.target.value; render(); }),
     h("div", { class: "tools-row species-filters" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })),
     noMatches ? h("p", { class: "fine species-empty", role: "status" }, `No species match “${st.speciesSearch}”`, h("button", { class: "btn alt species-clear", type: "button", "aria-label": "Clear species search", onclick: () => { st.speciesSearch = ""; render(); } }, "Clear")) : null,
