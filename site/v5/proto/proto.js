@@ -427,11 +427,12 @@ function go(tab, opts = {}) {
   st.tab = tab;
   render({ resetScroll: true, navigation: true });
   if (!opts?.swipe && view.animate) {
-    const direction = Math.sign(newIndex - oldIndex) || 1;
     const animation = reduce
       ? view.animate([{ opacity: .72 }, { opacity: 1 }], { duration: 100, easing: "ease-out" })
-      // Taps get a short slide in the tab's direction (the outgoing page is already gone, so a full-width entry would leave a blank band).
-      : view.animate([{ opacity: .88, transform: `translateX(${carriedX || direction * 18}px)` }, { opacity: 1, transform: "translateX(0)" }], { duration: gestureDuration(Math.abs(carriedX || 18), 0, 340), easing: motionEase });
+      // Taps: a short cross-fade only. The old 18px slide-in (new page already rendered, then pushed back into place)
+      // read as a bounce on every tab change. An interrupted swipe still settles from where it was.
+      : carriedX ? view.animate([{ transform: `translateX(${carriedX}px)` }, { transform: "translateX(0)" }], { duration: gestureDuration(Math.abs(carriedX), 0, 200), easing: motionEase })
+      : view.animate([{ opacity: .55 }, { opacity: 1 }], { duration: 140, easing: "ease-out" });
     tabSettleAnimation = animation;
     animation.finished.finally(() => { if (tabSettleAnimation === animation) { tabSettleAnimation = null; view.style.removeProperty("transform"); } }).catch(() => {});
   }
