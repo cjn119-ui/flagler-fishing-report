@@ -15,7 +15,7 @@ export function speciesTripRate(candidate) {
   const rate = candidate?.historicalRate;
   if (!Number.isFinite(rate?.rate)) return "";
   const month = rate.monthName ? rate.monthName.slice(0, 3) : new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2020, (rate.month ?? 1) - 1, 1)));
-  const label = Math.round(rate.rate * 100) === 0 ? `Rarely caught in ${month} trips` : `~${Math.round(rate.rate * 100)}% of ${month} trips`;
+  const label = Math.round(rate.rate * 100) === 0 ? `Rarely caught in ${month}` : `~${Math.round(rate.rate * 100)}% of ${month} trips`;
   return `${label}${rate.lowSample ? " · few surveys" : ""}`;
 }
 

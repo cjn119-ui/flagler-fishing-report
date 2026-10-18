@@ -13,6 +13,6 @@ assert.equal(speciesFitWord(76), "Great", "show the short fit band word on speci
 assert.equal(speciesFitWord(20), "Not a fit");
 assert.equal(speciesFitWord(99, { caps: [{ code: "severeConditions" }] }), "Unsafe conditions");
 assert.equal(speciesTripRate(candidates[0]), "~15% of Oct trips · few surveys");
-assert.equal(speciesTripRate({ historicalRate: { rate: 0, monthName: "October" } }), "Rarely caught in Oct trips");
+assert.equal(speciesTripRate({ historicalRate: { rate: 0, monthName: "October" } }), "Rarely caught in Oct");
 assert.equal(bestSpeciesCandidate([candidates[1]]), candidates[1], "fall back to the best candidate only when no realistic candidate exists");
 console.log("v5 species presentation: passed realistic-first selection, reason labels, fit wording, and historical trip rate.");

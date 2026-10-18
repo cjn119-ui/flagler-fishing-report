@@ -144,7 +144,20 @@ const cap = (x) => x ? x[0].toUpperCase() + x.slice(1) : x;
 const spName = (id) => SPECIES.find((x) => x.id === id)?.name ?? id;
 const spCat = (id) => SPECIES.find((x) => x.id === id);
 const wk = (date, o) => !validDate(`${date}T16:00:00Z`) ? "Date unavailable" : new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...o }).format(new Date(`${date}T16:00:00Z`));
-const msg = formatCopyMessage;
+// Plain-language rewrites for engine copy shown in the app (the engine's own strings stay stable for the API).
+const COPY_REWRITES = [
+  [/^Today’s fishing windows have ended\. Tomorrow’s forecast is available\.$/, "Today's fishing hours are over. Tomorrow's forecast is ready."],
+  [/^Conditions do not meet the GO threshold\.$/, "Conditions aren't good enough for a Go."],
+  [/^Forecast freshness could not be verified$/, "Couldn't confirm how recent the forecast is"],
+  [/^Fresh wave data is unavailable$/, "No recent wave reading"],
+  [/^Survey history sample is thin$/, "Few past catch surveys for this spot"],
+  [/^Pressure trend is unavailable$/, "No air-pressure trend available"],
+  [/^Some current data sources are unavailable\.$/, "Some live data is missing."],
+  [/^Inshore temperature uses an offshore buoy$/, "Water temperature comes from an offshore buoy"],
+  [/^Wind, surf or rain conditions limit this window\.$/, "Wind, surf or rain make this window rough."],
+  [/^No remaining windows today\.?$/i, "Fishing hours are over for today"],
+];
+const msg = (m) => { const text = formatCopyMessage(m); const hit = COPY_REWRITES.find(([re]) => re.test(text)); return hit ? text.replace(hit[0], hit[1]) : text; };
 
 function freshness(run, now) {
   const age = Math.max(0, Math.round((now - Date.parse(run.generatedAt)) / 60000));
@@ -546,7 +559,7 @@ function todayView(c) {
   const reasonLines = c.rec.gates?.length ? [...new Set(c.rec.gates.map((g) => msg(g.text)).filter(Boolean))] : [msg(c.rec.reason?.text)].filter(Boolean);
   const disclosure = h("details", { class: "why-verdict" }, h("summary", {}, "Why this verdict"),
     reasonLines.length ? h("ul", { class: "verdict-reasons" }, reasonLines.map((x) => h("li", {}, x))) : null,
-    h("p", { class: "fine" }, "Suitability describes how well conditions fit each fish. It is not a catch chance."),
+    h("p", { class: "fine" }, "Ratings show how well conditions suit each fish, not the odds of catching one."),
     c.rec.targets?.length ? h("p", { class: "local-history" }, c.rec.targets.slice(0, 3).map((x) => `${x.name}: ${formatHistoricalRate(x.historicalRate, c.rec.mode)}`).join(" · ")) : null,
     whyCard(c), confCard(c), sourcesCard(c));
   out.push(verdictCard(c, disclosure), targetSpeciesRow(c), timesCard(c), tvCard(c), spotsTeaser(c));
@@ -697,9 +710,9 @@ function confCard(c) {
   const { word, suffix, scoreNote } = confidenceDisplay(formatConfidenceParts({ recommendation: r }), { stale: c.stale });
   const det = h("details", { class: "how", open: session.conf || null });
   det.addEventListener("toggle", () => { session.conf = det.open; });
-  det.append(h("summary", { "data-fk": "conf" }, "Why?"), h("ul", {}, [scoreNote ? h("li", {}, `Confidence ${scoreNote.charAt(0).toLowerCase()}${scoreNote.slice(1)}`) : null, ...(r.confidenceReasons ?? []).map((x) => h("li", {}, x.code === "forecastAging" ? "Latest forecast was issued a few hours ago" : msg(x.text))), r.reason?.code === "provisionalGoThreshold" ? h("li",{},SHORT_REASON.provisionalGoThreshold) : null]));
+  det.append(h("summary", { "data-fk": "conf" }, "Why?"), h("ul", {}, [scoreNote ? h("li", {}, scoreNote.replace(/^Score (\d+) of 100/, "Confidence $1/100")) : null, ...(r.confidenceReasons ?? []).map((x) => h("li", {}, x.code === "forecastAging" ? "Latest forecast was issued a few hours ago" : msg(x.text))), r.reason?.code === "provisionalGoThreshold" ? h("li",{},SHORT_REASON.provisionalGoThreshold) : null]));
   return h("section", { class: "card conf", "aria-label": "Confidence" },
-    h("div", { class: "conf-row" }, h("p", { class: "conf-line" }, "Confidence: ", h("b", {}, word), suffix ? h("span", { class: "muted" }, ` · ${suffix}`) : null),
+    h("div", { class: "conf-row" }, h("p", { class: "conf-line" }, "How sure we are: ", h("b", {}, word), suffix ? h("span", { class: "muted" }, ` · ${suffix}`) : null),
       c.partial ? h("span", { class: "vchip amber" }, icon("warn"), "Partial data") : null),
     scoreNote || r.confidenceReasons?.length ? det : null);
 }
@@ -920,10 +933,10 @@ function sourcesCard(c) {
     h("div", { class: "det-body" }, h("ul", { class: "src-list" }, summaries.map((x) =>
       h("li", { "data-bad": x.status !== "current" ? "" : null }, h("span", {}, x.label), h("span", {}, x.status === "unavailable" || c.fr.level !== "fresh" && x.status === "current" ? x.state : `${x.state} · ${fmtTime(x.fetchedAt)}`)))),
       missingKinds.length ? h("p", { class: "fine" }, `Missing right now: ${missingKinds.map((kind) => (summaries.find((x) => x.kind === kind)?.label ?? kind).toLowerCase()).join(", ")}.`) : null,
-      usesOpenMeteo ? h("p", { class: "fine" }, openMeteoFallback ? "Some forecasts here are from the Open-Meteo backup, which can't confirm when its forecast was issued, so they can't produce a Go. " : "", "Data by ",
+      usesOpenMeteo ? h("p", { class: "fine" }, openMeteoFallback ? "Some forecasts come from the Open-Meteo backup. It can't confirm when they were issued, so they can't produce a Go. " : "", "Data by ",
         h("a", { href: "https://open-meteo.com/", target: "_blank", rel: "noopener noreferrer" }, "Open-Meteo"),
         " under ", h("a", { href: "https://creativecommons.org/licenses/by/4.0/", target: "_blank", rel: "noopener noreferrer" }, "CC BY 4.0"), ".") : null,
-      h("p", { class: "fine" }, `Model ${run.modelVersion} · run ${fmtTime(run.generatedAt)} · all times Eastern.`)));
+      h("p", { class: "fine" }, `Report updated ${fmtTime(run.generatedAt)} · times are Eastern · model ${run.modelVersion}`)));
   return det;
 }
 
@@ -948,12 +961,12 @@ function spotRowEl(r, c, { star = true, onPick } = {}) {
   const pick = () => matchMedia("(min-width:900px)").matches && st.tab === "spots" ? openSpotDetail(loc.id, rec.mode) : (onPick ?? ((l, m) => scope({ spot: l, mode: m, persist: true })))(loc.id, st.f === "all" ? (loc.modes.length > 1 ? null : loc.modes[0]) : st.f);
   const favs = store.get("favs", []);
   return h("li", { class: `row${st.spot === loc.id ? " sel" : ""}${star ? "" : " nostar"}` },
-    h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${VERDICT_SPOKEN[rec.verdict]}, ${rec.mode}, ${rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start, rec.window?.end)}${r.ended ? ", ended" : ""}${top && rec.verdict !== "SKIP" ? `, ${top.name} ${top.suitability}` : ""}`, onclick: pick },
+    h("button", { class: "main", type: "button", "data-fk": `spot-${loc.id}`, "aria-label": `${loc.name}, ${VERDICT_SPOKEN[rec.verdict]}, ${rec.mode}, ${rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start, rec.window?.end)}${r.ended ? ", ended" : ""}${top && rec.verdict !== "SKIP" ? `, ${top.name} ${speciesFitBand(top.suitability).toLowerCase()}` : ""}`, onclick: pick },
       spotPhoto(loc.id, "spot-row-photo", loc.name),
       h("div", { class: "r1" }, h("span", { class: "nm" }, loc.name), closureFor(loc.id) ? h("span", { class: "closure-badge" }, closureBadgeText(loc.id)) : null),
       h("p", { class: `r2${r.ended ? " muted" : ""}` }, h("span", { class: "mi" }, loc.modes.filter((mode) => !isModeClosed(loc.id, mode)).map((m) => modeIcon(m))), `${modeDisplay(rec.mode,loc.id)} · ${loc.area} · `, h("span", { class: "when" }, rec.verdict === "SKIP" ? skipShort(rec) : fmtRange(rec.window?.start,rec.window?.end)), r.ended ? h("span", { class: "ended-tag" }, "Ended") : null, r.dist != null ? ` · ${r.dist.toFixed(1)} mi` : ""),
-      h("p", { class: "r2 r3" }, top && rec.verdict !== "SKIP" ? `${top.name} ${top.suitability}` : "")),
-    star ? h("button", { class: "star", type: "button", "data-fk": `star-${loc.id}`, "aria-pressed": String(favs.includes(loc.id)), "aria-label": `Favourite ${loc.name}`, onclick: () => { const f = store.get("favs", []); tick(); store.set("favs", f.includes(loc.id) ? f.filter((x) => x !== loc.id) : [...f, loc.id]); rerenderList(); } }, icon("star")) : null);
+      h("p", { class: "r2 r3" }, top && rec.verdict !== "SKIP" ? `${top.name} · ${speciesFitBand(top.suitability).replace(" conditions fit", "").replace("Not a", "Poor")}` : "")),
+    star ? h("button", { class: "star", type: "button", "data-fk": `star-${loc.id}`, "aria-pressed": String(favs.includes(loc.id)), "aria-label": `Favorite ${loc.name}`, onclick: () => { const f = store.get("favs", []); tick(); store.set("favs", f.includes(loc.id) ? f.filter((x) => x !== loc.id) : [...f, loc.id]); rerenderList(); } }, icon("star")) : null);
 }
 let listHost = null;
 function rerenderList() { if (listHost) { const fk = document.activeElement?.dataset?.fk; listHost.rebuild(); if (fk) listHost.el.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true }); } }
@@ -966,9 +979,9 @@ function spotList(c, { onPick, externalFilters = false, onResultsChange } = {}) 
     const spotSrc = listSource(c), rows = spotRows(spotSrc.run, st.f, c.now, spotSrc.horizon).filter((r) => !st.spotSearch || r.loc.name.toLowerCase().includes(st.spotSearch.toLowerCase()));
     onResultsChange?.({ count: rows.length, filter: st.f, search: st.spotSearch });
     const best = c.overall ?? c.rec ?? c.run.recommendation;
-    const anyRow = h("li", { class: `row any nostar${!st.spot ? " sel" : ""}` }, h("button", { class: "main", type: "button", "data-fk": "spot-any", "aria-label": `Best anywhere, ${best.verdict}, currently ${best.displayName}`, onclick: () => (onPick ?? (() => scope({ persist: true })))(null, null) },
+    const anyRow = h("li", { class: `row any nostar${!st.spot ? " sel" : ""}` }, h("button", { class: "main", type: "button", "data-fk": "spot-any", "aria-label": `Best anywhere, ${VERDICT_SPOKEN[best.verdict] ?? best.verdict}, currently ${best.displayName}`, onclick: () => (onPick ?? (() => scope({ persist: true })))(null, null) },
       h("div", { class: "r1" }, h("span", { class: "nm" }, "Best anywhere"), h("span", { class: "vchip", "data-v": best.verdict }, VERDICT_SPOKEN[best.verdict])),
-      h("p", { class: "r2" }, `Follows the best spot · now ${best.displayName}`)));
+      h("p", { class: "r2" }, `Always shows the best spot · now ${best.displayName}`)));
     const favRows = rows.filter((r) => r.fav);
     filterBar.querySelector("[data-fk='near']")?.setAttribute("aria-pressed", String(!!session.near && session.near !== "denied"));
     const content = [];
@@ -995,7 +1008,7 @@ function spotsView(c) {
   const openMap = () => window.FFNativeMap?.expand?.();
   const map = window.FFNativeMap
     ? h("div", { id: "spots-map", class: "native-map-slot", role: "button", tabindex: "0", "aria-label": "Map of fishing spots. Open full map", onclick: openMap, onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMap(); } } })
-    : h("div", { class: "web-map-placeholder compact-map" }, h("span", {}, "Explore nearby spots"));
+    : h("div", { class: "web-map-placeholder compact-map" }, h("span", {}, "Map of all spots"));
   const resultStatus = h("p", { class: "notice spot-results-status", role: "status", hidden: true });
   const list = spotList(c, { externalFilters: true, onResultsChange: ({ count, filter, search }) => {
     resultStatus.hidden = count > 0;
@@ -1066,7 +1079,7 @@ function speciesView(c) {
     const capped = unsafeCapped(focused ?? best);
     const band = speciesFitWord(suit, focused ?? best);
     return h("li", {}, h("button", { class: `sp${!showScore ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
-      "aria-label": `${sp.name}, ${showScore ? (capped ? "Unsafe conditions" : `suitability ${suit}, ${band}`) : notRealistic ? speciesEligibilityLabel(best) : "no reading"}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
+      "aria-label": (() => { const said = (showScore ? (capped ? "unsafe conditions" : band) : notRealistic ? speciesEligibilityLabel(best) : "") || "no rating"; return `${sp.name}, ${said}${sp.bycatch && !/bycatch/i.test(said) ? ", bycatch" : ""}`; })(), onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
       showScore ? h("div", { class: "species-band" }, h("b", {}, band)) : null,
       best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
@@ -1201,11 +1214,11 @@ function planView(c) {
     const title = i === 0 ? "Today" : wk(d.date,{weekday:"short"});
     const ended = i === 0 && w && Number.isFinite(Date.parse(w.end)) && Date.parse(w.end) <= c.now;
     const range = w ? fmtRange(w.start,w.end) : "";
-    const line = outlook ? outlookDayLine(d).replace(`${d.outlookLabel ?? "Outlook"} · `, "") : w ? ended ? w.displayName : `${[range,w.displayName].filter(Boolean).join(" · ")}` : onlyClosed ? "No open window" : "No good window";
-    return [i === 2 ? h("li", { class: "outlook-caption" }, h("h3", {}, "Outlook · days 3–7"), h("p", { class: "fine" }, "Outlook for days 3–7 uses season, tides, moon and the daily forecast. It updates daily.")) : null,
+    const line = outlook ? cap(outlookDayLine(d).replace(`${d.outlookLabel ?? "Outlook"} · `, "")) : w ? ended ? w.displayName : `${[range,w.displayName].filter(Boolean).join(" · ")}` : onlyClosed ? "No open window" : "No good window";
+    return [i === 2 ? h("li", { class: "outlook-caption" }, h("h3", {}, "Outlook · days 3–7"), h("p", { class: "fine" }, "Days 3–7 are a rough guide from season, tides, moon and the daily forecast.")) : null,
       h("li", {}, h("button", { class: `day-row${i >= 2 ? " outlook" : ""}`, type: "button", "data-fk": `day-${i}`, onclick: (e) => { st.day=i; const pane=document.querySelector(".plan-detail"); if(matchMedia("(min-width:900px)").matches && pane) pane.replaceChildren(h("h2",{},title),dayBody(d,i,daySummary(c,d,i),c.run)); else openSheet(title,dayBody(d,i,daySummary(c,d,i),c.run),e.currentTarget); } },
         h("span", {}, title,h("small",{},wk(d.date,{month:"short",day:"numeric"}))), h("span",{class:`vchip${outlook ? " outline" : ""}`,"data-v":outlook||onlyClosed?null:d.verdict,"data-l":d.outlookLabel},outlook?d.outlookLabel:dayVerdictLabel(d)),
-        h("span", {class:"day-copy"},h("span", {class:"day-line"},line),ended ? h("small",{class:"ended"},`Ended · ${range}`) : null,h("small",{},(d.topSpecies??[]).map((t)=>t.name).slice(0,1).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
+        h("span", {class:"day-copy"},h("span", {class:"day-line"},line),ended ? h("small",{class:"ended"},`Ended · ${range}`) : null,h("small",{},d.verdict === "SKIP" ? "" : (d.topSpecies??[]).map((t)=>t.name).slice(0,1).join(" · ")), d.bestDay ? h("span",{class:"tag"},outlook ? "Most promising outlook" : "Best day this week") : null),icon("arrow")))];
   }));
   const chips = h("div", { class: "plan-day-chips", role: "tablist", "aria-label": "Plan day" }, days.map((d, i) => h("button", { class: "day-chip", type: "button", role: "tab", "aria-selected": String(i === st.day), "data-fk": `plan-day-${i}`, onclick: () => { st.day = i; render(); } }, h("b", {}, i === 0 ? "Today" : wk(d.date, { weekday: "short" })), h("small", {}, wk(d.date, { month: "short", day: "numeric" })))));
   return [h("section", { class: "plan-page" },
@@ -1259,7 +1272,7 @@ function logView(c) {
     h("div", { class: "card-h" }, h("h2", {}, "Catch log"), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
     h("p", { class: "fine" }, "Saved on this device only."), summary,
     h("button", { class: "btn log-add", type: "button", hidden: !rows.length, onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log a catch"),
-    rows.length ? entries : h("div", { class: "log-empty" }, s("svg", { class: "empty-fish", viewBox: "0 0 120 64", role: "img", "aria-label": "A fish on a fishing line" }, s("path", { d: "M16 36c13-17 35-20 55-9l18-13v41L71 43c-20 11-42 8-55-7Zm-8 0h7m67-12 13-7m-13 31 13 7M51 27v18m7-18v18" }), s("circle", { cx: 42, cy: 33, r: 2 })), h("p", {}, "Your catch log starts here."), h("p", { class: "fine" }, "Log your first catch to get started."), h("button", { class: "btn", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log your first catch")))];
+    rows.length ? entries : h("div", { class: "log-empty" }, s("svg", { class: "empty-fish", viewBox: "0 0 120 64", role: "img", "aria-label": "A fish on a fishing line" }, s("path", { d: "M16 36c13-17 35-20 55-9l18-13v41L71 43c-20 11-42 8-55-7Zm-8 0h7m67-12 13-7m-13 31 13 7M51 27v18m7-18v18" }), s("circle", { cx: 42, cy: 33, r: 2 })), h("p", {}, "No catches logged yet."), h("p", { class: "fine" }, "Log a catch to start tracking your best spots and species."), h("button", { class: "btn", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log your first catch")))];
 }
 function openCatchForm(existing, opener, c = ctx()) {
   const spotId = existing?.spot ?? st.spot ?? c.rec.locationId ?? ACTIVE_SPOTS[0]?.id;
@@ -1495,9 +1508,9 @@ function openMoreSheet(opener) {
   blocks.push(h("section", { class: "block" }, h("h3", {}, "Favorites"), h("button", { class: "btn alt", type: "button", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "Manage favorite spots")));
   blocks.push(h("section", { class: "block" }, h("h3", {}, "Share"), h("button", { class: "btn", type: "button", onclick: shareReport }, "Share report")));
   blocks.push(h("section", { class: "block" }, h("h3", {}, "Credits & data"), h("button", { class: "btn alt", type: "button", onclick: (e) => openCreditsSheet(e.currentTarget) }, "Image credits"),
-    h("p", { class: "fine" }, "Fishing outlooks use the report's weather, tide, wave, and local history inputs. See Data & Sources on Today for provider and freshness details.")));
+    h("p", { class: "fine" }, "Ratings use weather, tide, wave and local catch-history data. See Data & sources on Today for details.")));
   blocks.push(h("section", { class: "block about-block" }, h("h3", {}, "About"),
-    h("p", {}, `Data updated ${fmtTime(c.run.generatedAt)}`), h("p", { class: "fine" }, "Data stays on this device"),
+    h("p", {}, `Report updated ${fmtTime(c.run.generatedAt)}`), h("p", { class: "fine" }, "Your catches and settings stay on this device"),
     h("a", { href: "https://myfwc.com/fishing/saltwater/recreational/", target: "_blank", rel: "noopener" }, "FWC fishing rules")));
   const body = h("div", { class: "more-sheet" }, blocks);
   openSheet("More", body, opener);

@@ -60,7 +60,7 @@ export function formatCopyMessage(message) {
   if (typeof message === "string") return message;
   if (typeof message.text === "string" && message.text) return message.text;
   const table = message.kind === "gate" ? GATE_COPY : message.kind === "reason" ? REASON_COPY : {};
-  return table[message.code] ?? String(message.code ?? "").replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/[._-]+/g," ").replace(/^./,x=>x.toUpperCase());
+  return table[message.code] ?? String(message.code ?? "").replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/[._-]+/g," ").toLowerCase().replace(/^./,x=>x.toUpperCase());
 }
 export const formatHeadline = (run, _now) => {
   const headline=formatCopyMessage(run.recommendation.headline);
@@ -94,7 +94,7 @@ export function sourceSummaries(sources, aging=false, timeLabel=(v)=>v??"") {
   const providerLabel=x=>({nws:"NWS","open-meteo":"Open-Meteo",ndbc:"NDBC",secoora:"SECOORA",coops:"NOAA CO-OPS","matanzas-riverkeeper":"Matanzas Riverkeeper"}[x]??x);
   return [...groups.values()].map(x=>({
     ...x,label:SOURCE_LABELS[x.kind]??String(x.kind).replace(/([a-z0-9])([A-Z])/g,"$1 $2").replace(/^./,v=>v.toUpperCase()),
-    state:x.status==="unavailable"?"Unavailable":x.status==="stale"?"Stale":x.status==="fallback"?`Fallback${x.provider?` · ${providerLabel(x.provider)}`:""}`:aging?`As of ${timeLabel(x.fetchedAt)}`:`${x.provider?`${providerLabel(x.provider)} · `:""}Current`,
+    state:x.status==="unavailable"?"Unavailable":x.status==="stale"?"Stale":x.status==="fallback"?`Backup${x.provider?` · ${providerLabel(x.provider)}`:""}`:aging?`As of ${timeLabel(x.fetchedAt)}`:`${x.provider?`${providerLabel(x.provider)} · `:""}Current`,
   }));
 }
 export function nextWindowLabel(run, rec, now) {
