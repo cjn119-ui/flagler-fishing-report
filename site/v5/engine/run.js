@@ -24,7 +24,7 @@ function sourceAge(obs, now) {
 function freshEnough(obs, now, maxAgeMs) { return !!obs?.ok && !obs.stale && has(sourceAge(obs,now)) && sourceAge(obs,now)*60000<=maxAgeMs; }
 function freshness(obs, now, label) {
   const age=sourceAge(obs,now), available=!!obs?.ok;
-  return { kind:obs?.kind??label, label, provider:obs?.provider??null, url:obs?.url??null, status:!available?"unavailable":obs.stale?"stale":obs.usedFallback?"fallback":"current", available, ageMinutes:age, stale:!!obs?.stale, usedFallback:!!obs?.usedFallback, fetchedAt:obs?.fetchedAt??null, observedAt:obs?.observedAt??null, issuedAt:obs?.issuedAt??null, affects:obs?.kind??label };
+  return { kind:obs?.kind??label, locationId:obs?.locationId??null, label, provider:obs?.provider??null, url:obs?.url??null, status:!available?"unavailable":obs.stale?"stale":obs.usedFallback?"fallback":"current", available, ageMinutes:age, stale:!!obs?.stale, usedFallback:!!obs?.usedFallback, fetchedAt:obs?.fetchedAt??null, observedAt:obs?.observedAt??null, issuedAt:obs?.issuedAt??null, affects:obs?.kind??label };
 }
 function indexInputs(observations) {
   const m=new Map(),rank=o=>!o?.ok?0:o.stale?1:o.usedFallback?2:3; for(const o of observations??[]) { if(!o?.locationId||!o?.kind) continue; const k=`${o.locationId}\0${o.kind}`; const old=m.get(k); if(!old||rank(o)>rank(old)||rank(o)===rank(old)&&Date.parse(o.fetchedAt??0)>Date.parse(old.fetchedAt??0))m.set(k,o); }
@@ -39,6 +39,13 @@ function carryInputs(current, previousRuns, now) {
     map.set(k,copyOld); carried.push(copyOld);
   }
   return { observations:[...map.values()].sort((a,b)=>`${a.locationId}/${a.kind}/${a.provider}`.localeCompare(`${b.locationId}/${b.kind}/${b.provider}`)), carried };
+}
+// A failed optional pressure forecast remains visible in source diagnostics, but
+// current station trend coverage is enough for the run's current-data status.
+function pressureCovered(entry, map, now) {
+  if(entry.kind!=="pressureForecast")return false;
+  const station=map.get(`${entry.locationId}\0pressureObservations`);
+  return freshEnough(station,now,60*60000)&&has(pressureChange(station,null,utc(now)));
 }
 function intervalAt(rows, at) {
   const t=Date.parse(at); return rows.find(x=>Date.parse(x.validFrom??x.startTime??"")<=t && Date.parse(x.validTo??x.endTime??"")>t) ?? null;
@@ -159,7 +166,11 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
   const todayDate=localDay(nowMs),tomorrowDate=localDay(Date.parse(`${todayDate}T12:00:00Z`)+86400000), horizonSlots={today:generateSlots({now:nowMs,horizon:"today",params}),tomorrow:generateSlots({now:nowMs,horizon:"tomorrow",params})};
   const indexed=[],details={};
   for(const horizon of ["today","tomorrow"]) for(const loc of active) for(const mode of loc.modes??[]) {
-    const modeSlots=horizonSlots[horizon], get=conditionsAtFor(loc,obsMap,nowMs), src=observationsFor(obsMap,loc), windObs=src("waveForecast");
+    const modeSlots=horizonSlots[horizon];
+    // Only shorten the window requirement when today's entire remaining horizon is shorter.
+    const scoringParams=horizon==="today"&&modeSlots.length&&modeSlots.length*params.windows.slotMinutes<params.windows.minimumMinutes
+      ? {...params,windows:{...params.windows,minimumMinutes:modeSlots.length*params.windows.slotMinutes}} : params;
+    const get=conditionsAtFor(loc,obsMap,nowMs), src=observationsFor(obsMap,loc), windObs=src("waveForecast");
     const forecasts=[src("hourlyForecast"),src("gridForecast")].filter(x=>x?.ok&&!x.stale);
     const issuance=x=>{const value=Date.parse(x?.issuedAt??"");return Number.isFinite(value)?value:-Infinity;};
     const forecast=forecasts.sort((a,b)=>issuance(b)-issuance(a))[0];
@@ -167,12 +178,13 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
     for(const s of species) {
       if(!s.modes?.includes(mode))continue;
       const scores=scoreSpecies({species:s,spot:loc,mode,history,slots:modeSlots,conditionsAt:get,now:utc(nowMs),horizon,forecastAgeHours:forecastAge,alertsChecked,
-        waveCoverage:(at,h)=>h==="tomorrow"?waveHasCoverage(windObs,at,utc(Date.parse(at)+SLOT_MS),nowMs,h):freshEnough(src("waves"),nowMs,3*3600000),params});
+        waveCoverage:(at,h)=>h==="tomorrow"?waveHasCoverage(windObs,at,utc(Date.parse(at)+SLOT_MS),nowMs,h):freshEnough(src("waves"),nowMs,3*3600000),params:scoringParams});
       if(!scores)continue;
       const failedKinds=[...new Set(carried.observations.filter(o=>o.locationId===loc.id&&(!o.ok||o.stale)).map(o=>o.kind))];
       for(const w of scores.windows) {
-        for(const kind of failedKinds){const reason={code:"sourceUnavailable",params:{kind},text:copy("confidence.sourceUnavailable","Some current data sources are unavailable."),penalty:5,kind:"live"};w.confidenceReasons=[...(w.confidenceReasons??[]),reason];}
-        if(failedKinds.length){w.confidence=Math.max(params.confidence.minimum,w.confidence-failedKinds.length*5);w.confidenceLevel=w.confidence>=params.thresholds.highConfidenceMin?"High":w.confidence>=params.thresholds.moderateConfidenceMin?"Moderate":"Low";if(w.verdict==="GO")w.verdict="MAYBE";w.amberQualifier=w.confidence>=params.thresholds.moderateConfidenceMin?w.confidenceReasons.find(x=>x.kind==="live")?.text??null:null;}
+        const windowFailedKinds=failedKinds.filter(kind=>kind!=="pressureForecast"||!w.slots.every(x=>has(x.conditions?.pressureChange6hHpa)));
+        for(const kind of windowFailedKinds){const reason={code:"sourceUnavailable",params:{kind},text:copy("confidence.sourceUnavailable","Some current data sources are unavailable."),penalty:5,kind:"live"};w.confidenceReasons=[...(w.confidenceReasons??[]),reason];}
+        if(windowFailedKinds.length){w.confidence=Math.max(params.confidence.minimum,w.confidence-windowFailedKinds.length*5);w.confidenceLevel=w.confidence>=params.thresholds.highConfidenceMin?"High":w.confidence>=params.thresholds.moderateConfidenceMin?"Moderate":"Low";if(w.verdict==="GO")w.verdict="MAYBE";w.amberQualifier=w.confidence>=params.thresholds.moderateConfidenceMin?w.confidenceReasons.find(x=>x.kind==="live")?.text??null:null;}
         const avgWave=waveHasCoverage(windObs,w.start,w.end,nowMs,horizon), pred={...scores, speciesId:s.id,locationId:loc.id,mode,forecastObs:forecast,area:loc.area,window:w};
         const targetDate=horizon==="today"?todayDate:tomorrowDate, detailRunId=`${horizon}-${targetDate}-${utc(nowMs).replace(/\D/g,"").slice(0,14)}-${hashes.inputsHash.slice(0,10)}`;
         const detailKey=`details/${detailRunId}/${loc.id}-${mode}.json`;
@@ -186,13 +198,13 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
   const allCandidates=indexed, runs={};
   for(const horizon of ["today","tomorrow"]) {
     const targetDate=horizon==="today"?todayDate:tomorrowDate, list=allCandidates.filter(x=>x.horizon===horizon);
-    if(!list.length&&horizon==="today"){
+    if(!list.length&&horizon==="today"&&!horizonSlots.today.length){
       const future=allCandidates.find(x=>x.horizon==="tomorrow"&&x.eligibility==="realistic");
       if(!future)throw new Error(`No scored window available for tomorrow ${tomorrowDate}`);
       const runId=`today-${targetDate}-${utc(nowMs).replace(/\D/g,"").slice(0,14)}-${hashes.inputsHash.slice(0,10)}`,closed=makeRecommendation({candidate:future,candidates:[future],locations:active,species,horizon,targetDate,now:nowMs,scope:{kind:"best"},hash:runId});
-      closed.verdict="SKIP";closed.suitability=0;closed.state={kind:"closed",code:"noRemainingWindowsToday",text:"No remaining windows today."};closed.headline=copy("recommendation.closed","No remaining windows today.");closed.reason={code:"noRemainingWindowsToday",text:copy("recommendation.closedReason","Today’s fishing windows have ended. Tomorrow’s forecast is available.")};closed.backup=null;
-      const sourceStatus=carried.observations.filter(x=>active.some(l=>l.id===x.locationId)).map(x=>freshness(x,nowMs,x.kind)),missingInputs=sourceStatus.filter(x=>x.status==="unavailable"||x.stale).map(x=>({kind:x.kind,reason:x.status,locationId:null,text:copy(`missing.${x.kind}`,`${x.label} unavailable or stale.`)}));
-      runs.today=createPredictionRun({schemaVersion:{...SCHEMA_VERSION},id:runId,modelVersion:MODEL_VERSION,paramsHash,historyHash,inputsHash,catalogHash,codeRevision,horizon,targetDate,generatedAt:utc(nowMs),validFrom:utc(nowMs),validTo:utc(nowMs+SLOT_MS),region:"First Coast",status:!sourceStatus.length||sourceStatus.every(x=>x.status==="unavailable")?"degraded":missingInputs.length?"partial":"ok",carriedForward:carried.carried.length>0,missingInputs,recommendation:closed,scopeViews:{best:{recommendationId:closed.id},byLocation:{},bySpecies:{}},locations:active.map(l=>({id:l.id,name:l.name,area:l.area,county:l.county,active:true,modes:l.modes,structure:l.structure,lat:l.lat,lon:l.lon,tideDistanceMi:l.tideDistanceMi})),bySpecies:{},candidates:[],slots:[],days:[],inputs:{sourceStatus,observations:[],priorSelection:null},notes:catalogWarnings,detailsRefs:[]});continue;
+      closed.verdict="SKIP";closed.suitability=0;closed.state={kind:"closed",code:"noRemainingWindowsToday",text:"No remaining windows today."};closed.headline=copy("recommendation.closed","No remaining windows today.");closed.reason={code:"noRemainingWindowsToday",text:copy("recommendation.closedReason","Today’s fishing windows have ended. Tomorrow’s forecast is available.")};closed.backup=null;closed.whenLabel=copy("recommendation.closed","Today’s fishing windows have ended.");closed.benchmarkLine=null;
+      const sourceStatus=carried.observations.filter(x=>active.some(l=>l.id===x.locationId)).map(x=>freshness(x,nowMs,x.kind)),missingInputs=sourceStatus.filter(x=>x.status==="unavailable"||x.stale).map(x=>({kind:x.kind,reason:x.status,locationId:x.locationId,text:copy(`missing.${x.kind}`,`${x.label} unavailable or stale.`)}));
+      runs.today=createPredictionRun({schemaVersion:{...SCHEMA_VERSION},id:runId,modelVersion:MODEL_VERSION,paramsHash,historyHash,inputsHash,catalogHash,codeRevision,horizon,targetDate,generatedAt:utc(nowMs),validFrom:utc(nowMs),validTo:utc(nowMs+SLOT_MS),region:"First Coast",status:!sourceStatus.length||sourceStatus.every(x=>x.status==="unavailable")?"degraded":missingInputs.some(x=>!pressureCovered(x,obsMap,nowMs))?"partial":"ok",carriedForward:carried.carried.length>0,missingInputs,recommendation:closed,scopeViews:{best:{recommendationId:closed.id},byLocation:{},bySpecies:{}},locations:active.map(l=>({id:l.id,name:l.name,area:l.area,county:l.county,active:true,modes:l.modes,structure:l.structure,lat:l.lat,lon:l.lon,tideDistanceMi:l.tideDistanceMi})),bySpecies:{},candidates:[],slots:[],days:[],inputs:{sourceStatus,observations:[],priorSelection:null},notes:catalogWarnings,detailsRefs:[]});continue;
     }
     if(!list.length)throw new Error(`No scored window available for ${horizon} ${targetDate}`);
     const sameDatePrior=prev.find(x=>x?.targetDate===targetDate);
@@ -204,12 +216,12 @@ export async function buildPredictionRun({now,locations=[],species=[],history,ob
     const bySpecies={};for(const s of species){const xs=list.filter(x=>x.speciesId===s.id),selected=selectDriver(xs,{preferences,params}),focused=selected.selected?makeRecommendation({candidate:selected.selected,candidates:list,locations:active,species,horizon,targetDate,now:nowMs,scope:{kind:"species",speciesId:s.id},focus:{speciesId:s.id},hash:runId,selectionOverride:selected.selection,params}):null;bySpecies[s.id]={best:selected.selected?.id??null,focusedRecommendationId:focused?.id??null,focused};}
     const timeline=[];for(const loc of active)for(const mode of loc.modes??[]){const matching=list.filter(x=>x.locationId===loc.id&&x.mode===mode);const times=(horizonSlots[horizon]??[]).map(at=>{const xs=matching.map(x=>x.slots.find(q=>q.at===at)).filter(Boolean).sort((a,b)=>(b.suitability??-1)-(a.suitability??-1)), c=conditionsAtFor(loc,obsMap,nowMs)(at), astro=getAstronomy(localDay(at),loc.lat,loc.lon);return {at,suitability:xs[0]?.suitability??null,tide:{heightFt:c.tideHeightFt,rateFtPerHr:c.tideRateFtPerHr,direction:c.tideDirection,phase:null},lightPhase:null,moonMarks:astro.moon?.periods??[],topSpecies:xs.slice(0,3).map(x=>({speciesId:matching.find(m=>m.slots.includes(x))?.speciesId??null,suitability:x.suitability})),conditionLabels:[]};});timeline.push({locationId:loc.id,mode,slots:times});}
     const sourceStatus=carried.observations.filter(x=>active.some(l=>l.id===x.locationId)).map(x=>freshness(x,nowMs,x.kind));
-    const missingInputs=sourceStatus.filter(x=>x.status==="unavailable"||x.stale).map(x=>({kind:x.kind,reason:x.status,locationId:carried.observations.find(o=>o.kind===x.kind)?.locationId??null,text:copy(`missing.${x.kind}`,`${x.label} unavailable or stale.`)}));
+    const missingInputs=sourceStatus.filter(x=>x.status==="unavailable"||x.stale).map(x=>({kind:x.kind,reason:x.status,locationId:x.locationId,text:copy(`missing.${x.kind}`,`${x.label} unavailable or stale.`)}));
     const metWeatherFallback=new Set(carried.observations.filter(x=>x.provider==="open-meteo"&&x.kind==="gridForecast").map(x=>x.locationId));
     const requiredObs=carried.observations.filter(x=>["hourlyForecast","gridForecast","alerts","tidePredictions","waves","waterTemperature","pressureObservations","pressureForecast","waveForecast","windObservations"].includes(x.kind))
       .filter(x=>!(x.provider==="open-meteo"&&x.kind==="hourlyForecast"&&metWeatherFallback.has(x.locationId)));
     const candidatePredictions=list.map(x=>compactSpeciesPrediction(x,x.window,x.detailsRef));
-    const run=createPredictionRun({schemaVersion:{...SCHEMA_VERSION},id:runId,modelVersion:MODEL_VERSION,paramsHash,historyHash,inputsHash,catalogHash,codeRevision,horizon,targetDate,generatedAt:utc(nowMs),validFrom:utc(modeSlotsStart(horizonSlots[horizon],nowMs)),validTo:utc(modeSlotsEnd(horizonSlots[horizon],nowMs)),region:"First Coast",status:!sourceStatus.length||sourceStatus.every(x=>x.status==="unavailable")?"degraded":missingInputs.length?"partial":"ok",carriedForward:carried.carried.length>0,missingInputs,recommendation,scopeViews:{best:{recommendationId:recommendation.id},byLocation,bySpecies},locations:active.map(l=>({id:l.id,name:l.name,area:l.area,county:l.county,active:true,modes:l.modes,structure:l.structure,lat:l.lat,lon:l.lon,tideDistanceMi:l.tideDistanceMi})),bySpecies,candidates:candidatePredictions,slots:timeline,days:[],inputs:{sourceStatus,observations:requiredObs,priorSelection:sameDatePrior?{runId:sameDatePrior.id,recommendationId:sameDatePrior.recommendation?.id??null,targetDate}:null},notes:catalogWarnings,detailsRefs:Object.keys(details).filter(k=>k.startsWith(`details/${horizon}-`))});
+    const run=createPredictionRun({schemaVersion:{...SCHEMA_VERSION},id:runId,modelVersion:MODEL_VERSION,paramsHash,historyHash,inputsHash,catalogHash,codeRevision,horizon,targetDate,generatedAt:utc(nowMs),validFrom:utc(modeSlotsStart(horizonSlots[horizon],nowMs)),validTo:utc(modeSlotsEnd(horizonSlots[horizon],nowMs)),region:"First Coast",status:!sourceStatus.length||sourceStatus.every(x=>x.status==="unavailable")?"degraded":missingInputs.some(x=>!pressureCovered(x,obsMap,nowMs))?"partial":"ok",carriedForward:carried.carried.length>0,missingInputs,recommendation,scopeViews:{best:{recommendationId:recommendation.id},byLocation,bySpecies},locations:active.map(l=>({id:l.id,name:l.name,area:l.area,county:l.county,active:true,modes:l.modes,structure:l.structure,lat:l.lat,lon:l.lon,tideDistanceMi:l.tideDistanceMi})),bySpecies,candidates:candidatePredictions,slots:timeline,days:[],inputs:{sourceStatus,observations:requiredObs,priorSelection:sameDatePrior?{runId:sameDatePrior.id,recommendationId:sameDatePrior.recommendation?.id??null,targetDate}:null},notes:catalogWarnings,detailsRefs:Object.keys(details).filter(k=>k.startsWith(`details/${horizon}-`))});
     runs[horizon]=run;
   }
   runs.today.days=planner(nowMs,runs.today,runs.tomorrow,history,active,carried.observations,params);

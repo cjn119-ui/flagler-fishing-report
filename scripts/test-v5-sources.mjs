@@ -108,6 +108,8 @@ await check("Open-Meteo adapters normalize UTC weather and marine forecast inter
   assert.equal(weather.grid.values.windDirection[0].value, 90);
   assert.equal(weather.grid.values.probabilityOfPrecipitation[0].value, 20);
   assert.equal(weather.pressureForecast.kind, "pressureForecast");
+  assert.equal(weather.pressureForecast.ok, true);
+  assert.equal(weather.pressureForecast.stale, false);
   assert.equal(weather.pressureForecast.values.rows.length, 168);
   assert.equal(weather.pressureForecast.values.rows[6].pressureHpa, 1011.4);
   assert.equal(weather.pressureForecast.usedFallback, false, "pressure forecast is a primary source");

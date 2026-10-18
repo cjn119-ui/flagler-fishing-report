@@ -1077,3 +1077,30 @@ html,body,button,input,select,textarea,summary,svg text { font-family:var(--font
 .home-spot label { display:grid; gap:6px; }
 .home-spot select { min-height:44px; width:100%; padding:8px 12px; border:1px solid var(--line-strong); border-radius:12px; background:var(--surface-2); color:var(--text); font:inherit; }
 .about-block > a { min-height:44px; display:flex; align-items:center; color:var(--accent); }
+
+/* Species browser: one grouped list with readable, even-height tiles. */
+.species-filters { margin-top:0; }
+.species-browser .search-box + .species-filters { margin-top:8px; }
+.species-filters .seg button,.species-clear { min-height:44px; }
+.species-groups { display:grid; gap:20px; }
+.species-group { min-width:0; }
+.species-group-head { display:flex; align-items:baseline; gap:8px; margin:8px 0 10px; }
+.species-group-head h2 { margin:0; font-size:var(--fs-sub); }
+.species-group-head > span { min-width:24px; color:var(--muted); font-size:var(--fs-sm); font-variant-numeric:tabular-nums; }
+.species-group .grid { align-items:stretch; }
+.species-group .grid > li { display:flex; min-width:0; }
+.species-group .sp { width:100%; min-height:250px; }
+.species-group .species-thumb { flex:none; height:76px; }
+.species-group .sp .n { min-height:2.5em; margin:7px 0 4px; }
+.species-band { min-height:22px; display:flex; align-items:center; font-size:var(--fs-sm); font-weight:700; }
+.species-group .tag.eligibility { min-height:28px; display:flex; align-items:center; }
+.species-group .trip-rate { min-height:2.6em; display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.species-group .species-fit-bar { height:3px; flex:none; margin-top:auto; border:0; }
+.species-empty { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.species-clear { flex:none; }
+
+/* Species sheet tabs stay reachable while its content scrolls. */
+.species-tabs { position:sticky; top:0; z-index:5; display:flex; gap:6px; margin:8px 0 16px; padding:7px 0; overflow:visible; background:color-mix(in srgb,var(--surface) 96%,transparent); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+.species-tab { min-width:0; min-height:44px; flex:1 1 0; padding:0 8px; }
+.species-detail .block { scroll-margin-top:64px; }
+.species-group .sp { min-height:0; }

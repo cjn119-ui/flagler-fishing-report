@@ -7,7 +7,7 @@ import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
 import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
-import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesTripRate, unsafeCapped } from "./species-presentation.js";
+import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesFitWord, speciesTripRate, unsafeCapped } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
 import { observedWindAt } from "../engine/observed-wind.js";
 import { fmtWind, gridTemperatureF, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
@@ -88,6 +88,7 @@ const PATHS = {
   star: "M12 3.5l2.7 5.5 6 .9-4.4 4.2 1 6L12 17.2 6.7 20.1l1-6L3.3 9.9l6-.9L12 3.5Z",
   pier: "M3 8h18M6 8v11M12 8v11M18 8v11M3 19h18", inshore: "M12 4v12M8.5 7.5h7M5 13c0 4 3 7 7 7s7-3 7-7",
   pin: "M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z",
+  search: "M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM15.5 15.5 20 20",
 };
 function icon(name, cls = "") { return s("svg", { viewBox: "0 0 24 24", "aria-hidden": "true", class: cls }, s("path", { d: PATHS[name] })); }
 const modeIcon = (m) => icon(m === "pier" ? "pier" : m === "inshore" ? "inshore" : "wave");
@@ -116,7 +117,7 @@ function spotPhoto(id, cls = "", alt = "", showCaption = false) {
   if (showCaption && creditFor(file) && id === "staug-pier") figure.append(h("figcaption", { class: "photo-caption" }, "Photo shows the pier before current repairs"));
   return figure;
 }
-function searchBox(label, value, oninput) { const id = label.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, ""); return h("label", { class: "search-box" }, icon("pin"), h("span", { class: "sr-only" }, label), h("input", { id, type: "search", placeholder: label, value, "data-fk": id, oninput })); }
+function searchBox(label, value, oninput) { const id = label.toLowerCase().replace(/[^a-z]+/g, "-").replace(/^-|-$/g, ""); return h("label", { class: "search-box" }, icon("search"), h("span", { class: "sr-only" }, label), h("input", { id, type: "search", placeholder: label, value, "data-fk": id, oninput })); }
 
 /* ---------- formatting (display only) ---------- */
 const validDate = (d) => d != null && d !== "" && Number.isFinite(+new Date(d));
@@ -1032,24 +1033,37 @@ function speciesView(c) {
   const rows = speciesRows(c);
   const matching = rows.filter((x) => !st.speciesSearch || x.sp.name.toLowerCase().includes(st.speciesSearch.toLowerCase()));
   const matchingMain = matching.filter((x) => !x.sp.bycatch), matchingBycatch = matching.filter((x) => x.sp.bycatch);
+  const grouped = { good: [], possible: [], today: [], uncommon: [], bycatch: matchingBycatch };
+  matchingMain.forEach((row) => {
+    if (row.focused || row.best?.eligibility === "realistic") {
+      if (unsafeCapped(row.focused ?? row.best) || row.suit == null || row.suit < 30) grouped.today.push(row);
+      else if (row.suit < 50) grouped.possible.push(row);
+      else grouped.good.push(row);
+    } else if (row.best) grouped.uncommon.push(row);
+    else grouped.today.push(row);
+  });
   const tiles = (items) => h("ul", { class: "grid" }, items.map(({ sp, best, suit, focused }) => {
     const notRealistic = !focused && best?.eligibility !== "realistic";
     const showScore = suit != null && !notRealistic;
+    const capped = unsafeCapped(focused ?? best);
+    const band = speciesFitWord(suit, focused ?? best);
     return h("li", {}, h("button", { class: `sp${!showScore ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
-      "aria-label": `${sp.name}, ${showScore ? (unsafeCapped(focused ?? best) ? "unsafe conditions" : `suitability ${suit}`) : notRealistic ? speciesEligibilityLabel(best) : "no reading"}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
+      "aria-label": `${sp.name}, ${showScore ? (capped ? "Unsafe conditions" : `suitability ${suit}, ${band}`) : notRealistic ? speciesEligibilityLabel(best) : "no reading"}${sp.bycatch ? ", bycatch" : ""}`, onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-      showScore ? h("div", { class: "big" }, h("b", {}, unsafeCapped(focused ?? best) ? "—" : suit), h("span", {}, speciesFitBand(suit, focused ?? best))) : null,
+      showScore ? h("div", { class: "species-band" }, h("b", {}, band)) : null,
       best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
       best?.historicalRate ? h("small", { class: "trip-rate" }, speciesTripRate(best)) : null,
-      showScore ? h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${suit}%` })) : null));
+      showScore && !capped ? h("div", { class: "bar-m species-fit-bar", "aria-hidden": "true" }, h("i", { style: `width:${suit}%` })) : null));
   }));
+  const group = (title, items, cls) => items.length ? h("section", { class: `species-group ${cls}`, "aria-label": `${title}, ${items.length} species` },
+    h("div", { class: "species-group-head" }, h("h2", {}, title), h("span", {}, items.length)), tiles(items)) : null;
+  const noMatches = !!st.speciesSearch && matching.length === 0;
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
     h("div", { class: "page-heading" }, h("h1", {}, "Species")),
     searchBox("Search species", st.speciesSearch, (e) => { st.speciesSearch = e.target.value; render(); }),
-    st.speciesSearch && !matching.length ? h("p", { class: "fine species-empty", role: "status" }, `No species match “${st.speciesSearch}”.`) : null,
-    h("p", { class: "fine" }, "Realistic targets first · ranked by today's conditions fit"), h("p", { class: "fine eligibility-legend" }, "Dimmed means the fish is less commonly caught, off-list, or needs structure, so no score is shown."),
-    h("div", { class: "species-carousel" }, matchingMain.slice(0, 12).map(({ sp }) => h("button", { class: `species-avatar${st.species === sp.id ? " on" : ""}`, type: "button", "aria-label": sp.name, onclick: (e) => openSpecies(sp.id, e.currentTarget) }, fishImage(sp.id), h("span", {}, sp.name)))),
-    h("div", { class: "tools-row" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })), tiles(matchingMain), h("details",{class:"also",open:session.also||null,ontoggle:(e)=>{session.also=e.currentTarget.open;}},h("summary",{},"Also biting (bycatch)"),tiles(matchingBycatch)))];
+    h("div", { class: "tools-row species-filters" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })),
+    noMatches ? h("p", { class: "fine species-empty", role: "status" }, `No species match “${st.speciesSearch}”`, h("button", { class: "btn alt species-clear", type: "button", "aria-label": "Clear species search", onclick: () => { st.speciesSearch = ""; render(); } }, "Clear")) : null,
+    noMatches ? null : h("div", { class: "species-groups" }, group("Good bets", grouped.good, "good"), group("Possible", grouped.possible, "possible"), group("Not today", grouped.today, "today"), group("Less common here", grouped.uncommon, "uncommon"), group("Also biting (bycatch)", grouped.bycatch, "bycatch")))];
 }
 
 /* ---------- PLAN ---------- */
@@ -1539,14 +1553,14 @@ function openSpecies(id, opener) {
   const monthName = best?.historicalRate?.month ? new Intl.DateTimeFormat("en-US", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(2020, best.historicalRate.month - 1, 1))) : "Seasonal pattern";
   const body = h("div", { class: "species-detail" }, fishImage(id, "species-detail-photo"),
     h("p", { class: "species-season" }, `${monthName} · ${sp.modes.map(modeLabel).join(" / ")}`),
-    h("nav", { class: "species-tabs", "aria-label": "Species details" }, ["Overview", "Techniques", "Bait & Gear", "Best Times"].map((label) => h("button", { type: "button", class: "species-tab", onclick: (e) => {
-      const targets = { Overview: "Best for this fish", Techniques: "Use", "Bait & Gear": "Use", "Best Times": "Local history" };
-      const section = [...body.querySelectorAll(":scope > .block")].find((x) => x.querySelector("h3")?.textContent === targets[label]);
+    h("nav", { class: "species-tabs", "aria-label": "Species details" }, ["Overview", "How to fish", "Season"].map((label, index) => h("button", { type: "button", class: "species-tab", "data-section": ["overview", "how-to-fish", "season"][index], "aria-current": String(index === 0), onclick: (e) => {
+      const targets = { Overview: ["Best for this fish", "Why now"], "How to fish": "How to fish", Season: "Season" };
+      const section = [...body.querySelectorAll(":scope > .block")].find((x) => (Array.isArray(targets[label]) ? targets[label] : [targets[label]]).includes(x.querySelector("h3")?.textContent));
       section?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
       body.querySelectorAll(".species-tab").forEach((b) => b.setAttribute("aria-current", String(b === e.currentTarget)));
     } }, label))),
     sp.alt ? h("p", { class: "muted" }, sp.alt) : null,
-    h("div", { class: "kv", style: "margin-top:10px" }, h("span", { class: "stat-big" }, capped ? "—" : suit ?? "—"), h("span", { class: "muted" }, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : `Suitability${best?.band ? ` · ${best.band}` : ""}`), sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
+    h("div", { class: "kv", style: "margin-top:10px" }, h("span", { class: "stat-big" }, capped ? "—" : suit ?? "—"), h("span", { class: "muted" }, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : speciesFitWord(suit, best)), sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
     !realistic && reason ? h("p", { class: "fine eligibility" }, reason) : null,
     best?.historicalRate ? h("p", { class: "fine trip-rate" }, speciesTripRate(best)) : null,
     place?.displayName ? h("div", { class: "block" }, h("h3", {}, "Best place and time"), h("p", { style: "font-weight:600" }, place.displayName, " ", h("span", { class: "mchip" }, modeIcon(place.mode), modeLabel(place.mode))), place.window ? h("p", { class: "muted" }, fmtRange(place.window.start, place.window.end)) : null) : null,
@@ -1577,8 +1591,9 @@ function openSpecies(id, opener) {
   if(placeBlock) { const verdict = VERDICT_SPOKEN[place.verdict]; placeBlock.replaceChildren(h("h3",{},"Best for this fish"),h("button",{class:"bet",type:"button",onclick:()=>scope({spot:place.locationId ?? best?.locationId,mode:place.mode})},h("span",{},place.displayName," · ",capped || place.verdict === "SKIP" ? skipShort(useFocused ? focused : best) : fmtRange(place.window?.start,place.window?.end),ended && !capped?" · ended":""),verdict ? h("span",{class:"vchip","data-v":place.verdict},verdict) : null)); }
   const reasons = (useFocused ? focused?.why ?? [] : best?.why ?? []).filter((x)=>!/unavailable|thin|buoy|stale|missing/i.test(x.code??""));
   const why = h("div",{class:"block"},h("h3",{},"Why now"),h("ul",{class:"whys"},(capped ? reasons.filter((x)=>x.effect==="hurts").slice(0,2) : [...reasons.filter((x)=>x.effect==="helps").slice(0,2),...reasons.filter((x)=>x.effect==="hurts").slice(0,1)]).map((x)=>h("li",{},effectMark(x.effect),msg(x)))));
-  if(setupBlock) { setupBlock.querySelector("h3").textContent="Use"; setupBlock.querySelector(".fine")?.remove(); }
-  if(seasonBlock) { seasonBlock.querySelector("h3").textContent="Local history"; seasonBlock.querySelector(".fine").textContent="Share of surveyed trips that caught it, by month"; if(historyBlock) { seasonBlock.append(...[...historyBlock.children].slice(1)); historyBlock.remove(); } }
+  if(setupBlock) { setupBlock.querySelector("h3").textContent="How to fish"; setupBlock.querySelector(".fine")?.remove(); }
+  if(seasonBlock) { seasonBlock.querySelector("h3").textContent="Season"; seasonBlock.querySelector(".fine").textContent="Share of surveyed trips that caught it, by month"; if(historyBlock) { seasonBlock.append(...[...historyBlock.children].slice(1)); historyBlock.remove(); } }
+  else if(historyBlock) historyBlock.querySelector("h3").textContent="Season";
   if (!why.querySelector("li")) {
     const note = h("p",{class:"fine"},"Loading conditions…"); why.append(note);
     const at = best?.window?.start ?? best?.at ?? c.now;
@@ -1592,7 +1607,24 @@ function openSpecies(id, opener) {
   body.append(why); if(setupBlock) body.append(setupBlock); if(seasonBlock) body.append(seasonBlock); else if(historyBlock) body.append(historyBlock);
   body.append(h("a",{class:"btn alt",href:"https://myfwc.com/fishing/saltwater/recreational/",target:"_blank",rel:"noopener"},"Check current FWC rules")); actionHost?.remove();
   if(matchMedia("(min-width:900px)").matches && st.tab === "species") { const browser = document.querySelector(".species-browser"); let layout=browser.parentElement.querySelector(".species-layout"); if(!layout) { layout=h("div",{class:"species-layout"}); browser.replaceWith(layout); layout.append(browser); } let pane=layout.querySelector(".species-pane"); if(!pane) { pane=h("section",{class:"card species-pane"});layout.append(pane); } pane.replaceChildren(h("h2",{},sp.name),body); }
-  else { openSheet(sp.name, body, opener); if(action) { const footer=h("div",{class:"sheet-f",hidden:true},h("button",{class:action.className,type:"button",disabled:action.disabled||null,onclick:()=>action.click()},action.textContent));sheet.panel.append(footer);sheet.observer=new IntersectionObserver(([entry])=>{footer.hidden=entry.isIntersecting;},{root:sheet.panel.querySelector(".sheet-b")});sheet.observer.observe(action); } }
+  else {
+    openSheet(sp.name, body, opener);
+    const footer = action ? h("div", { class: "sheet-f", hidden: true }, h("button", { class: action.className, type: "button", disabled: action.disabled || null, onclick: () => action.click() }, action.textContent)) : null;
+    if (footer) sheet.panel.append(footer);
+    const scrollBody = sheet.panel.querySelector(".sheet-b"), nav = body.querySelector(".species-tabs");
+    sheet.observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.target === action && footer) footer.hidden = entry.isIntersecting;
+        if (entry.isIntersecting && entry.target.matches(".species-detail > .block")) {
+          const title = entry.target.querySelector("h3")?.textContent;
+          const section = title === "How to fish" ? "how-to-fish" : title === "Season" ? "season" : "overview";
+          nav.querySelectorAll(".species-tab").forEach((button) => button.setAttribute("aria-current", String(button.dataset.section === section)));
+        }
+      });
+    }, { root: scrollBody, rootMargin: "-12% 0px -68% 0px", threshold: 0 });
+    if (action) sheet.observer.observe(action);
+    body.querySelectorAll(":scope > .block").forEach((block) => sheet.observer.observe(block));
+  }
 
 }
 
