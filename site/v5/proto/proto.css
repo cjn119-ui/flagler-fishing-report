@@ -1070,3 +1070,10 @@ html,body,button,input,select,textarea,summary,svg text { font-family:var(--font
 #verdict .seal-word { font-size:15px; letter-spacing:-.01em; text-align:center; }
 /* Skip hours held by a safety gate: muted, hatched, never the window color. */
 .scrub .sb.held, .scrub .sb.held.in { background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--skip) 28%,transparent) 0 4px,color-mix(in srgb,var(--skip) 12%,transparent) 4px 8px); box-shadow:none; }
+
+/* Comfortable tap targets for source links and the two explanatory disclosures. */
+#sources a[href^="https://open-meteo.com/"], #sources a[href^="https://creativecommons.org/licenses/by/4.0/"],
+.why-verdict > summary, .setup-disclosure > summary { min-height:44px; padding-block:8px; display:inline-flex; align-items:center; }
+.home-spot label { display:grid; gap:6px; }
+.home-spot select { min-height:44px; width:100%; padding:8px 12px; border:1px solid var(--line-strong); border-radius:12px; background:var(--surface-2); color:var(--text); font:inherit; }
+.about-block > a { min-height:44px; display:flex; align-items:center; color:var(--accent); }

@@ -6,8 +6,8 @@ export function bestSpeciesCandidate(candidates = []) {
 export function speciesEligibilityLabel(candidate) {
   if (!candidate || candidate.eligibility === "realistic") return "";
   const code = candidate.eligibilityReason?.code;
-  return ({ belowRealisticFloor: "Rarely caught", historyUnavailable: "No survey data", notOnSpotList: "Not on our spot lists", structureRequired: "Needs structure", bycatch: "Bycatch", closedForConstruction: "Closed for construction" })[code]
-    ?? ({ rare: "Rarely caught", "off-list": "Not on our spot lists", "no-structure": "Needs structure", bycatch: "Bycatch", closed: "Closed for construction" })[candidate.eligibility]
+  return ({ belowRealisticFloor: "Uncommon here", historyUnavailable: "No survey data", notOnSpotList: "Not a target at these spots", structureRequired: "Needs structure", bycatch: "Bycatch", closedForConstruction: "Closed for construction" })[code]
+    ?? ({ rare: "Uncommon here", "off-list": "Not a target at these spots", "no-structure": "Needs structure", bycatch: "Bycatch", closed: "Closed for construction" })[candidate.eligibility]
     ?? "Eligibility limited";
 }
 
@@ -15,7 +15,8 @@ export function speciesTripRate(candidate) {
   const rate = candidate?.historicalRate;
   if (!Number.isFinite(rate?.rate)) return "";
   const month = rate.monthName ?? new Intl.DateTimeFormat("en-US", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2020, (rate.month ?? 1) - 1, 1)));
-  return `Caught on ~${Math.round(rate.rate * 100)}% of ${month} trips${rate.lowSample ? " · small sample" : ""}`;
+  if (Math.round(rate.rate * 100) === 0) return `Rarely caught in ${month}${rate.lowSample ? " · few surveys" : ""}`;
+  return `Caught on ~${Math.round(rate.rate * 100)}% of ${month} trips${rate.lowSample ? " · few surveys" : ""}`;
 }
 
 // A safety cap pins every score at the same value (49), which reads like a real ranking; say what it is instead.
