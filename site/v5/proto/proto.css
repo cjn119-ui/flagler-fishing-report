@@ -405,11 +405,6 @@ body { overflow-x:visible; }
 :root[data-theme="light"] { --vig:rgba(24,44,68,.10); --vig-hi:rgba(255,255,255,.55); --ga-sheet:80%; --glass-bright:rgba(255,255,255,.88); --ui-edge:#7D8994; --glass-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 10px 28px -20px rgba(15,30,45,.28); }
 html { min-height:100%; }
 body { min-height:100dvh; padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right)); padding-bottom:calc(104px + env(safe-area-inset-bottom)); background:var(--bg); isolation:isolate; }
-/* vignette: fixed so it frames the viewport like iOS; grain tile dithers the long, low-contrast ramps */
-body::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
-  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E"),
-   radial-gradient(ellipse 78% 68% at 50% 42%,transparent 22%,color-mix(in srgb,var(--vig) 55%,transparent) 64%,var(--vig) 100%),
-   radial-gradient(ellipse 70% 58% at 50% 30%,var(--vig-hi),transparent 78%); }
 h1,h2,h3 { line-height:1.3; }
 h1,h2 { font-size:clamp(1.25rem,1.14rem + .45vw,1.75rem); }
 .card h2 { font-size:clamp(1.125rem,1.05rem + .25vw,1.25rem); }
@@ -729,7 +724,6 @@ button:not(:disabled),summary,a { transition:transform var(--dur-1) var(--ease-o
   --scrim:rgba(0,0,0,.84); --vig:rgba(0,0,0,.16); --vig-hi:rgba(92,200,232,.028); --glass-bright:rgba(255,255,255,.12);
 }
 :root[data-night="1"] body { background:#000; }
-:root[data-night="1"] body::before { background:radial-gradient(ellipse 78% 68% at 50% 42%,transparent 22%,rgba(0,0,0,.65) 100%),radial-gradient(ellipse 70% 58% at 50% 30%,rgba(92,200,232,.045),transparent 78%); }
 
 /* Concept redesign: preserve the V5 report content while giving each tab the same editorial rhythm. */
 html,body { overflow-x:hidden; }
@@ -1125,3 +1119,9 @@ html,body,button,input,select,textarea,summary,svg text { font-family:var(--font
 .src-list li, .fine { font-size:13px; }
 .r2, .r2 .when { font-size:14px; }
 .page-heading h1 { font-size:28px; }
+
+/* Horizontal tab slide: keep the compositor to cheap translate-only layers on older phones. */
+.tab-peek { contain:layout paint style; backface-visibility:hidden; -webkit-backface-visibility:hidden; }
+.tab-peek, .tab-peek * { animation:none!important; transition:none!important; }
+body.tab-moving .bar, body.tab-moving .tabbar { -webkit-backdrop-filter:none; backdrop-filter:none; background:color-mix(in srgb,var(--surface) 94%,var(--bg)); }
+body.tab-moving #main { backface-visibility:hidden; -webkit-backface-visibility:hidden; }

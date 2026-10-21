@@ -31,6 +31,14 @@ No Sol in delegation. Bounded work → Codex GPT-6 Luna Low/Medium/High (XHigh o
 - All V5 suites pass (Node 26; Node 22 binary is broken locally). `test-generated-output.mjs` not run (live network).
 - Committed on `feature/capacitor-ios` (d7ed5c7, 0e1b7ba); PR #25 to main open, awaiting owner merge. After merge, confirm the next scheduled report has no `tideUnavailable`/`pressureUnavailable`.
 
+## In progress (2026-10-18, Chris-directed)
+- Expand the iOS V5 fishing app from First Coast coverage to Florida coastal saltwater; Chris chose arbitrary coastal map points and explicitly excluded freshwater for this phase.
+- Scope and implementation boundary are recorded in `docs/florida-coastal-expansion.md`.
+- Existing dirty work in `site/v5/proto/proto.js`, `site/v5/proto/proto.css`, and the catch-model files is pre-existing and must be preserved.
+- Local implementation now includes MapKit long-press point selection, surf/pier/inshore choice, nearest Florida CO-OPS tide-station resolution, point-specific weather/marine fetches, East Atlantic/Gulf/Keys MRIP context, device-cached today/tomorrow runs, and Central/Eastern time-zone handling for dynamic points. The static First Coast run generator and history artifact remain separate.
+- `npm run ios:sync` and `npm run ios:build` succeeded. No simulator was booted, so native MapKit long-press interaction is not visually verified. The 35-mile nearest-tide-station cutoff, county-group region assignment, and MRIP sample limitations are documented; do not present the survey rates as local point estimates.
+- Preserve pre-existing uncommitted UI and catch-model edits; do not change the scheduled report pipeline.
+
 ## Next tasks
 1. Owner decisions above.
 2. Fix the "absolute-only" reporting row in `scripts/hindcast/run-hindcast.mjs`.
