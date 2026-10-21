@@ -15,6 +15,7 @@ import { fetchSources } from "../engine/sources.js";
 import { buildPredictionRun } from "../engine/run.js";
 import { loadFloridaCoastalHistory } from "../engine/history.js";
 import { trimForCache } from "./proto-data.js";
+import { installNativePresentation, nativeAfterHours, nativeDayAfterHours, nativeHeadline, nativeNullable } from "./native-presentation.js";
 
 let TZ = "America/New_York";
 const RICH = "live-today", TOMORROW = "live-tomorrow";
@@ -49,6 +50,7 @@ const horizonSource = { today: "sample", tomorrow: "sample" };
 const horizonOffline = { today: false, tomorrow: false };
 let refreshError = "";
 let refreshInProgress = false, coldRenderPending = true;
+let nativePresentation = null;
 /* motion bookkeeping: entrances run once per view, value changes only on user input */
 const motion = { shown: null, seen: new Set(), counted: new Set(), filled: new Set(), seal: null, seg: null };
 let imageCredits = [], sheetAnimation = null, tabDrag = null, renderedImageCount = 0;
@@ -286,29 +288,48 @@ function coastalLocation(point, mode, station) {
     marineCoordinates: { lat: point.lat, lon: point.lon }, tideSensitivity: mode === "inshore" ? "high" : "medium",
     windExposure: { facingDeg: facing }, timeZone: point.timeZone, targets: SPECIES.filter(species => species.modes?.includes(mode)).map(species => species.id), access: [], notes: "User-selected coastal point; nearby station context is identified in the report." };
 }
-async function chooseFloridaPoint({ lat, lon }) {
+async function chooseFloridaPoint({ lat, lon, mode = null }) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < FL_BOUNDS.minLat || lat > FL_BOUNDS.maxLat || lon < FL_BOUNDS.minLon || lon > FL_BOUNDS.maxLon) {
+    if (mode != null) throw new Error("Choose a point on Florida’s coast");
     toast("Choose a point on Florida’s coast."); return;
   }
+  const token = ++floridaBuildToken;
   let stations;
   try { stations = await floridaStations(); }
-  catch { toast("Florida tide-station data is unavailable. Try again when online."); return; }
+  catch (error) {
+    if (token !== floridaBuildToken) { if (mode != null) throw new Error("Florida point selection was superseded"); return; }
+    if (mode != null) throw error; toast("Florida tide-station data is unavailable. Try again when online."); return;
+  }
+  if (token !== floridaBuildToken) { if (mode != null) throw new Error("Florida point selection was superseded"); return; }
   const nearest = stations.map(station => ({ ...station, distanceMi: distanceMi({ lat, lon }, { lat: station.lat, lon: station.lon }) })).sort((a,b) => a.distanceMi-b.distanceMi)[0];
-  if (!nearest || nearest.distanceMi > 35) { toast("That point is outside the coastal coverage area. Zoom in near the shoreline and try again."); return; }
+  if (!nearest || nearest.distanceMi > 35) {
+    if (mode != null) throw new Error("That point is outside the coastal coverage area");
+    toast("That point is outside the coastal coverage area. Zoom in near the shoreline and try again."); return;
+  }
   const region = floridaRegion({ lat, lon });
   const point = { id: `fl-point-${lat.toFixed(4)}-${lon.toFixed(4)}`, lat, lon, regionId: region.id, regionLabel: region.label,
     name: `${region.label} · ${lat.toFixed(3)}, ${lon.toFixed(3)}`, timeZone: floridaTimeZone({ lat, lon }), tideDistanceMi: Math.round(nearest.distanceMi*10)/10 };
+  if (mode != null) {
+    if (!["surf", "pier", "inshore"].includes(mode)) throw new Error("Choose surf, pier, or inshore mode");
+    await buildFloridaPoint(point, mode, nearest, true, token);
+    return;
+  }
   const modes = [["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]];
   const body = h("div", {}, h("p", {}, "Choose how you’ll fish this point."),
     h("p", { class: "fine" }, `${point.regionLabel} MRIP survey context · nearby tide predictions: ${nearest.name}, ${point.tideDistanceMi} mi away.`),
-    h("div", { class: "cta" }, modes.map(([mode, label]) => h("button", { class: "btn", type: "button", onclick: () => { closeSheet().then(() => buildFloridaPoint(point, mode, nearest)); } }, label))),
+    h("div", { class: "cta" }, modes.map(([mode, label]) => h("button", { class: "btn", type: "button", onclick: () => { closeSheet().then(() => buildFloridaPoint(point, mode, nearest, false, token)); } }, label))),
     h("p", { class: "fine" }, "Pick a shoreline or nearby water point. Inland freshwater is not covered."));
   openSheet("Fish this point", body);
 }
-async function buildFloridaPoint(point, mode, station) {
-  const token = ++floridaBuildToken;
+async function buildFloridaPoint(point, mode, station, propagateError = false, requestToken = ++floridaBuildToken) {
+  const token = requestToken;
+  if (token !== floridaBuildToken) {
+    if (propagateError) throw new Error("Florida point selection was superseded");
+    return;
+  }
   const previousPoint = floridaPoint;
   const previousSelection = { spot: st.spot, mode: st.mode };
+  const previousStoredSpot = store.get("spot", null);
   point = { ...point, mode };
   TZ = point.timeZone ?? floridaTimeZone(point);
   floridaPoint = point; st.spot = point.id; st.mode = mode; st.species = null; st.h = "today"; st.tab = "today"; st.t = null;
@@ -318,30 +339,44 @@ async function buildFloridaPoint(point, mode, station) {
     const [history, observations] = await Promise.all([
       floridaHistory(), fetchSources({ locations: [coastalLocation(point, mode, station)], includeNdbcFallback: false }),
     ]);
-    if (token !== floridaBuildToken) return;
+    if (token !== floridaBuildToken) {
+      if (propagateError) throw new Error("Florida point selection was superseded");
+      return;
+    }
     const built = await buildPredictionRun({ now: Date.now(), locations: [coastalLocation(point, mode, station)], species: SPECIES,
       history, observations, previousRuns: [], preferences: { favourites: [] }, region: point.regionLabel });
-    if (token !== floridaBuildToken) return;
+    if (token !== floridaBuildToken) {
+      if (propagateError) throw new Error("Florida point selection was superseded");
+      return;
+    }
     floridaRuns = { point, runs: { today: built.today, tomorrow: built.tomorrow }, details: built.details };
     try { store.set("floridaRuns", { point, runs: { today: trimForCache(built.today), tomorrow: trimForCache(built.tomorrow) } }); } catch { /* derived cache is optional */ }
     render({ resetScroll: true });
     toast("Florida coastal outlook is ready.");
   } catch (error) {
     console.warn("Florida point outlook failed", error);
+    if (token !== floridaBuildToken) {
+      if (propagateError) throw new Error("Florida point selection was superseded");
+      return;
+    }
     floridaPoint = previousPoint;
     TZ = previousPoint?.timeZone ?? "America/New_York";
     store.set("floridaPoint", previousPoint);
+    store.set("spot", previousStoredSpot);
     st.spot = previousSelection.spot; st.mode = previousSelection.mode;
     render({ resetScroll: true });
     toast("Couldn’t build this point’s outlook. Check your connection and try again.");
+    if (propagateError) throw error;
   }
 }
 async function refreshFloridaPoint() {
+  const token = ++floridaBuildToken;
   const stations = await floridaStations(), point = floridaPoint;
+  if (token !== floridaBuildToken) throw new Error("Florida point refresh was superseded");
   if (!point) return;
   const nearest = stations.map(station => ({ ...station, distanceMi: distanceMi(point, { lat: station.lat, lon: station.lon }) })).sort((a,b) => a.distanceMi-b.distanceMi)[0];
   if (!nearest || nearest.distanceMi > 35) throw new Error("No nearby Florida tide station is available");
-  await buildFloridaPoint(point, st.mode ?? point.mode ?? "surf", nearest);
+  await buildFloridaPoint(point, st.mode ?? point.mode ?? "surf", nearest, true, token);
 }
 function safeStorage() { try { return localStorage; } catch { return null; } }
 function autoTheme(now = Date.now()) {
@@ -367,6 +402,7 @@ async function refreshLiveData({ onToday } = {}) {
   if (navigator.onLine === false) {
     horizonOffline.today = horizonOffline.tomorrow = true;
     dataOffline = true;
+    nativePresentation?.publish();
     return { changed: false, offline: true };
   }
   const storage = safeStorage();
@@ -398,6 +434,7 @@ async function refreshLiveData({ onToday } = {}) {
   if (!todayOk) horizonOffline.today = !D[RICH] || navigator.onLine === false;
   if (!tomorrowOk) horizonOffline.tomorrow = !D[TOMORROW] || navigator.onLine === false;
   dataOffline = horizonOffline.today;
+  nativePresentation?.publish();
   if (!todayOk && !tomorrowOk && !D[RICH]) throw results[0].reason;
   return { changed: before.today !== D[RICH]?.id || before.tomorrow !== D[TOMORROW]?.id, todayOk, tomorrowOk };
 }
@@ -439,6 +476,7 @@ function render({ resetScroll = false, navigation = false } = {}) {
   if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true });
   if (st.tab === "today") announce(c);
   syncNativeSpots(c);
+  nativePresentation?.publish();
   if (coldRenderPending) {
     console.info(`FLAGLER_PERF first_content_ms=${performance.now().toFixed(1)} ctx_ms=${(performance.now() - contextStarted).toFixed(1)} render_ms=${(performance.now() - renderStarted).toFixed(1)} source=${c.source} offline=${c.offline}`);
     coldRenderPending = false;
@@ -548,6 +586,7 @@ function go(tab, opts = {}) {
   selectedButton?.classList.remove("pop"); if (selectedButton) { void selectedButton.offsetWidth; selectedButton.classList.add("pop"); setTimeout(() => selectedButton.classList.remove("pop"), 220); }
 }
 function scope({ spot = null, mode = null, species = null, persist = false, tab = "today" } = {}) {
+  floridaBuildToken++;
   if (sheet) { closeSheet().then(() => scope({ spot, mode, species, persist, tab })); return; }
   closeSheet();
   if (spot !== floridaPoint?.id) { floridaPoint = null; floridaRuns = null; TZ = "America/New_York"; store.set("floridaPoint", null); store.set("floridaRuns", null); }
@@ -1329,6 +1368,17 @@ function planView(c) {
 
 /* ---------- catch log ---------- */
 const activeSpot = (id) => ACTIVE_SPOTS.find((x) => x.id === id);
+function nativeCatchSpot(id) {
+  const catalogSpot = activeSpot(id);
+  if (catalogSpot) return catalogSpot;
+  const runSpot = ctx().run.locations?.find((spot) => spot.id === id && spot.active !== false && spot.modes?.length);
+  if (runSpot) return runSpot;
+  if (floridaPoint?.id === id) {
+    const mode = floridaPoint.mode ?? st.mode;
+    return mode ? { id, name: floridaPoint.name, modes: [mode], active: true } : null;
+  }
+  return null;
+}
 const wallNow = (ms = Date.now()) => {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
   return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
@@ -1345,7 +1395,7 @@ function parseEasternLocal(value) {
 }
 function reportSnapshot(c, spot, mode, at) {
   const day = (x) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(x));
-  const date = day(at), run = [D[RICH], D[TOMORROW], c.run].find((candidate) => candidate?.targetDate === date && locOf(candidate, spot));
+  const date = day(at), run = [D[RICH], D[TOMORROW], floridaRuns?.runs?.today, floridaRuns?.runs?.tomorrow, c.run].find((candidate) => candidate?.targetDate === date && locOf(candidate, spot));
   if (!run) return null;
   const rec = run.scopeViews?.byLocation?.[`${spot}:${mode}`]?.recommendation;
   return rec ? { runGeneratedAt: run.generatedAt, verdict: rec.verdict, fit: rec.suitability } : null;
@@ -1779,7 +1829,7 @@ function syncReview() {
   const t = store.get("theme", "auto");
   document.querySelectorAll("#review-themes button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === t)));
 }
-async function setState(id) { const def = STATES.find((x) => x.id === id); await load(def.file); st.state = id; st.tab = "today"; st.h = "today"; st.spot = null; st.mode = null; st.species = null; st.t = null; lastSpoken = ""; closeSheet(true); render({ resetScroll: true }); }
+async function setState(id) { const def = STATES.find((x) => x.id === id); floridaBuildToken++; await load(def.file); st.state = id; st.tab = "today"; st.h = "today"; st.spot = null; st.mode = null; st.species = null; st.t = null; lastSpoken = ""; closeSheet(true); render({ resetScroll: true }); }
 function initReview() {
   $("review").hidden = !["127.0.0.1","localhost"].includes(location.hostname) && new URLSearchParams(location.hash.slice(1)).get("review") !== "1";
   $("review-panel").querySelector(".eyebrow").textContent = "Sample states (review only)";
@@ -1792,6 +1842,164 @@ function initReview() {
   document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !panel.hidden && !sheet) { panel.hidden = true; btn.setAttribute("aria-expanded", "false"); btn.focus(); } });
 }
 
+/* ---------- native presentation contract ---------- */
+const nullable = nativeNullable;
+const strings = (value) => Array.isArray(value) ? value.map((x) => typeof x === "string" ? x : msg(x)).filter(Boolean) : [];
+function nativeSnapshot() {
+  const c = ctx(), run = c.run, rec = c.rec ?? {}, source = listSource(c), listRun = source.run;
+  const unsafe = unsafeCapped(rec);
+  const activeLoc = locOf(run, st.spot) ?? (floridaPoint?.id === st.spot ? coastalLocation(floridaPoint, st.mode ?? floridaPoint.mode ?? "surf", {}) : null);
+  const recTargets = unsafe || rec.verdict === "SKIP" ? [] : (rec.targets ?? []).map((target) => {
+    const fish = spCat(target.speciesId);
+    return { id: target.speciesId ?? null, name: target.name ?? fish?.name ?? null, fit: nullable(target.suitability), band: target.band ?? null,
+      history: speciesTripRate({ historicalRate: target.historicalRate }), setup: target.setup ?? fish?.setup ?? null };
+  });
+  const recWindow = rec.window ?? {};
+  const selectedSpot = st.spot ? (locOf(run, st.spot) ?? activeLoc)?.id ?? null : null;
+  const favs = store.get("favs", []);
+  const spots = spotRows(listRun, "all", c.now, source.horizon).map(({ loc, rec: spotRec, fav, ended }) => ({
+    id: loc.id, name: loc.name, area: loc.area ?? null, lat: nullable(loc.lat), lon: nullable(loc.lon), timeZone: loc.timeZone ?? null,
+    modes: (loc.modes ?? []).filter((mode) => !isModeClosed(loc.id, mode)), mode: spotRec.mode ?? null, verdict: spotRec.verdict ?? null,
+    windowLabel: spotRec.window ? fmtRange(spotRec.window.start, spotRec.window.end) : null, favorite: !!fav,
+    access: strings(loc.access), notes: loc.notes ?? null, closure: closureFor(loc.id) ? closureBadgeText(loc.id) : ended ? "Ended" : null,
+  }));
+  const rankedSpecies = speciesRows(c);
+  const species = SPECIES.map((fish) => {
+    const row = rankedSpecies.find((item) => item.sp.id === fish.id);
+    const candidate = row?.best ?? null, focused = row?.focused ?? null, canTarget = !!focused;
+    const capped = unsafeCapped(focused ?? candidate), bycatch = !!fish.bycatch;
+    let group = "unrated";
+    if (bycatch) group = "bycatch";
+    else if (row && (row.focused || row.best?.eligibility === "realistic")) {
+      if (capped || row.suit == null || row.suit < 30) group = "today";
+      else if (row.suit < 50) group = "possible";
+      else group = "good";
+    } else if (row?.best) group = "uncommon";
+    const realistic = candidate?.eligibility === "realistic";
+    const fit = capped || !realistic ? null : nullable(row?.suit);
+    const band = capped ? "Unsafe conditions" : !candidate || bycatch ? "Not rated" : !realistic ? (speciesEligibilityLabel(candidate) || "Not a target here") : speciesFitBand(fit, candidate);
+    return { id: fish.id, name: fish.name, alt: fish.alt ?? null, band, fit, bycatch, canTarget, group,
+      eligibility: candidate ? (speciesEligibilityLabel(candidate) || candidate.eligibility || null) : null,
+      history: speciesTripRate(candidate), tip: fish.tip ?? null, modes: fish.modes ?? [], setup: candidate?.setup ?? fish.setup ?? null };
+  });
+  const selectedLocId = st.spot ?? rec.locationId ?? null, selectedMode = st.mode ?? rec.mode ?? null;
+  const forecastRun = run;
+  const hours = observationRows(forecastRun, "hourlyForecast", selectedLocId).filter((row) => (row.startTime ?? row.validFrom) && dayKey(row.startTime ?? row.validFrom) === run.targetDate).map((row) => {
+    const at = row.startTime ?? row.validFrom;
+    const slots = (run.slots ?? []).find((item) => item.locationId === selectedLocId && item.mode === selectedMode)?.slots ?? [];
+    const slot = slots.reduce((best, item) => !best || Math.abs(Date.parse(item.at) - Date.parse(at)) < Math.abs(Date.parse(best.at) - Date.parse(at)) ? item : best, null);
+    const safe = slot && Math.abs(Date.parse(slot.at) - Date.parse(at)) <= 30 * 60e3 && !unsafeCapped(rec) && Number.isFinite(slot.suitability);
+    const candidateWindows = (run.candidates ?? []).filter((candidate) => candidate.locationId === selectedLocId && candidate.mode === selectedMode).map((candidate) => candidate.window).filter(Boolean);
+    const insideWindow = candidateWindows.some((window) => Date.parse(window.start) <= Date.parse(at) && Date.parse(window.end) > Date.parse(at));
+    const outlook = hourlyOutlook(safe && insideWindow ? slot.suitability : null, insideWindow);
+    const tide = observationFor(observationRows(run, "tidePredictions", selectedLocId), at);
+    const height = tide?.heightFt;
+    return { id: at, at, time: fmtTime(at), fit: safe && insideWindow ? nullable(slot.suitability) : null, outlook,
+      tideHeight: nullable(height), tideDirection: tideDirectionAt(observationRows(run, "tidePredictions", selectedLocId), at) ?? null };
+  });
+  const tides = observationRows(run, "tidePredictions", selectedLocId).filter((row) => row.time && dayKey(row.time) === run.targetDate).map((row) => ({
+    id: row.time, time: row.time, label: fmtTime(row.time), height: nullable(row.heightFt), type: row.type ?? null,
+  }));
+  const conditions = [];
+  const firstHour = observationFor(observationRows(run, "hourlyForecast", selectedLocId), recWindow.start) ?? observationRows(run, "hourlyForecast", selectedLocId)[0];
+  const airAvailable = firstHour?.temperature != null || firstHour?.temperatureC != null;
+  const airF = airAvailable ? temperatureF(firstHour) : null;
+  if (Number.isFinite(airF)) conditions.push({ id: "air", label: "Air", value: `${Math.round(airF)}°F`, detail: firstHour.shortForecast ?? null });
+  if (Number.isFinite(Number.parseFloat(firstHour?.windSpeed))) conditions.push({ id: "wind", label: "Wind", value: fmtWind(firstHour), detail: firstHour.windDirection ?? null });
+  const wave = observationFor([...observationRows(run, "waves", selectedLocId), ...observationRows(run, "waveForecast", selectedLocId)], recWindow.start);
+  if (wave?.waveHeightM != null && Number.isFinite(+wave.waveHeightM) && selectedMode !== "inshore") conditions.push({ id: "waves", label: "Waves", value: `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`, detail: null });
+  const water = observationRows(run, "waterTemperature", selectedLocId).find((row) => row.temperatureF != null && Number.isFinite(+row.temperatureF));
+  if (water) conditions.push({ id: "water", label: "Water", value: `${Math.round(+water.temperatureF)}°F`, detail: null });
+  const todayDate = floridaRuns?.runs?.today?.targetDate ?? D[RICH]?.targetDate ?? (st.h === "today" ? run.targetDate : null);
+  const tomorrowDate = floridaRuns?.runs?.tomorrow?.targetDate ?? D[TOMORROW]?.targetDate ?? null;
+  const days = (run.days ?? []).map((day, index) => {
+    const window = dayOpenWindows(day)[0];
+    return { id: day.date, date: day.date, label: day.date === todayDate ? "Today" : day.date === tomorrowDate ? "Tomorrow" : wk(day.date, { weekday: "short" }),
+      kind: day.kind ?? null, horizon: day.date === todayDate ? "today" : day.date === tomorrowDate ? "tomorrow" : null,
+      afterHours: nativeDayAfterHours(day, c.now, activeLoc?.timeZone ?? TZ),
+      verdict: day.kind === "outlook" ? day.outlookLabel ?? null : dayVerdictLabel(day), summary: day.kind === "outlook" ? outlookDayLine(day) : daySummary(c, day, index),
+      windowLabel: window ? fmtRange(window.start, window.end) : null, targets: day.verdict === "SKIP" ? [] : (day.topSpecies ?? []).slice(0, 3).map((target) => target.name).filter(Boolean) };
+  });
+  const spotCatalog = [...ACTIVE_SPOTS];
+  if (activeLoc && !spotCatalog.some((spot) => spot.id === activeLoc.id)) spotCatalog.push(activeLoc);
+  const floridaCatchLocation = floridaPoint ? nativeCatchSpot(floridaPoint.id) : null;
+  if (floridaCatchLocation && !spotCatalog.some((spot) => spot.id === floridaCatchLocation.id)) spotCatalog.push(floridaCatchLocation);
+  return {
+    schema: 1, ready: true, theme: store.get("theme", "auto"), source: c.source ?? null, offline: !!c.offline, stale: !!c.stale, partial: !!c.partial,
+    generatedAt: run.generatedAt ?? null, targetDate: run.targetDate ?? null, timeZone: activeLoc?.timeZone ?? TZ,
+    horizon: st.h === "tomorrow" ? "tomorrow" : "today", selectedSpot, selectedMode: st.mode ?? null,
+    selectedSpotContext: st.spot && activeLoc ? { id: activeLoc.id, name: activeLoc.name, area: activeLoc.area ?? null,
+      modes: activeLoc.modes ?? [], timeZone: activeLoc.timeZone ?? null, lat: nullable(activeLoc.lat), lon: nullable(activeLoc.lon) } : null,
+    selectedSpecies: st.species ?? null,
+    rec: { afterHours: nativeAfterHours(rec), safetyEvidence: (rec.caps ?? []).filter((cap) => cap?.code === "severeConditions").map((cap) => ({ code: cap.code })),
+      id: rec.id ?? null, locationId: rec.locationId ?? null, displayName: rec.displayName ?? locOf(run, rec.locationId)?.name ?? null,
+      mode: rec.mode ?? null, verdict: rec.verdict ?? null, suitability: unsafe ? null : nullable(rec.suitability), confidenceLevel: rec.confidenceLevel ?? null,
+      headline: nativeHeadline(msg(rec.headline) || null, run.targetDate, todayDate, tomorrowDate), reason: msg(rec.reason?.text ?? rec.reason) || null, windowLabel: rec.window ? fmtRange(rec.window.start, rec.window.end) : null,
+      windowStart: recWindow.start ?? null, windowEnd: recWindow.end ?? null, why: strings(rec.why),
+      setup: { where: rec.setup?.where ?? null, rig: rec.setup?.rig ?? null, bait: strings(rec.setup?.bait), lures: strings(rec.setup?.lures) }, targets: recTargets },
+    spots, species, hours, tides, conditions, days, catches: sortedCatches(), catchSpots: spotCatalog.map((spot) => ({ id: spot.id, name: spot.name, modes: spot.modes ?? [], timeZone: spot.timeZone ?? null })), error: null,
+  };
+}
+function nativeCatch(values, existing = null) {
+  if (!values || typeof values !== "object") throw new Error("Catch values are required");
+  const merged = { ...(existing ?? {}), ...values };
+  const errors = validateCatch(merged, { spotById: nativeCatchSpot });
+  if (Object.keys(errors).length) throw new Error(Object.values(errors).join(" "));
+  const pickedSpot = nativeCatchSpot(merged.spot), pickedSpecies = spCat(merged.species);
+  const record = { ...merged, schemaVersion: 1, id: existing?.id ?? merged.id ?? (globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`),
+    speciesName: pickedSpecies?.name ?? String(merged.otherSpecies ?? "").trim(), otherSpecies: merged.species === "other" ? String(merged.otherSpecies ?? "").trim() : "",
+    spotName: pickedSpot.name, count: Number(merged.count), lengthIn: merged.lengthIn === "" || merged.lengthIn == null ? null : Number(merged.lengthIn),
+    bait: String(merged.bait ?? ""), notes: String(merged.notes ?? ""), context: reportSnapshot(ctx(), merged.spot, merged.mode, Date.parse(merged.occurredAt)) };
+  const rows = sortedCatches(), next = existing ? rows.map((row) => row.id === existing.id ? record : row) : [...rows, record];
+  if (!saveCatches(next)) throw new Error("Couldn't save catch on this device");
+  return { id: record.id };
+}
+async function nativeCommand(action, message) {
+  const value = message.value ?? message;
+  if (action === "snapshot") return;
+  if (action === "selectSpot") {
+    const id = message.id ?? value.id, mode = message.mode ?? value.mode ?? null;
+    if (id != null && !locOf(ctx().run, id) && id !== floridaPoint?.id) throw new Error("Unknown spot");
+    scope({ spot: id, mode, persist: true });
+  } else if (action === "selectSpecies") {
+    const id = message.id ?? value.id ?? null;
+    if (id != null && !spCat(id)) throw new Error("Unknown species");
+    scope({ spot: st.spot, mode: st.mode, species: id, tab: "today" });
+  } else if (action === "horizon") {
+    const horizon = message.value ?? message.horizon;
+    if (!["today", "tomorrow"].includes(horizon)) throw new Error("Horizon must be today or tomorrow");
+    st.h = horizon; st.t = null; render({ resetScroll: true });
+  } else if (action === "favorite") {
+    const id = message.id ?? value.id;
+    if (!locOf(ctx().run, id) && id !== floridaPoint?.id) throw new Error("Unknown spot");
+    const current = store.get("favs", []), next = current.includes(id) ? current.filter((item) => item !== id) : [...current, id];
+    store.set("favs", next); render();
+  } else if (action === "refresh") {
+    const target = message.value ?? message.target;
+    if (target === "florida" || floridaPoint && st.spot === floridaPoint.id) await refreshFloridaPoint();
+    else if (target == null || target === "live") { await refreshLiveData(); render(); }
+    else throw new Error("Refresh target must be live or florida");
+  } else if (action === "sample") {
+    const state = message.value ?? message.state;
+    if (state === "live") { floridaBuildToken++; st.state = "live"; st.h = "today"; st.spot = null; st.species = null; await refreshLiveData(); render({ resetScroll: true }); }
+    else if (STATES.some((item) => item.id === state)) await setState(state);
+    else throw new Error("Unknown sample state");
+  } else if (action === "addCatch") return nativeCatch(message.value ?? message.catch);
+  else if (action === "updateCatch") {
+    const id = message.id ?? message.catch?.id, existing = sortedCatches().find((row) => row.id === id);
+    if (!existing) throw new Error("Catch not found"); return nativeCatch(message.value ?? message.catch, existing);
+  } else if (action === "deleteCatch") {
+    const id = message.id ?? value.id, rows = sortedCatches();
+    if (!rows.some((row) => row.id === id)) throw new Error("Catch not found");
+    if (!saveCatches(rows.filter((row) => row.id !== id))) throw new Error("Couldn't delete catch on this device");
+    return { id };
+  } else if (action === "point") {
+    const lat = Number(message.lat ?? value.lat), lon = Number(message.lon ?? value.lon), mode = message.mode ?? value.mode;
+    if (!["surf", "pier", "inshore"].includes(mode)) throw new Error("Point mode must be surf, pier, or inshore");
+    await chooseFloridaPoint({ lat, lon, mode });
+  }
+}
+
 /* ---------- init ---------- */
 async function init() {
   document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => go(b.dataset.tab)));
@@ -1801,6 +2009,7 @@ async function init() {
   document.addEventListener("ffmap:select", (event) => {
     const id = event.id ?? event.detail?.id;  // Capacitor puts native event data on the event itself
     if (!locOf(ctx().run, id)) return;
+    floridaBuildToken++;
     floridaPoint = null; floridaRuns = null; store.set("floridaPoint", null); store.set("floridaRuns", null);
     TZ = "America/New_York";
     st.spot = id; st.species = null; st.t = null;
@@ -2067,4 +2276,5 @@ async function init() {
   };
   document.addEventListener("touchend", finishSwipe, { passive: true }); document.addEventListener("touchcancel", finishSwipe, { passive: true });
 }
+nativePresentation = installNativePresentation({ snapshot: nativeSnapshot, command: nativeCommand });
 init();
