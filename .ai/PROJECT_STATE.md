@@ -39,6 +39,11 @@ No Sol in delegation. Bounded work → Codex GPT-6 Luna Low/Medium/High (XHigh o
 - `npm run ios:sync` and `npm run ios:build` succeeded. No simulator was booted, so native MapKit long-press interaction is not visually verified. The 35-mile nearest-tide-station cutoff, county-group region assignment, and MRIP sample limitations are documented; do not present the survey rates as local point estimates.
 - Preserve pre-existing uncommitted UI and catch-model edits; do not change the scheduled report pipeline.
 
+## Data-source expansion (2026-10-27)
+- Chris requested a ranked V5 source expansion; `docs/v5-data-source-roadmap.md` and `site/v5/data/data-sources.json` record nine sources, source access notes, and integration gates.
+- Goal: calibrated catch probability per species, fishing location, and local hour. Requires labeled positive and no-catch fishing intervals with effort/technique context, plus future-time/location validation; environmental and survey sources are features/context, not hourly outcome labels.
+- This is a source inventory only. No adapters, scoring changes, credentials, remote services, or catch-log uploads have been added. Next: define consented hourly outcome schema and inventory station/geospatial coverage; then implement source pipelines in priority order.
+
 ## Next tasks
 1. Owner decisions above.
 2. Fix the "absolute-only" reporting row in `scripts/hindcast/run-hindcast.mjs`.
