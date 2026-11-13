@@ -1292,7 +1292,7 @@ function speciesView(c) {
     return h("li", {}, h("button", { class: `sp${!showScore ? " dimmed" : ""}${st.species === sp.id ? " on" : ""}`, type: "button", "data-fk": `sp-${sp.id}`,
       "aria-label": (() => { const said = (showScore ? (capped ? "unsafe conditions" : band) : notRealistic ? speciesEligibilityLabel(best) : "") || "no rating"; return `${sp.name}, ${said}${sp.bycatch && !/bycatch/i.test(said) ? ", bycatch" : ""}`; })(), onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
-      showScore ? h("div", { class: "species-band" }, h("b", { "data-fit": band.split(" ")[0].toLowerCase() }, band)) : null,
+      showScore ? h("div", { class: "species-band" }, h("b", { "data-fit": band.split(" ")[0].toLowerCase() }, /^(Great|Decent|Poor)$/.test(band) ? `${band} conditions` : band)) : null,
       (() => { const ring = showScore ? catchRing(catchScore({ ...best, ...(focused ?? {}), historicalRate: focused?.historicalRate ?? best?.historicalRate }, focused ?? best)) : null; return ring ? h("div", { class: "sp-score" }, ring, h("small", {}, "Catch")) : null; })(),
       best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
       best?.historicalRate ? h("small", { class: "trip-rate" }, speciesTripRate(best)) : null,
