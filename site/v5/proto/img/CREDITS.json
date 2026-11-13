@@ -122,32 +122,32 @@
   {
     "file": "spots/vilano-beach.jpg",
     "subject": "Vilano Beach, Florida",
-    "title": "Vilano Beach",
-    "author": "Excel23",
-    "source_url": "https://commons.wikimedia.org/wiki/File:VilanoBeachFL.jpg",
-    "license": "CC BY-SA 3.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
-    "modified": "resized/cropped/converted"
+    "title": "\"The Point\" at Villano Beach.jpg",
+    "author": "Todd Van Hoosear",
+    "source_url": "https://commons.wikimedia.org/wiki/File:%22The_Point%22_at_Villano_Beach.jpg",
+    "license": "CC BY-SA 2.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/2.0",
+    "modified": "resized to 3840px wide, converted to JPEG"
   },
   {
     "file": "spots/vilano-bridge.jpg",
     "subject": "Vilano Bridge fishing piers",
-    "title": "Bridge to Vilano Beach from St. Augustine",
+    "title": "VilanoBridgeStAug.JPG",
     "author": "Excel23",
     "source_url": "https://commons.wikimedia.org/wiki/File:VilanoBridgeStAug.JPG",
     "license": "CC BY-SA 3.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/3.0/",
-    "modified": "resized/cropped/converted"
+    "license_url": "https://creativecommons.org/licenses/by-sa/3.0",
+    "modified": "resized to 3840px wide, converted to JPEG"
   },
   {
     "file": "spots/bridge-of-lions.jpg",
     "subject": "Bridge of Lions & bayfront seawall",
-    "title": "The Bridge of Lions in St. Augustine, FL",
-    "author": "A345321",
-    "source_url": "https://commons.wikimedia.org/wiki/File:The_Bridge_of_Lions_in_St._Augustine,_FL.jpg",
-    "license": "CC0",
-    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-    "modified": "resized/cropped/converted"
+    "title": "Bridge of Lions at St. Augustine.jpg",
+    "author": "Randblank",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Bridge_of_Lions_at_St._Augustine.jpg",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "modified": "resized to 3840px wide, converted to JPEG"
   },
   {
     "file": "spots/salt-run.jpg",
@@ -162,22 +162,22 @@
   {
     "file": "spots/staug-pier.jpg",
     "subject": "St. Augustine Beach Pier",
-    "title": "St. Johns County Ocean Pier, St. Augustine Beach",
-    "author": "Michael Rivera",
-    "source_url": "https://commons.wikimedia.org/wiki/File:St._Johns_County_Ocean_Pier_begin,_St._Augustine_Beach.jpg",
-    "license": "CC BY-SA 4.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "modified": "resized/cropped/converted"
+    "title": "Sunrise through the Pier (Unsplash).jpg",
+    "author": "Cassie Boca cassieboca",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Sunrise_through_the_Pier_(Unsplash).jpg",
+    "license": "CC0",
+    "license_url": "http://creativecommons.org/publicdomain/zero/1.0/deed.en",
+    "modified": "resized to 3840px wide, converted to JPEG"
   },
   {
     "file": "spots/matanzas-inlet.jpg",
     "subject": "Matanzas Inlet",
-    "title": "View of Matanzas Inlet and Rattlesnake Island from Fort Matanzas",
-    "author": "Saph",
-    "source_url": "https://commons.wikimedia.org/wiki/File:Matanzas_Inlet_from_the_top_floor_of_Ft._Matanzas,_St._Augustine,_FL.jpg",
-    "license": "CC0",
-    "license_url": "https://creativecommons.org/publicdomain/zero/1.0/",
-    "modified": "resized/cropped/converted"
+    "title": "Bridge across Matanzas Inlet.jpg",
+    "author": "Michael Rivera",
+    "source_url": "https://commons.wikimedia.org/wiki/File:Bridge_across_Matanzas_Inlet.jpg",
+    "license": "CC BY-SA 4.0",
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "modified": "resized to 3840px wide, converted to JPEG"
   },
   {
     "file": "spots/marineland.jpg",
@@ -212,12 +212,12 @@
   {
     "file": "spots/flagler-pier.jpg",
     "subject": "Flagler Beach Pier",
-    "title": "Flagler Beach, south view of beach and pier",
-    "author": "Daniel Vorndran (DXR)",
+    "title": "Flagler Beach FL, South view of Beach and Pier 20160707 1.jpg",
+    "author": "DXR",
     "source_url": "https://commons.wikimedia.org/wiki/File:Flagler_Beach_FL,_South_view_of_Beach_and_Pier_20160707_1.jpg",
     "license": "CC BY-SA 4.0",
-    "license_url": "https://creativecommons.org/licenses/by-sa/4.0/",
-    "modified": "resized/cropped/converted"
+    "license_url": "https://creativecommons.org/licenses/by-sa/4.0",
+    "modified": "resized to 3840px wide, converted to JPEG"
   },
   {
     "file": "hero-licensed.jpg",
