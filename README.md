@@ -7,7 +7,8 @@ Static PWA on GitHub Pages. A GitHub Actions job (every 30 min) fetches NWS, NDB
 - Reports are rule-based from official feeds; the home page adds an uncalibrated bite outlook. No LLM commentary.
 
 ## Layout
-- `/` current app (Flagler Fishing): live conditions, surf / pier and inshore bite outlooks, best times, 7-day outlook.
+- `/` current app: Flagler Fishing V5 (GO / MAYBE / SKIP by spot, species suitability, best times). Served from `site/v5/proto/` through a `<base href>` in `site/index.html`; `/v5/proto/` still works.
+- `/classic.html` the previous root app (live conditions, surf / pier and inshore bite outlooks, 7-day outlook).
 - `/v1/`, `/v2/`, `/v3/` earlier versions, kept for reference. `/flagler-fishing/` and `/v4/` redirect to `/`.
 - `/api/` JSON built by the scheduled workflow; `/shared/` code used by more than one version.
 

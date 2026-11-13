@@ -35,7 +35,7 @@ async function cached(key, kind, now, fetcher) {
 }
 
 export async function fetchSources({ locations = [], fetchImpl = globalThis.fetch, now = Date.now(), timeoutMs = 8000,
-  ndbcUrl, includeWaveForecast = true } = {}) {
+  ndbcUrl, includeWaveForecast = true, includeNdbcFallback = true } = {}) {
   const all = [];
   const miles = (a, b) => { const r = Math.PI / 180, x = Math.sin((b.lat - a.lat) * r / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin((b.lon - a.lon) * r / 2) ** 2; return 3958.8 * 2 * Math.asin(Math.sqrt(x)); };
   let riverkeeper = null;
@@ -44,7 +44,7 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
     const openMeteoPromise = fetchOpenMeteoWeather(location, { fetchImpl, now, timeoutMs: Math.max(timeoutMs, 15_000) });
     const points = await cached("points-land:" + id, "points", now, () => fetchNwsPoints(location, { fetchImpl, now, timeoutMs }));
     const marine = includeWaveForecast && location.modes?.some(mode => mode === "surf" || mode === "pier");
-    const marineCoordinates = marine ? { lat: location.lat, lon: Number((Number(location.lon) + 0.05).toFixed(4)) } : null;
+    const marineCoordinates = marine ? location.marineCoordinates ?? { lat: location.lat, lon: Number((Number(location.lon) + 0.05).toFixed(4)) } : null;
     const marinePoints = marine ? await cached("points-marine:" + id, "points", now,
       () => fetchNwsPoints(location, { fetchImpl, now, timeoutMs, marine: true, coordinates: marineCoordinates })) : null;
     const secooraPromise = fetchSecoora(location, { fetchImpl, now, timeoutMs });
@@ -84,8 +84,8 @@ export async function fetchSources({ locations = [], fetchImpl = globalThis.fetc
     }
     const buoyOk = obs => obs?.ok && !obs.stale && Number.isFinite(Date.parse(obs.observedAt)) && now - Date.parse(obs.observedAt) <= 3*3600000;
     let ndbc = null;
-    const waves = buoyOk(secooraWaves) ? secooraWaves : (ndbc ??= await fetchNdbcFallback(location, { fetchImpl, now, timeoutMs, url: ndbcUrl }));
-    const water = buoyOk(secooraWater) ? secooraWater : (ndbc ??= await fetchNdbcFallback(location, { fetchImpl, now, timeoutMs, url: ndbcUrl }));
+    const waves = buoyOk(secooraWaves) ? secooraWaves : includeNdbcFallback ? (ndbc ??= await fetchNdbcFallback(location, { fetchImpl, now, timeoutMs, url: ndbcUrl })) : null;
+    const water = buoyOk(secooraWater) ? secooraWater : includeNdbcFallback ? (ndbc ??= await fetchNdbcFallback(location, { fetchImpl, now, timeoutMs, url: ndbcUrl })) : null;
     const fallbackWaves = waves?.provider === "ndbc" ? { ...waves, kind: "waves", values: { waveHeightM: waves.values?.waveHeightM,
       periodS: waves.values?.periodS, directionDeg: waves.values?.directionDeg } } : waves;
     const fallbackWater = water?.provider === "ndbc" ? { ...water, kind: "waterTemperature", values: { temperatureC: water.values?.temperatureC } } : water;

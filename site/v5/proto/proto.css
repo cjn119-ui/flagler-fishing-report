@@ -405,11 +405,6 @@ body { overflow-x:visible; }
 :root[data-theme="light"] { --vig:rgba(24,44,68,.10); --vig-hi:rgba(255,255,255,.55); --ga-sheet:80%; --glass-bright:rgba(255,255,255,.88); --ui-edge:#7D8994; --glass-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 10px 28px -20px rgba(15,30,45,.28); }
 html { min-height:100%; }
 body { min-height:100dvh; padding-inline:max(16px,env(safe-area-inset-left)) max(16px,env(safe-area-inset-right)); padding-bottom:calc(104px + env(safe-area-inset-bottom)); background:var(--bg); isolation:isolate; }
-/* vignette: fixed so it frames the viewport like iOS; grain tile dithers the long, low-contrast ramps */
-body::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
-  background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='128' height='128'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .05 0'/%3E%3C/filter%3E%3Crect width='128' height='128' filter='url(%23n)'/%3E%3C/svg%3E"),
-   radial-gradient(ellipse 78% 68% at 50% 42%,transparent 22%,color-mix(in srgb,var(--vig) 55%,transparent) 64%,var(--vig) 100%),
-   radial-gradient(ellipse 70% 58% at 50% 30%,var(--vig-hi),transparent 78%); }
 h1,h2,h3 { line-height:1.3; }
 h1,h2 { font-size:clamp(1.25rem,1.14rem + .45vw,1.75rem); }
 .card h2 { font-size:clamp(1.125rem,1.05rem + .25vw,1.25rem); }
@@ -729,7 +724,6 @@ button:not(:disabled),summary,a { transition:transform var(--dur-1) var(--ease-o
   --scrim:rgba(0,0,0,.84); --vig:rgba(0,0,0,.16); --vig-hi:rgba(92,200,232,.028); --glass-bright:rgba(255,255,255,.12);
 }
 :root[data-night="1"] body { background:#000; }
-:root[data-night="1"] body::before { background:radial-gradient(ellipse 78% 68% at 50% 42%,transparent 22%,rgba(0,0,0,.65) 100%),radial-gradient(ellipse 70% 58% at 50% 30%,rgba(92,200,232,.045),transparent 78%); }
 
 /* Concept redesign: preserve the V5 report content while giving each tab the same editorial rhythm. */
 html,body { overflow-x:hidden; }
@@ -1068,3 +1062,66 @@ html,body,button,input,select,textarea,summary,svg text { font-family:var(--font
 #verdict .seal > svg:not(.seal-edge) { display:none; }
 #verdict .seal { place-content:center; justify-items:center; text-align:center; padding:0 4px; }
 #verdict .seal-word { font-size:15px; letter-spacing:-.01em; text-align:center; }
+/* Skip hours held by a safety gate: muted, hatched, never the window color. */
+.scrub .sb.held, .scrub .sb.held.in { background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--skip) 28%,transparent) 0 4px,color-mix(in srgb,var(--skip) 12%,transparent) 4px 8px); box-shadow:none; }
+
+/* Comfortable tap targets for source links and the two explanatory disclosures. */
+#sources a[href^="https://open-meteo.com/"], #sources a[href^="https://creativecommons.org/licenses/by/4.0/"],
+.why-verdict > summary, .setup-disclosure > summary { min-height:44px; padding-block:8px; display:inline-flex; align-items:center; }
+.home-spot label { display:grid; gap:6px; }
+.home-spot select { min-height:44px; width:100%; padding:8px 12px; border:1px solid var(--line-strong); border-radius:12px; background:var(--surface-2); color:var(--text); font:inherit; }
+.about-block > a { min-height:44px; display:flex; align-items:center; color:var(--accent); }
+
+/* Species browser: one grouped list with readable, even-height tiles. */
+.species-filters { margin-top:0; }
+.species-browser .search-box + .species-filters { margin-top:8px; }
+.species-filters .seg button,.species-clear { min-height:44px; }
+.species-groups { display:grid; gap:20px; }
+.species-group { min-width:0; }
+.species-group-head { display:flex; align-items:baseline; gap:8px; margin:8px 0 10px; }
+.species-group-head h2 { margin:0; font-size:var(--fs-sub); }
+.species-group-head > span { min-width:24px; color:var(--muted); font-size:var(--fs-sm); font-variant-numeric:tabular-nums; }
+.species-group .grid { align-items:stretch; }
+.species-group .grid > li { display:flex; min-width:0; }
+.species-group .sp { width:100%; min-height:250px; }
+.species-group .species-thumb { flex:none; height:76px; }
+.species-group .sp .n { min-height:2.5em; margin:7px 0 4px; }
+.species-band { min-height:22px; display:flex; align-items:center; font-size:var(--fs-sm); font-weight:700; }
+.species-group .tag.eligibility { min-height:28px; display:flex; align-items:center; }
+.species-group .trip-rate { min-height:2.6em; display:-webkit-box; overflow:hidden; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.species-group .species-fit-bar { height:3px; flex:none; margin-top:auto; border:0; }
+.species-empty { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.species-clear { flex:none; }
+
+/* Species sheet tabs stay reachable while its content scrolls. */
+.species-tabs { position:sticky; top:0; z-index:5; display:flex; gap:6px; margin:8px 0 16px; padding:7px 0; overflow:visible; background:color-mix(in srgb,var(--surface) 96%,transparent); -webkit-backdrop-filter:blur(14px); backdrop-filter:blur(14px); }
+.species-tab { min-width:0; min-height:44px; flex:1 1 0; padding:0 8px; }
+.species-detail .block { scroll-margin-top:64px; }
+.species-group .sp { min-height:0; }
+.ended-note { margin:0 0 10px; }
+.times-empty .btn-s, .target-species .btn-s { margin-top:10px; }
+
+/* Type scale pass: nothing below 11px; values readable; card titles above body; one size per role. */
+.condition-cell small { font-size:11px; letter-spacing:.01em; }
+.conditions-caption { font-size:12px; }
+.condition-cell b { font-size:clamp(14px,3.9vw,16px); }
+.today-hero-place small { font-size:14px; }
+.closure-badge { font-size:11px; }
+.tv .w { font-size:16px; line-height:1.25; }
+.delta { font-size:15px; }
+.species-group-head h2 { font-size:18px; }
+.species-band, .species-group .sp b.species-band, .sp .big span { font-weight:700; }
+.sp .n { font-size:15px; }
+.why-verdict li, .verdict-reasons li { font-size:15px; }
+.log-summary .stat .v, .stat .v { font-size:18px; }
+.plan-day-chips small, .day-row small { font-size:12px; }
+.day-row > span:first-child { font-size:15px; }
+.src-list li, .fine { font-size:13px; }
+.r2, .r2 .when { font-size:14px; }
+.page-heading h1 { font-size:28px; }
+
+/* Horizontal tab slide: keep the compositor to cheap translate-only layers on older phones. */
+.tab-peek { contain:layout paint style; backface-visibility:hidden; -webkit-backface-visibility:hidden; }
+.tab-peek, .tab-peek * { animation:none!important; transition:none!important; }
+body.tab-moving .bar, body.tab-moving .tabbar { -webkit-backdrop-filter:none; backdrop-filter:none; background:color-mix(in srgb,var(--surface) 94%,var(--bg)); }
+body.tab-moving #main { backface-visibility:hidden; -webkit-backface-visibility:hidden; }

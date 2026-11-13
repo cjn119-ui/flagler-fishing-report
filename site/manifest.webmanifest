@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Flagler Fishing",
   "short_name": "Flagler Fishing",
-  "description": "Live fishing conditions, best times and a 7-day outlook for Palm Coast and Flagler Beach.",
+  "description": "Fishing decisions for St. Augustine to Flagler: GO / MAYBE / SKIP by spot, species suitability and best times.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
