@@ -2,7 +2,7 @@
 // Numbers and sentences come from the JSON and from ../engine/copy.js (pure formatters); species/spot catalogs
 // (../species.js, ../spots.js) supply names, default setup and access notes. Everything else is layout and state.
 import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfidenceParts, formatCopyMessage, formatHeadline, formatVerdictLine, nextWindowLabel, slotIndexAt, nearestSlotIndex, defaultSlotIndex, sourceSummaries, excludeSpot, rankSpeciesRows, bestUpcomingCandidate, presentChildren, windowPhase, scrubWindows, slotInWindow, slotHeld, confidenceDisplay, pickComparison, factorLine, backupTitle } from "../engine/copy.js";
-import { SPECIES } from "../species.js";
+import { SPECIES, fwcRulesUrl, fwcRulesIsSpecific } from "../species.js";
 import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
 import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
@@ -127,6 +127,17 @@ function setWallpaper(spotId) {
 }
 setWallpaper(null);
 function fishImage(id, cls = "") { const slug = FISH_IMAGE[id]; return slug ? image(`fish/${slug}.webp`, cls, spName(id)) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": spName(id) }); }
+const EXT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const extIcon = () => { const e = document.createElement("span"); e.className = "ext"; e.setAttribute("aria-hidden", "true"); e.innerHTML = EXT; return e; };
+function fwcLink(id, cls = "") { const name = id ? spName(id) : ""; return h("a", { class: `fwc-link ${cls}`.trim(), href: fwcRulesUrl(id), target: "_blank", rel: "noopener" }, name ? `FWC rules for ${name}` : "Check current FWC rules", extIcon()); }
+function fwcCard(id, name) {
+  const specific = fwcRulesIsSpecific(id);
+  return h("section", { class: "fwc-card", "aria-label": "Florida fishing rules" },
+    h("p", { class: "eyebrow" }, "Florida fishing rules"),
+    h("p", { class: "fwc-lead" }, specific ? `Size, bag limit and season for ${name}` : `Rules that apply to ${name}`),
+    h("p", { class: "fine" }, specific ? "Limits change and differ by region and gear. Confirm before you keep a fish." : "No species-specific limit, but a default bag limit and gear rules still apply."),
+    h("a", { class: "btn fwc-btn", href: fwcRulesUrl(id), target: "_blank", rel: "noopener" }, `Look up ${name} on FWC`, extIcon()));
+}
 function spotImage(id, cls = "", alt = "") { const file = `spots/${id}.jpg`; return creditFor(file) ? image(file, cls, alt) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": alt || "Fishing spot" }); }
 function spotPhoto(id, cls = "", alt = "", showCaption = false) {
   const file = `spots/${id}.jpg`, closure = closureFor(id), photo = spotImage(id, cls, alt || SPOTS.find((x) => x.id === id)?.name || "Fishing spot");
@@ -887,7 +898,7 @@ function useCard(c) {
       set.lures?.length ? h("div", {}, h("dt", {}, "Lures"), h("dd", {}, h("ul", {}, set.lures.map((b) => h("li", {}, b))))) : null,
       set.rig ? h("div", {}, h("dt", {}, "Rig"), h("dd", {}, set.rig)) : null,
       set.tip || r.tip ? h("div", {}, h("dt", {}, "Tip"), h("dd", {}, set.tip ?? r.tip)) : null),
-      h("p", { class: "fine" }, "Check current FWC rules before you go.")));
+      fwcLink(r.targets?.[0]?.speciesId ?? st.species, "fwc-inline")));
   return det;
 }
 function confCard(c) {
@@ -1813,6 +1824,7 @@ function openSpecies(id, opener) {
           h("div", {}, h("dt", {}, "Conditions fit"), h("dd", {}, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : `${suit} \u00b7 ${speciesFitWord(suit, best)}`))),
         h("p", { class: "fine" }, `Blends how often anglers catch it this month (${Math.round(CATCH_SCORE.rateWeight * 100)}%) with how well today\u2019s conditions fit (${Math.round(CATCH_SCORE.fitWeight * 100)}%). An index out of 100, not a percent chance.`), h("div", { class: "kv catch-actions" }));
     })(),
+    fwcCard(id, sp.name),
     !realistic && reason ? h("p", { class: "fine eligibility" }, reason) : null,
     best?.historicalRate ? h("p", { class: "fine trip-rate" }, speciesTripRate(best)) : null,
     place?.displayName ? h("div", { class: "block" }, h("h3", {}, "Best place and time"), h("p", { style: "font-weight:600" }, place.displayName, " ", h("span", { class: "mchip" }, modeIcon(place.mode), modeLabel(place.mode))), place.window ? h("p", { class: "muted" }, fmtRange(place.window.start, place.window.end)) : null) : null,
@@ -1857,7 +1869,7 @@ function openSpecies(id, opener) {
     });
   }
   body.append(why); if(setupBlock) body.append(setupBlock); if(seasonBlock) body.append(seasonBlock); else if(historyBlock) body.append(historyBlock);
-  body.append(h("a",{class:"btn alt",href:"https://myfwc.com/fishing/saltwater/recreational/",target:"_blank",rel:"noopener"},"Check current FWC rules")); actionHost?.remove();
+  actionHost?.remove();
   if(matchMedia("(min-width:900px)").matches && st.tab === "species") { const browser = document.querySelector(".species-browser"); let layout=browser.parentElement.querySelector(".species-layout"); if(!layout) { layout=h("div",{class:"species-layout"}); browser.replaceWith(layout); layout.append(browser); } let pane=layout.querySelector(".species-pane"); if(!pane) { pane=h("section",{class:"card species-pane"});layout.append(pane); } pane.replaceChildren(h("h2",{},sp.name),body); }
   else {
     openSheet(sp.name, body, opener);
