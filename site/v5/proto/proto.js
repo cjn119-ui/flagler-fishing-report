@@ -1494,7 +1494,7 @@ function logView(c) {
     return h("section", { class: "log-day" }, heading, h("ul", { class: "log-list" }, items));
   });
   return [h("section", { class: "card log-card", "aria-label": "Catch log" },
-    h("div", { class: "page-heading journal-heading" }, h("h1", {}, "Every trip teaches."), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
+    h("div", { class: "card-h" }, h("h2", {}, "Every trip teaches."), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
     h("p", { class: "fine" }, "Saved on this device only."), summary,
     h("button", { class: "btn log-add", type: "button", hidden: !rows.length, onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log a catch"),
     rows.length ? entries : h("div", { class: "log-empty" }, s("svg", { class: "empty-fish", viewBox: "0 0 120 64", role: "img", "aria-label": "A fish on a fishing line" }, s("path", { d: "M16 36c13-17 35-20 55-9l18-13v41L71 43c-20 11-42 8-55-7Zm-8 0h7m67-12 13-7m-13 31 13 7M51 27v18m7-18v18" }), s("circle", { cx: 42, cy: 33, r: 2 })), h("p", {}, "No catches logged yet."), h("p", { class: "fine" }, "Log a catch to start tracking your best spots and species."), h("button", { class: "btn", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log your first catch")))];
