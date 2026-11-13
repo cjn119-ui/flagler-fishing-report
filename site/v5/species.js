@@ -279,16 +279,29 @@ export const MRIP_EXCLUDE = [
 
 export const FWC_REGS_URL = "https://myfwc.com/fishing/saltwater/recreational/";
 
-// Species-specific FWC regulation pages (verified live 2026-11-13). Species without
-// their own page (unregulated fish, sand seatrout, small fish) fall back to the
-// "unregulated species" page or the general rules index.
+// Species-specific FWC regulation pages (verified live 2026-11-13). FWC regenerates accordion
+// ids on every page load, so deep links use text fragments (scroll + highlight) instead.
+// kind: "limits" = species page with size/bag/season; "unregulated" = FWC lists the fish as
+// having no species-specific rules (default bag limit and gear rules still apply).
 const FWC_BASE = FWC_REGS_URL;
 export const FWC_SPECIES_PAGES = {
-  redfish: "red-drum", trout: "spotted-seatrout", flounder: "flounder", sheepshead: "sheepshead",
-  blackdrum: "black-drum", mangrove: "snappers", pompano: "permit", bluefish: "bluefish",
-  spanish: "spanish-mackerel", seabass: "black-sea-bass", spot: "spot-croaker", croaker: "spot-croaker",
-  "sharks-rays": "sharks", whiting: "unregulated", jack: "unregulated", spadefish: "unregulated",
-  catfish: "unregulated", "panfish-misc": "unregulated",
+  redfish: { page: "red-drum" }, trout: { page: "spotted-seatrout" }, flounder: { page: "flounder" },
+  sheepshead: { page: "sheepshead" }, blackdrum: { page: "black-drum" }, bluefish: { page: "bluefish" },
+  spanish: { page: "spanish-mackerel" }, seabass: { page: "black-sea-bass" },
+  spot: { page: "spot-croaker" }, croaker: { page: "spot-croaker" }, "sharks-rays": { page: "sharks" },
+  // Gray (Mangrove) appears in both the Gulf and Atlantic lists; Atlantic follows Vermilion.
+  mangrove: { page: "snappers", find: "Vermilion-,Gray (Mangrove)" },
+  pompano: { page: "permit", find: "Florida Pompano" },
+  whitetrout: { page: "weakfish", find: "sand seatrout" },
+  whiting: { page: "unregulated", find: "gulf kingfish (whiting)", kind: "unregulated" },
+  jack: { page: "unregulated", find: "jack crevalle", kind: "unregulated" },
+  spadefish: { page: "unregulated", find: "spadefish", kind: "unregulated" },
+  catfish: { page: "unregulated", find: "gafftopsail catfish", kind: "unregulated" },
+  "panfish-misc": { page: "unregulated", find: "pinfish", kind: "unregulated" },
 };
-export const fwcRulesUrl = (id) => FWC_SPECIES_PAGES[id] ? `${FWC_BASE}${FWC_SPECIES_PAGES[id]}/` : FWC_BASE;
-export const fwcRulesIsSpecific = (id) => Boolean(FWC_SPECIES_PAGES[id]) && FWC_SPECIES_PAGES[id] !== "unregulated";
+export const fwcRulesUrl = (id) => {
+  const e = FWC_SPECIES_PAGES[id];
+  if (!e) return FWC_BASE;
+  return `${FWC_BASE}${e.page}/${e.find ? `#:~:text=${e.find.split(",").map((x) => encodeURIComponent(x).replace(/[()]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())).join(",")}` : ""}`;
+};
+export const fwcRulesKind = (id) => FWC_SPECIES_PAGES[id]?.kind ?? (FWC_SPECIES_PAGES[id] ? "limits" : "general");

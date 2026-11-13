@@ -2,7 +2,7 @@
 // Numbers and sentences come from the JSON and from ../engine/copy.js (pure formatters); species/spot catalogs
 // (../species.js, ../spots.js) supply names, default setup and access notes. Everything else is layout and state.
 import { formatWhenLabel, formatWindowStatus, formatHistoricalRate, formatConfidenceParts, formatCopyMessage, formatHeadline, formatVerdictLine, nextWindowLabel, slotIndexAt, nearestSlotIndex, defaultSlotIndex, sourceSummaries, excludeSpot, rankSpeciesRows, bestUpcomingCandidate, presentChildren, windowPhase, scrubWindows, slotInWindow, slotHeld, confidenceDisplay, pickComparison, factorLine, backupTitle } from "../engine/copy.js";
-import { SPECIES, fwcRulesUrl, fwcRulesIsSpecific } from "../species.js";
+import { SPECIES, fwcRulesUrl, fwcRulesKind } from "../species.js";
 import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
 import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
@@ -131,12 +131,15 @@ const EXT = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4
 const extIcon = () => { const e = document.createElement("span"); e.className = "ext"; e.setAttribute("aria-hidden", "true"); e.innerHTML = EXT; return e; };
 function fwcLink(id, cls = "") { const name = id ? spName(id) : ""; return h("a", { class: `fwc-link ${cls}`.trim(), href: fwcRulesUrl(id), target: "_blank", rel: "noopener" }, name ? `FWC rules for ${name}` : "Check current FWC rules", extIcon()); }
 function fwcCard(id, name) {
-  const specific = fwcRulesIsSpecific(id);
+  const kind = fwcRulesKind(id);
+  const lead = kind === "limits" ? `Size, bag limit and season for ${name}` : kind === "unregulated" ? `FWC lists ${name} as unregulated` : `Rules that apply to ${name}`;
+  const fine = kind === "limits" ? "Limits change and differ by region and gear. Confirm before you keep a fish."
+    : kind === "unregulated" ? "No species-specific size limit or season, but a default bag limit and gear rules still apply."
+    : "No page for this species, so this opens FWC\u2019s general rules. Confirm before you keep a fish.";
   return h("section", { class: "fwc-card", "aria-label": "Florida fishing rules" },
     h("p", { class: "eyebrow" }, "Florida fishing rules"),
-    h("p", { class: "fwc-lead" }, specific ? `Size, bag limit and season for ${name}` : `Rules that apply to ${name}`),
-    h("p", { class: "fine" }, specific ? "Limits change and differ by region and gear. Confirm before you keep a fish." : "No species-specific limit, but a default bag limit and gear rules still apply."),
-    h("a", { class: "btn fwc-btn", href: fwcRulesUrl(id), target: "_blank", rel: "noopener" }, `Look up ${name} on FWC`, extIcon()));
+    h("p", { class: "fwc-lead" }, lead), h("p", { class: "fine" }, fine),
+    h("a", { class: "btn fwc-btn", href: fwcRulesUrl(id), target: "_blank", rel: "noopener" }, kind === "unregulated" ? `See what FWC says about ${name}` : `Look up ${name} on FWC`, extIcon()));
 }
 function spotImage(id, cls = "", alt = "") { const file = `spots/${id}.jpg`; return creditFor(file) ? image(file, cls, alt) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": alt || "Fishing spot" }); }
 function spotPhoto(id, cls = "", alt = "", showCaption = false) {
