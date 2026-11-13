@@ -2,7 +2,7 @@ import { MODEL_PARAMS } from "./params.js";
 
 const HISTORY_PATH = "./data/first-coast-history.json";
 const MODE_BUCKET = Object.freeze({ surf: "ocean", pier: "ocean", inshore: "inland" });
-const sourceLabel = mode => mode === "inshore" ? "river, bridge and bank surveys" : "pier and beach surveys";
+const sourceLabel = (mode, history) => String(history?.region ?? "").startsWith("Florida ") ? history.region : mode === "inshore" ? "river, bridge and bank surveys" : "pier and beach surveys";
 const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 const finite = n => typeof n === "number" && Number.isFinite(n);
 const copy = (code,text,params={}) => ({code,params,text});
@@ -63,13 +63,29 @@ export async function loadFirstCoastHistory({ readJson, path = HISTORY_PATH } = 
   return normalizeFirstCoastHistory(value);
 }
 
+/** Load the Florida-wide shore-survey artifact without changing First Coast callers. */
+export async function loadFloridaCoastalHistory({ readJson, path = "../data/florida-coastal-history.json", regionId = null } = {}) {
+  let value;
+  if (readJson) value = await readJson(path);
+  else {
+    if (typeof fetch !== "function") throw new Error("loadFloridaCoastalHistory requires readJson or fetch");
+    const response = await fetch(path);
+    if (!response.ok) throw new Error(`Florida history unavailable (${response.status})`);
+    value = await response.json();
+  }
+  const selected = regionId ? value?.regions?.[regionId] : value;
+  if (regionId && !selected) throw new TypeError(`Florida history region is unavailable: ${regionId}`);
+  if (!String(selected?.region ?? "").startsWith("Florida ")) throw new TypeError("Florida history artifact has the wrong region label");
+  return normalizeFirstCoastHistory({ ...value, ...selected });
+}
+
 /** Raw non-proxy monthly survey rate; omitted/zero-denominator slices stay unavailable. */
 export function getSpeciesMonthRate(history, { speciesId, mripAliases = [], mode, month }) {
   const slice = sliceFor(history, mode, month), counts = integerCounts(slice, speciesId, mripAliases);
   const n = slice?.nTrips ?? slice?.n ?? null;
-  if (!counts) return { rate:null, n:finite(n)?n:null, lowSample:finite(n)?n<MODEL_PARAMS.history.numericMinN:false, band:null, unit:"trips", month, sourceLabel:sourceLabel(mode), hitTrips:null, available:false };
+  if (!counts) return { rate:null, n:finite(n)?n:null, lowSample:finite(n)?n<MODEL_PARAMS.history.numericMinN:false, band:null, unit:"trips", month, sourceLabel:sourceLabel(mode, history), hitTrips:null, available:false };
   const rate = counts.h / counts.n;
-  return { rate, n:counts.n, hitTrips:counts.h, lowSample:counts.n<MODEL_PARAMS.history.numericMinN, band:bandFor(rate), unit:"trips", month, sourceLabel:sourceLabel(mode), available:true };
+  return { rate, n:counts.n, hitTrips:counts.h, lowSample:counts.n<MODEL_PARAMS.history.numericMinN, band:bandFor(rate), unit:"trips", month, sourceLabel:sourceLabel(mode, history), available:true };
 }
 
 function shrunkRate(history, query, month) {
@@ -94,10 +110,10 @@ export function getSeasonCurve(history, query) {
   return Array.from({length:12},(_,i)=>shrunkRate(history,query,i+1));
 }
 /** Returns regionally shrunk timing and display-rate data for a UTC window. */
-export function getHistoricalTiming(history, { start, end, mode, speciesId, speciesName, mripAliases=[], waterF, waterTempF }) {
+export function getHistoricalTiming(history, { start, end, mode, speciesId, speciesName, mripAliases=[], waterF, waterTempF, timeZone="America/New_York" }) {
   const date=new Date(start), endDate=new Date(end);
   if (!Number.isFinite(+date) || !Number.isFinite(+endDate) || +endDate<=+date) throw new TypeError("Invalid history window");
-  const month=Number(new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",month:"numeric"}).format(date)), query={speciesId,mripAliases,mode,month,waterF,waterTempF};
+  const month=Number(new Intl.DateTimeFormat("en-US",{timeZone,month:"numeric"}).format(date)), query={speciesId,mripAliases,mode,month,waterF,waterTempF};
   const historyRate=getShrunkSpeciesMonthRate(history,query), curve=getSeasonCurve(history,{speciesId,mripAliases,mode});
   const eligiblePeaks=curve.filter((rate,i)=>{const m=getSpeciesMonthRate(history,{speciesId,mripAliases,mode,month:i+1});return finite(rate)&&m.hitTrips>=MODEL_PARAMS.history.seasonPeakMinimumHits;}), complete=curve.every(finite), peak=eligiblePeaks.length?Math.max(...eligiblePeaks):null;
   const rel=peak!==null&&finite(historyRate.rate)?historyRate.rate/peak:null,{reference:seasonAbsoluteReference,fallback:seasonReferenceFallback}=absoluteReference(history,mode),abs=historyRate.rate/seasonAbsoluteReference;

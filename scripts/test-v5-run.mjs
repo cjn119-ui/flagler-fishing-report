@@ -68,6 +68,48 @@ await check("forecast pressure reaches future slot conditions and normalized run
 });
 await check("winning water provider and documented distant tide note reach location confidence metadata",()=>{assert.ok(built.today.locations.some(x=>Number.isFinite(x.tideDistanceMi)&&x.tideDistanceMi>15));const rows=Object.values(built.details).flatMap(x=>x.rows??[]).flatMap(x=>x.slots??[]);assert.ok(rows.some(x=>x.conditions.waterTempSource==="ocean-buoy"||x.conditions.waterTempSource==="co-ops-water-temperature"));});
 await check("pressure does not fabricate a neutral trend beyond the newest reading",()=>{const refs=built.tomorrow.detailsRefs??[];const rows=Object.values(built.details).flatMap(x=>x.rows??[]).flatMap(x=>x.slots??[]);assert.ok(rows.some(x=>x.conditions&&x.conditions.pressureChange6hHpa===null));});
+await check("short remaining today horizon keeps location recommendations until the last slot",async()=>{
+  for(const now of ["2026-10-06T00:00:22.000Z","2026-10-06T00:30:00.000Z"]){
+    const {today}=await build({now});
+    assert.equal(validatePredictionRun(today),true);
+    assert.ok(today.candidates.length>0);
+    assert.equal(new Set(Object.values(today.scopeViews.byLocation).map(x=>x.recommendation.locationId)).size,ACTIVE_SPOTS.length);
+    assert.ok(today.candidates.every(x=>x.window.start==="2026-10-06T00:30:00.000Z"&&x.window.end==="2026-10-06T01:00:00.000Z"));
+    assert.equal(today.recommendation.state,undefined);
+  }
+  for(const now of ["2026-10-06T01:00:00.000Z","2026-10-06T01:15:00.000Z"]){
+    const {today}=await build({...smallParams,now});
+    assert.equal(validatePredictionRun(today),true);
+    assert.equal(today.recommendation.verdict,"SKIP");
+    assert.equal(today.recommendation.state.code,"noRemainingWindowsToday");
+    assert.match(today.recommendation.whenLabel.text,/ended/);
+  }
+});
+await check("missing inputs retain each source location in open and ended runs",async()=>{
+  const observations=fixture.observations.map(x=>x.kind==="pressureObservations"?{...x,ok:false}:x);
+  for(const now of [fixture.now,"2026-10-06T01:15:00.000Z"]){
+    const {today}=await build({now,observations});
+    const missing=today.missingInputs.filter(x=>x.kind==="pressureObservations");
+    assert.deepEqual(new Set(missing.map(x=>x.locationId)),new Set(ACTIVE_SPOTS.map(x=>x.id)));
+    assert.ok(today.inputs.sourceStatus.every(x=>x.locationId));
+  }
+});
+await check("failed pressure forecast stays visible without making covered station data partial",async()=>{
+  const locationId=miniLocations[0].id,t=Date.parse(fixture.now),stamp=t=>new Date(t).toISOString();
+  const observations=fixture.observations.filter(x=>x.locationId===locationId).map(x=>({...x,ok:true,stale:false}));
+  const station=observations.find(x=>x.kind==="pressureObservations");
+  station.observedAt=fixture.now;
+  station.values={rows:[{at:stamp(t-6*3600000),pressureHpa:1010},{at:fixture.now,pressureHpa:1011}]};
+  const failed={...station,kind:"pressureForecast",provider:"open-meteo",ok:false,values:{},safeErrorCode:"source_unavailable"};
+  const baseline=await build({...smallParams,observations});
+  for(const stale of [false,true]){
+    const {today}=await build({...smallParams,observations:[...observations,{...failed,ok:stale,stale}]});
+    assert.equal(today.status,baseline.today.status);
+    assert.ok(today.missingInputs.some(x=>x.kind==="pressureForecast"&&x.locationId===locationId));
+  }
+  const staleStation=observations.map(x=>x.kind==="pressureObservations"?{...x,stale:true}:x);
+  assert.equal((await build({...smallParams,observations:[...staleStation,failed]})).today.status,"partial");
+});
 await check("late evening closes today cleanly while tomorrow refreshes",async()=>{const late=await build({now:"2026-10-06T02:15:00.000Z"});assert.equal(validatePredictionRun(late.today),true);assert.equal(validatePredictionRun(late.tomorrow),true);assert.equal(late.today.recommendation.state?.kind,"closed");assert.equal(late.today.recommendation.state?.code,"noRemainingWindowsToday");assert.equal(late.tomorrow.generatedAt,"2026-10-06T02:15:00.000Z");});
 await check("timezone-less clock is rejected and malformed catalog rows are skipped with typed notes",async()=>{await assert.rejects(()=>build({now:"2026-10-05T12:00:00"}),/ISO instant with timezone/);const bad=await build({...smallParams,locations:[...miniLocations,{id:"broken",active:true,modes:[],lat:null,lon:null}]});assert.ok(bad.today.notes.some(x=>x.code==="invalidLocationSkipped"));});
 await check("hourly range fallback uses its upper wind bound",async()=>{const observations=fixture.observations.map(x=>x.locationId===miniLocations[0].id&&x.kind==="gridForecast"?{...x,ok:false,values:{}}:x.kind==="hourlyForecast"?{...x,values:{rows:(x.values?.rows??[]).map(r=>({...r,windSpeed:"15 to 25 mph"}))}}:x),r=await build({...smallParams,observations});const conditions=Object.values(r.details).flatMap(x=>x.rows??[]).flatMap(x=>x.slots??[]).map(x=>x.conditions);assert.ok(conditions.some(x=>x.windMph===25));});

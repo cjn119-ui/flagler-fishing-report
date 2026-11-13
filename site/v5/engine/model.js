@@ -5,23 +5,23 @@ import { getAstronomy } from "./astro.js";
 
 const has=n=>typeof n==="number"&&Number.isFinite(n), clamp=(n,a=0,b=100)=>Math.max(a,Math.min(b,n));
 const utc=d=>new Date(d).toISOString();
-const localParts=(d)=>{const p=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone:"America/New_York",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(d)).map(x=>[x.type,x.value]));return p;};
-const localKey=d=>{const p=localParts(d);return `${p.year}-${p.month}-${p.day}`;};
-const offsetAt=d=>{const p=localParts(d);return Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute)-Math.floor(+d/60000)*60000;};
-function localInstant(day,hour,minute=0){
+const localParts=(d,timeZone="America/New_York")=>{const p=Object.fromEntries(new Intl.DateTimeFormat("en-CA",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hourCycle:"h23"}).formatToParts(new Date(d)).map(x=>[x.type,x.value]));return p;};
+const localKey=(d,timeZone="America/New_York")=>{const p=localParts(d,timeZone);return `${p.year}-${p.month}-${p.day}`;};
+const offsetAt=(d,timeZone="America/New_York")=>{const p=localParts(d,timeZone);return Date.UTC(+p.year,+p.month-1,+p.day,+p.hour,+p.minute)-Math.floor(+d/60000)*60000;};
+function localInstant(day,hour,minute=0,timeZone="America/New_York"){
   const [y,m,d]=day.split("-").map(Number), wall=Date.UTC(y,m-1,d,hour,minute);
-  let guess=wall-offsetAt(wall);
-  for(let i=0;i<3;i++)guess=wall-offsetAt(guess);
+  let guess=wall-offsetAt(wall,timeZone);
+  for(let i=0;i<3;i++)guess=wall-offsetAt(guess,timeZone);
   return guess;
 }
-export function generateSlots({now,horizon="today",params=MODEL_PARAMS}){
-  const key=localKey(now), tomorrowKey=localKey(+new Date(`${key}T12:00:00Z`)+86400000);
+export function generateSlots({now,horizon="today",params=MODEL_PARAMS,timeZone="America/New_York"}){
+  const key=localKey(now,timeZone), tomorrowKey=localKey(+new Date(`${key}T12:00:00Z`)+86400000,timeZone);
   const target=horizon==="tomorrow"?tomorrowKey:key;
-  let start=horizon==="tomorrow"?localInstant(target,params.windows.tomorrowStartLocalHour):+new Date(now);
-  const end=localInstant(target,horizon==="tomorrow"?params.windows.tomorrowEndLocalHour:params.windows.todayEndLocalHour);
+  let start=horizon==="tomorrow"?localInstant(target,params.windows.tomorrowStartLocalHour,0,timeZone):+new Date(now);
+  const end=localInstant(target,horizon==="tomorrow"?params.windows.tomorrowEndLocalHour:params.windows.todayEndLocalHour,0,timeZone);
   const slotMs=params.windows.slotMinutes*60000;
   start=Math.ceil(start/slotMs)*slotMs;
-  const slots=[];for(let t=start;t<end;t+=slotMs)if(localKey(t)===target)slots.push(utc(t));
+  const slots=[];for(let t=start;t<end;t+=slotMs)if(localKey(t,timeZone)===target)slots.push(utc(t));
   return slots;
 }
 export function historyBand(rate){if(!has(rate))return null;const b=MODEL_PARAMS.history.bands;return rate>=b.commonMin?"Common":rate>=b.occasionalMin?"Occasional":"Rare";}
@@ -62,8 +62,8 @@ export function safetyGates(c,{mode="surf",params=MODEL_PARAMS}={}){
   if(mode!=="inshore"&&has(c.waveHeightM)&&c.waveHeightM>params.factors.waves.safetySkipAboveM)add("waves","Surf reaches unsafe levels during this window.");
   return out;
 }
-export function seasonalBenchmarkFor({locationId,mode,date,params=MODEL_PARAMS}){
-  const day=typeof date==="string"&&/^\d{4}-\d\d-\d\d$/.test(date)?date.slice(5):has(Date.parse(date))?localParts(Date.parse(date)).month+"-"+localParts(Date.parse(date)).day:null;
+export function seasonalBenchmarkFor({locationId,mode,date,params=MODEL_PARAMS,timeZone="America/New_York"}){
+  const day=typeof date==="string"&&/^\d{4}-\d\d-\d\d$/.test(date)?date.slice(5):has(Date.parse(date))?localParts(Date.parse(date),timeZone).month+"-"+localParts(Date.parse(date),timeZone).day:null;
   if(!day)return null;
   const key=`${locationId}:${mode}`,value=params.benchmarks?.goSeasonal?.[key]?.[day];
   return has(value)?value:null;
@@ -78,10 +78,10 @@ export function verdictFor({suitability,confidence,eligibility,conditionsReady=t
 const slotScore=x=>has(x?.rawSuitability)?x.rawSuitability:x?.suitability;
 function duration(a,b){return (Date.parse(b)-Date.parse(a))/60000;}
 const inclusiveDuration=(a,b,slotMinutes)=>((b-a+1)*slotMinutes);
-function partOfDay(start,end,spot,params){
-  const mid=(Date.parse(start)+Date.parse(end))/2,p=localParts(mid),minute=Number(p.hour)*60+Number(p.minute);
+function partOfDay(start,end,spot,params,timeZone="America/New_York"){
+  const mid=(Date.parse(start)+Date.parse(end))/2,p=localParts(mid,timeZone),minute=Number(p.hour)*60+Number(p.minute);
   if(has(spot?.lat)&&has(spot?.lon)){
-    const astro=getAstronomy(localKey(mid),spot.lat,spot.lon).sun,rise=Date.parse(astro.sunrise),set=Date.parse(astro.sunset);
+    const astro=getAstronomy(localKey(mid,timeZone),spot.lat,spot.lon).sun,rise=Date.parse(astro.sunrise),set=Date.parse(astro.sunset);
     if(Math.abs(mid-rise)<=params.factors.light.lowlightMinutes*60000)return "dawn";if(Math.abs(mid-set)<=params.factors.light.lowlightMinutes*60000)return "dusk";
   }
   if(minute<params.windows.middayStartLocalHour*60)return "morning";if(minute<params.windows.afternoonStartLocalHour*60)return "midday";if(minute<params.windows.eveningStartLocalHour*60)return "afternoon";return "evening";
@@ -95,18 +95,18 @@ function localPeakIndices(rows,slotMinutes){
   }
   return peaks;
 }
-export function findSpeciesWindows(rows,{params=MODEL_PARAMS,locationId,mode,speciesId,spot=null,now=rows[0]?.at}={}){
+export function findSpeciesWindows(rows,{params=MODEL_PARAMS,locationId,mode,speciesId,spot=null,now=rows[0]?.at,timeZone="America/New_York"}={}){
   const ordered=[...rows].sort((a,b)=>Date.parse(a.at)-Date.parse(b.at)),slotMs=params.windows.slotMinutes*60000,contiguous=(a,b)=>Date.parse(ordered[b].at)-Date.parse(ordered[a].at)===slotMs,peaks=localPeakIndices(ordered,params.windows.slotMinutes), candidates=[];
   for(const pi of peaks){const peak=ordered[pi], floor=slotScore(peak)-params.windows.peakTolerancePoints;let lo=pi,hi=pi;
-    while(lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)&&has(slotScore(ordered[lo-1]))&&slotScore(ordered[lo-1])>=floor&&inclusiveDuration(lo-1,hi,params.windows.slotMinutes)<=params.windows.maximumMinutes)lo--;
-    while(hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)&&has(slotScore(ordered[hi+1]))&&slotScore(ordered[hi+1])>=floor&&inclusiveDuration(lo,hi+1,params.windows.slotMinutes)<=params.windows.maximumMinutes)hi++;
-    while(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes){const left=lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at)===localKey(peak.at)?ordered[lo-1]:null,right=hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at)===localKey(peak.at)?ordered[hi+1]:null;if(!left&&!right)break;if(right&&(!left||slotScore(right)>=slotScore(left)))hi++;else lo--;}
+    while(lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at,timeZone)===localKey(peak.at,timeZone)&&has(slotScore(ordered[lo-1]))&&slotScore(ordered[lo-1])>=floor&&inclusiveDuration(lo-1,hi,params.windows.slotMinutes)<=params.windows.maximumMinutes)lo--;
+    while(hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at,timeZone)===localKey(peak.at,timeZone)&&has(slotScore(ordered[hi+1]))&&slotScore(ordered[hi+1])>=floor&&inclusiveDuration(lo,hi+1,params.windows.slotMinutes)<=params.windows.maximumMinutes)hi++;
+    while(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes){const left=lo>0&&contiguous(lo-1,lo)&&localKey(ordered[lo-1].at,timeZone)===localKey(peak.at,timeZone)?ordered[lo-1]:null,right=hi<ordered.length-1&&contiguous(hi,hi+1)&&localKey(ordered[hi+1].at,timeZone)===localKey(peak.at,timeZone)?ordered[hi+1]:null;if(!left&&!right)break;if(right&&(!left||slotScore(right)>=slotScore(left)))hi++;else lo--;}
     if(inclusiveDuration(lo,hi,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;
     // Select best mean slice <=150 minutes containing peak.
     let best=null;for(let a=lo;a<=pi;a++){for(let b=pi;b<=hi;b++){if(inclusiveDuration(a,b,params.windows.slotMinutes)>params.windows.maximumMinutes)break;if(inclusiveDuration(a,b,params.windows.slotMinutes)<params.windows.minimumMinutes)continue;const part=ordered.slice(a,b+1);if(part.some((x,i)=>i>0&&!contiguous(a+i-1,a+i)))continue;const mean=part.reduce((s,x)=>s+slotScore(x),0)/part.length;if(!best||mean>best.mean||mean===best.mean&&Date.parse(part[0].at)<Date.parse(best.part[0].at))best={part,mean};}}
     if(!best)continue;const part=best.part, start=part[0].at,end=utc(Date.parse(part.at(-1).at)+params.windows.slotMinutes*60000),gates=[...new Map(part.flatMap(x=>x.gates??[]).map(x=>[x.code,x])).values()];
     const reasons=[...new Map(part.flatMap(x=>x.confidenceReasons??[]).map(x=>[x.code,x])).values()],confidence=clamp(params.confidence.start-reasons.reduce((sum,x)=>sum+(x.penalty??0),0),params.confidence.minimum,100),nowMs=Date.parse(now??start),startMs=Date.parse(start),endMs=Date.parse(end);
-    candidates.push({id:`${locationId}:${mode}:${speciesId}:${start}`,speciesId,locationId,mode,start,end,partOfDay:partOfDay(start,end,spot,params),peak:peak.at,peakSuitability:Math.round(slotScore(peak)),peakRaw:slotScore(peak),mean:best.mean,suitability:Math.round(best.mean),confidence,confidenceReasons:reasons,gates,slots:part,isOpenAtGenerated:nowMs>=startMs&&nowMs<endMs,startsInMinAtGenerated:Math.max(0,Math.ceil((startMs-nowMs)/60000)),endsInMinAtGenerated:Math.max(0,Math.ceil((endMs-nowMs)/60000))});
+    candidates.push({id:`${locationId}:${mode}:${speciesId}:${start}`,speciesId,locationId,mode,start,end,partOfDay:partOfDay(start,end,spot,params,timeZone),peak:peak.at,peakSuitability:Math.round(slotScore(peak)),peakRaw:slotScore(peak),mean:best.mean,suitability:Math.round(best.mean),confidence,confidenceReasons:reasons,gates,slots:part,isOpenAtGenerated:nowMs>=startMs&&nowMs<endMs,startsInMinAtGenerated:Math.max(0,Math.ceil((startMs-nowMs)/60000)),endsInMinAtGenerated:Math.max(0,Math.ceil((endMs-nowMs)/60000))});
   }
   candidates.sort((a,b)=>b.peakRaw-a.peakRaw||b.mean-a.mean||Date.parse(a.start)-Date.parse(b.start));
   for(const candidate of candidates)delete candidate.peakRaw;
@@ -127,10 +127,11 @@ function waterOutside(species,temp){return has(temp)&&Array.isArray(species.wate
 /** Score every slot for one species, then aggregate per-species windows. */
 export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,horizon="today",forecastAgeHours=null,alertsChecked=false,waveCoverage=()=>false,params=MODEL_PARAMS}){
   if(!species?.modes?.includes(mode))return null;
-  const timing=history?getHistoricalTiming(history,{speciesId:species.id,speciesName:species.name,mripAliases:species.mrip,mode,start:slots[0]??now,end:utc(Date.parse(slots[0]??now)+1),waterF:species.waterF}):null;
+  const timeZone=spot?.timeZone??"America/New_York";
+  const timing=history?getHistoricalTiming(history,{speciesId:species.id,speciesName:species.name,mripAliases:species.mrip,mode,start:slots[0]??now,end:utc(Date.parse(slots[0]??now)+1),waterF:species.waterF,timeZone}):null;
   const histRate=timing?.historicalRate?.rate??null, currentHistoryAvailable=timing?.historyAvailable===true, astronomyByDate=new Map(), eligibility=classifyEligibility({species,spot,mode,rate:histRate,historyAvailable:currentHistoryAvailable,params});
   if(eligibility.eligibility==="closed")return {speciesId:species.id,locationId:spot.id,mode,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,historicalRate:timing?.historicalRate??null,seasonCurve:timing?.seasonCurve??Array(12).fill(null),waterFit:null,seasonBasis:timing?.seasonBasis??null,seasonAbsoluteReference:timing?.seasonAbsoluteReference??null,seasonReferenceFallback:timing?.seasonReferenceFallback??true,historyNotes:timing?.historyNotes??[],slots:[],windows:[]};
-  const scored=(slots??[]).map(at=>{const sourceConditions=conditionsAt(at),wavesOk=mode==="inshore"||waveCoverage(at,horizon,{mode,spot})===true,c=mode!=="inshore"&&!wavesOk?{...sourceConditions,waveHeightM:null}:sourceConditions,ht=timing?{...timing,waterFit:getWaterFit(species,c.waterTempF)}:null,astroDate=localKey(at);let astronomy=astronomyByDate.get(astroDate);if(!astronomy&&has(spot.lat)&&has(spot.lon)){astronomy=getAstronomy(astroDate,spot.lat,spot.lon);astronomyByDate.set(astroDate,astronomy);}const f=calculateFactors({species,mode,conditions:c,at,historyTiming:ht,spot,astronomy,params});
+  const scored=(slots??[]).map(at=>{const sourceConditions=conditionsAt(at),wavesOk=mode==="inshore"||waveCoverage(at,horizon,{mode,spot})===true,c=mode!=="inshore"&&!wavesOk?{...sourceConditions,waveHeightM:null}:sourceConditions,ht=timing?{...timing,waterFit:getWaterFit(species,c.waterTempF)}:null,astroDate=localKey(at,timeZone);let astronomy=astronomyByDate.get(astroDate);if(!astronomy&&has(spot.lat)&&has(spot.lon)){astronomy=getAstronomy(astroDate,spot.lat,spot.lon);astronomyByDate.set(astroDate,astronomy);}const f=calculateFactors({species,mode,conditions:c,at,historyTiming:ht,spot,astronomy,params});
     const cap=[];if(waterOutside(species,c.waterTempF))cap.push({code:"waterOutsideRange",params:{waterTempF:c.waterTempF,range:species.waterF}});if(ht?.seasonAvailable&&ht.seasonScore<params.history.seasonCapBelow)cap.push({code:"outOfSeason",params:{relativeSeason:ht.seasonScore}});if(eligibility.eligibility!=="realistic")cap.push({code:"notRealistic",params:{eligibility:eligibility.eligibility,reason:eligibility.eligibilityReason.code}});
     let rawSuitability=f.rawSuitability;if(cap.some(x=>x.code==="waterOutsideRange"||x.code==="outOfSeason"))rawSuitability=Math.min(rawSuitability??0,params.history.seasonCapSuitability);
     const availableShare=f.factors.reduce((sum,x)=>sum+(x.available?(params.weightsByMode[mode][weightKeyFor(x.key)]??0):0),0),critical=mode==="inshore"?["wind","rain"]:["wind","rain","waves"],allCriticalMissing=critical.every(key=>!f.factors.find(x=>x.key===key)?.available),cp=params.factors.conditionCaps,score=key=>f.factors.find(x=>x.key===key)?.score;
@@ -145,14 +146,14 @@ export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,h
     const gates=safetyGates(c,{mode,params});
     const safetyInputsReady=has(c.windMph)&&has(c.windGustMph)&&typeof c.thunder==="boolean";
     const conditionsReady=has(f.suitability)&&!insufficientData&&safetyInputsReady&&forecastAgeHours!=null&&forecastAgeHours<=params.freshness.forecastMaxAgeHours&&alertsChecked&&(mode==="inshore"||wavesOk);
-    const date=localKey(at),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params});
+    const date=localKey(at,timeZone),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params,timeZone});
     if(benchmark===null&&!gates.length)cap.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});
     const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,locationId:spot.id,mode,date,params});
     return {at,conditionsReady,suitability,rawSuitability,benchmark,factors:f.factors,waterFit:f.waterFit,historyTiming:ht,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,caps:cap,confidence:conf.confidence,confidenceLevel:conf.confidenceLevel,confidenceReasons:conf.confidenceReasons,amberQualifier:conf.amberQualifier,gates,verdict,conditions:c};});
-  const windows=findSpeciesWindows(scored,{params,locationId:spot.id,mode,speciesId:species.id,spot,now}).map(w=>{
+  const windows=findSpeciesWindows(scored,{params,locationId:spot.id,mode,speciesId:species.id,spot,now,timeZone}).map(w=>{
     const gates=[...new Map(w.slots.flatMap(x=>x.gates??[]).map(x=>[x.code,x])).values()];
     const ready=w.slots.every(x=>x.conditionsReady===true);
-    const date=localKey(w.start),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params});
+    const date=localKey(w.start,timeZone),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params,timeZone});
     if(benchmark===null&&!gates.length&&!w.slots.some(x=>x.caps?.some(c=>c.code==="benchmarkUnavailable")))w.slots[0]?.caps?.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});
     const v=verdictFor({suitability:w.suitability,confidence:w.confidence,eligibility:eligibility.eligibility,conditionsReady:ready,gates,locationId:spot.id,mode,date,params});
     const caps=[...new Map(w.slots.flatMap(x=>x.caps??[]).map(x=>[x.code,x])).values()];

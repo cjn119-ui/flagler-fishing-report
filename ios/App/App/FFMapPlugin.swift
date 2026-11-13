@@ -178,7 +178,9 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
             map.isPitchEnabled = false
             map.overrideUserInterfaceStyle = self.mapView?.overrideUserInterfaceStyle ?? .dark
             map.addAnnotations(self.annotations.values.map { FishingSpotAnnotation(copying: $0) })
-            if let region = self.mapView?.region { map.setRegion(region, animated: false) }
+            // Start with a Florida-wide view so anglers can pan and zoom to any coastal point.
+            map.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 28.15, longitude: -83.55),
+                                              span: MKCoordinateSpan(latitudeDelta: 8.0, longitudeDelta: 8.6)), animated: false)
             let controller = UIViewController()
             controller.view = self.makeExpandedContainer(map: map)
             controller.modalPresentationStyle = .pageSheet
@@ -188,15 +190,13 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
                 sheet.preferredCornerRadius = 28
             }
             self.expandedMap = map
+            let picker = UILongPressGestureRecognizer(target: self, action: #selector(self.pickMapPoint(_:)))
+            picker.minimumPressDuration = 0.55
+            map.addGestureRecognizer(picker)
             self.snapshotWork?.cancel()
             presenter.present(controller, animated: true) {
-                // Frame the spots in the taller sheet (the card's region shows far more coastline than needed).
-                let points = map.annotations.map { MKMapPoint($0.coordinate) }
-                guard let first = points.first else { return }
-                let rect = points.dropFirst().reduce(MKMapRect(origin: first, size: MKMapSize(width: 0, height: 0))) {
-                    $0.union(MKMapRect(origin: $1, size: MKMapSize(width: 0, height: 0)))
-                }
-                map.setVisibleMapRect(rect, edgePadding: UIEdgeInsets(top: 80, left: 48, bottom: 80, right: 48), animated: true)
+                map.setRegion(MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 28.15, longitude: -83.55),
+                                                  span: MKCoordinateSpan(latitudeDelta: 8.0, longitudeDelta: 8.6)), animated: false)
             }
             call.resolve()
         }
@@ -214,7 +214,34 @@ final class FFMapPlugin: CAPPlugin, CAPBridgedPlugin {
             map.trailingAnchor.constraint(equalTo: container.trailingAnchor),
         ])
         addControls(to: container, tag: 1, compact: false, map: map)
+        let hint = UILabel()
+        hint.text = "Touch and hold a coastal point to fish here"
+        hint.textAlignment = .center
+        hint.font = .systemFont(ofSize: 13, weight: .semibold)
+        hint.textColor = .white
+        hint.backgroundColor = UIColor.black.withAlphaComponent(0.68)
+        hint.layer.cornerRadius = 12
+        hint.clipsToBounds = true
+        hint.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(hint)
+        NSLayoutConstraint.activate([
+            hint.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 76),
+            hint.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            hint.heightAnchor.constraint(greaterThanOrEqualToConstant: 36),
+            hint.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, multiplier: 0.9),
+        ])
         return container
+    }
+
+    @objc private func pickMapPoint(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began, let map = expandedMap else { return }
+        let coordinate = map.convert(gesture.location(in: map), toCoordinateFrom: map)
+        guard CLLocationCoordinate2DIsValid(coordinate),
+              let data = try? JSONSerialization.data(withJSONObject: ["lat": coordinate.latitude, "lon": coordinate.longitude]),
+              let json = String(data: data, encoding: .utf8) else { return }
+        map.window?.rootViewController?.presentedViewController?.dismiss(animated: true) { [weak self] in
+            self?.bridge?.triggerJSEvent(eventName: "ffmap:point", target: "document", data: json)
+        }
     }
 
     // Road/Satellite switch (top-left on the card, top-centre in the sheet) and +/- zoom (bottom-right).
