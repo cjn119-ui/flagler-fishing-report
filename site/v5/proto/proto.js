@@ -786,7 +786,7 @@ function verdictCard(c, disclosure = null) {
   const reasonRaw = r.reason?.code && SHORT_REASON[r.reason.code] ? SHORT_REASON[r.reason.code] : msg(r.reason?.text ?? r.reason);
   const reason = !c.skip && r.verdict !== "GO" && r.reason?.code !== "provisionalGoThreshold" && reasonRaw ? h("p", { class: "why-line" }, reasonRaw) : null;
   const qual = qualOn ? h("p", { class: "qual" }, icon("warn"), msg(r.amberQualifier)) : null;
-  const endedNext = !c.skip && phase === "ended" ? (nextWindowLabel(run, r, c.now)?.replace(/^Next window\s*/, "") ?? "No more windows today") : null;
+  const endedNext = !c.skip && st.h === "today" && phase === "ended" ? (nextWindowLabel(run, r, c.now)?.replace(/^Next window\s*/, "") ?? "No more windows today") : null;
   const eyebrow = h("p", { class: "eyebrow" }, whenOf(c).split(" · ")[0].replace(/^(.+?) (morning|midday|afternoon|evening|night)$/i, "$1 \u2014 $2"), c.focus ? h("span", { class: "tag" }, `for ${spName(st.species)}`) : null);
   const notes = [];
   if (c.focus && TIER[c.overall.verdict] < TIER[r.verdict]) notes.push(h("p", { class: "note" }, h("b", {}, "Overall today: "), formatVerdictLine(c.run).replace(/, [^,]*$/, "")));
@@ -1012,7 +1012,7 @@ function timesCard(c) {
     strip.dataset.time = fmtTime(p.at); strip.style.setProperty("--sel", (idx + .5) / n);
     const outsideWindow = !slotInWindow(p.at, wins);
     const held = c.skip && slotHeld(p.at, r.window?.gates ?? []);
-    const rawOutlook = hourlyOutlook(p.suitability, !outsideWindow), outlook = rawOutlook.startsWith("Outside") ? "Outside best times" : rawOutlook;
+    const rawOutlook = hourlyOutlook(p.suitability, !outsideWindow), outlook = rawOutlook.startsWith("Outside") ? "Off-peak" : rawOutlook;
     const shownOutlook = held ? "Unsafe" : outlook;
     strip.setAttribute("aria-valuenow", idx); strip.setAttribute("aria-valuetext", `${fmtTime(p.at)}, ${shownOutlook}`);
     const isNow = idx === nowIdx;
@@ -1368,7 +1368,9 @@ function planTideChart(c, locationId, date, run = c.run) {
   const line = points.map(([x,y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" "), area = `0,100 ${line} 100,100`;
   const nowIndex = date === run.targetDate && Date.now() >= startMs && Date.now() <= startMs + timeSpan ? (Date.now() - startMs) / timeSpan * 100 : null;
   return h("section", { class: "card tide-chart", "aria-label": "Tide chart" }, h("div", { class: "card-h" }, h("h2", {}, "Tide chart"), h("span", { class: "sub" }, "Predicted highs and lows")),
-    s("svg", { viewBox: "-2 -18 104 120", preserveAspectRatio: "none", role: "img", "aria-label": "Predicted tide height through the day. Event times and heights are listed below." }, s("defs", {}, s("linearGradient", { id: "tide-fill", x1: "0", y1: "0", x2: "0", y2: "1" }, s("stop", { offset: "0%", "stop-color": "var(--accent)", "stop-opacity": ".30" }), s("stop", { offset: "100%", "stop-color": "var(--accent)", "stop-opacity": ".02" }))), s("polygon", { points: area, fill: "url(#tide-fill)" }), s("polyline", { points: line, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }), rows.map((x, i) => s("g", {}, s("circle", { cx: xAt(i), cy: yAt(+x.heightFt), r: 1.8, fill: "var(--accent)" }), s("text", { x: xAt(i), y: yAt(+x.heightFt) - 4, "text-anchor": "middle", class: "tide-mark" }, x.type === "H" ? "H" : "L"))), nowIndex == null ? null : s("g", {}, s("line", { x1: nowIndex, x2: nowIndex, y1: 5, y2: 92, class: "tide-now" }), s("text", { x: nowIndex, y: 10, "text-anchor": nowIndex > 82 ? "end" : "start", class: "tide-now-label" }, "Now"))),
+    h("div", { class: "tide-plot" }, s("svg", { viewBox: "-2 -18 104 120", preserveAspectRatio: "none", role: "img", "aria-label": "Predicted tide height through the day. Event times and heights are listed below." }, s("defs", {}, s("linearGradient", { id: "tide-fill", x1: "0", y1: "0", x2: "0", y2: "1" }, s("stop", { offset: "0%", "stop-color": "var(--accent)", "stop-opacity": ".30" }), s("stop", { offset: "100%", "stop-color": "var(--accent)", "stop-opacity": ".02" }))), s("polygon", { points: area, fill: "url(#tide-fill)" }), s("polyline", { points: line, fill: "none", stroke: "var(--accent)", "stroke-width": 2, "vector-effect": "non-scaling-stroke" }), nowIndex == null ? null : s("line", { x1: nowIndex, x2: nowIndex, y1: 5, y2: 92, class: "tide-now" })),
+      rows.map((x, i) => h("span", { class: `tide-dot ${x.type === "H" ? "hi" : "lo"}`, "aria-hidden": "true", style: `left:${((xAt(i) + 2) / 104 * 100).toFixed(2)}%;top:${((yAt(+x.heightFt) + 18) / 120 * 100).toFixed(2)}%` }, h("b", {}, x.type === "H" ? "H" : "L"))),
+      nowIndex == null ? null : h("span", { class: `tide-now-tag${nowIndex > 82 ? " end" : ""}`, "aria-hidden": "true", style: `left:${((nowIndex + 2) / 104 * 100).toFixed(2)}%` }, "Now")),
     h("div", { class: "tide-events" }, rows.map((x) => h("div", {}, h("b", {}, x.type === "H" ? "High" : x.type === "L" ? "Low" : cap(x.type ?? "Tide")), h("span", {}, fmtTime(x.time)), h("small", {}, `${(+x.heightFt).toFixed(1)} ft`)))));
 }
 function weatherGlyph(label) {
@@ -1395,7 +1397,7 @@ function planHourlyTable(c, locationId, date, mode, run = c.run) {
       const candidateWindows = (run.candidates ?? []).filter((candidate) => candidate.locationId === locationId && candidate.mode === mode).map((candidate) => candidate.window).filter(Boolean);
       const insideWindow = candidateWindows.some((window) => Date.parse(window.start) <= Date.parse(at) && Date.parse(window.end) > Date.parse(at));
       const fit = usableSlot?.suitability;
-      const rawOutlook = hourlyOutlook(fit, insideWindow), outlook = rawOutlook.startsWith("Outside") ? "Outside best times" : rawOutlook;
+      const rawOutlook = hourlyOutlook(fit, insideWindow), outlook = rawOutlook.startsWith("Outside") ? "Off-peak" : rawOutlook;
       const dataFit = outlook === "Great" ? "good" : outlook === "Good" ? "fair" : outlook === "Poor" ? "poor" : "none";
       return h("tr", {}, h("td", {}, fmtTime(at)), h("td", { class: "sky-cell", "aria-label": sky }, skyIcon(sky)), h("td", { class: "hour-conditions" }, [mph, ft].filter(Boolean).join(" · ") || "Conditions unavailable"), h("td", { class: "outlook-word", "data-fit": dataFit }, outlook));
     })))));
@@ -1492,7 +1494,7 @@ function logView(c) {
     return h("section", { class: "log-day" }, heading, h("ul", { class: "log-list" }, items));
   });
   return [h("section", { class: "card log-card", "aria-label": "Catch log" },
-    h("div", { class: "card-h" }, h("h2", {}, "Every trip teaches."), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
+    h("div", { class: "page-heading journal-heading" }, h("h1", {}, "Every trip teaches."), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
     h("p", { class: "fine" }, "Saved on this device only."), summary,
     h("button", { class: "btn log-add", type: "button", hidden: !rows.length, onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log a catch"),
     rows.length ? entries : h("div", { class: "log-empty" }, s("svg", { class: "empty-fish", viewBox: "0 0 120 64", role: "img", "aria-label": "A fish on a fishing line" }, s("path", { d: "M16 36c13-17 35-20 55-9l18-13v41L71 43c-20 11-42 8-55-7Zm-8 0h7m67-12 13-7m-13 31 13 7M51 27v18m7-18v18" }), s("circle", { cx: 42, cy: 33, r: 2 })), h("p", {}, "No catches logged yet."), h("p", { class: "fine" }, "Log a catch to start tracking your best spots and species."), h("button", { class: "btn", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log your first catch")))];

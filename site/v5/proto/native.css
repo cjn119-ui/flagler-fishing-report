@@ -167,3 +167,65 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .fwc-limits > div { display:grid; grid-template-columns:84px 1fr; gap:10px; padding:9px 0; border-top:1px solid rgba(140,196,240,.22); }
 .fwc-limits dt { color:rgba(255,255,255,.62); font-size:13px; letter-spacing:.04em; text-transform:uppercase; padding-top:2px; }
 .fwc-limits dd { margin:0; font-weight:600; line-height:1.3; }
+
+/* ---------- Polish pass 2: one type scale, consistent rows, chart + map fixes ---------- */
+:root { --fs-cap:12px; --fs-meta:12px; --fs-sm:14px; --fs-body:16px; --fs-title:18px; --fs-headline:22px; --fs-verdict:32px; --fs-display:34px; }
+/* Section headings: one serif size everywhere */
+.card-h h2, .species-group-head h2, section > h2, .native-section h2 { font-size:22px !important; line-height:1.2; }
+/* Page titles: same size on every tab, Journal included */
+.page-heading h1 { font-size:34px !important; line-height:1.08; letter-spacing:-.01em; }
+.journal-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:4px; }
+.journal-heading h1 { margin:0; }
+.journal-heading .btn-s { flex:none; }
+/* Hero values */
+.no-window { font-size:22px !important; }
+.native-title, .native-title .nm, #verdict h1 { letter-spacing:-.01em; }
+/* Conditions strip: whole-pixel sizes */
+.conditions-strip b, .cond b, .ro-tiles .stat b { font-size:17px !important; }
+.conditions-strip small, .cond small { font-size:12px !important; }
+.t-name { font-size:16px !important; } .t-num { font-size:15px !important; }
+.why-verdict small, .factors small { font-size:12px !important; }
+.bet small, .wins small, .hour-detail small { font-size:13px !important; }
+/* Medium weights: 650 renders inconsistently in Safari; snap to 600 */
+.vchip, .conditions-caption, .delta, .w, .tide-events b { font-weight:600 !important; }
+
+/* Explore: compact flat spot rows that match the Species list */
+.spotlist .row:not(.any) { background:none !important; border:0 !important; border-bottom:1px solid var(--n-sep, rgba(255,255,255,.12)) !important; border-radius:0 !important; padding:0 !important; }
+@media (max-width:767px) {
+.spotlist .row:not(.any) > button.main { display:grid !important; grid-template-columns:72px minmax(0,1fr); column-gap:14px; row-gap:2px; align-items:center; padding:12px 0 !important; }
+.spotlist .row:not(.any) .spot-row-photo { grid-row:1 / span 3; width:72px !important; height:56px !important; border-radius:12px; }
+.spotlist .row:not(.any) .r1, .spotlist .row:not(.any) .r2 { grid-column:2; margin:0; }
+.spotlist .row:not(.any) .nm { font-size:17px; font-weight:600; }
+.spotlist .row:not(.any) .r3 { color:var(--text); font-weight:600; font-size:14px; }
+.spotlist .row:not(.any) .closure-badge { font-size:11px; padding:2px 8px; }
+.spotlist .row:not(.any) .star { align-self:center; }
+}
+.spotlist .row.any { margin-bottom:6px; }
+.spotlist .row.any > button.main { padding:14px 16px !important; }
+
+/* Map: shorter on phones so the page still scrolls */
+@media (max-width:600px) { .web-map-slot { height:300px !important; min-height:0 !important; } }
+
+/* Tide chart: HTML markers so labels aren't stretched by the SVG */
+.tide-plot { position:relative; margin:18px 0 8px; }
+.tide-plot svg { display:block; width:100%; height:150px; overflow:visible; }
+.tide-dot { position:absolute; width:8px; height:8px; margin:-4px 0 0 -4px; border-radius:50%; background:var(--accent, #73E0D4); box-shadow:0 0 0 3px rgba(9,31,43,.6); }
+.tide-dot b { position:absolute; left:50%; transform:translateX(-50%); font-size:11px; font-weight:700; color:rgba(255,255,255,.75); letter-spacing:.04em; }
+.tide-dot.hi b { bottom:12px; } .tide-dot.lo b { top:12px; }
+.tide-now-tag { position:absolute; top:-16px; transform:translateX(4px); font-size:11px; font-weight:700; color:#fff; letter-spacing:.04em; text-transform:uppercase; }
+.tide-now-tag.end { transform:translateX(calc(-100% - 4px)); }
+
+/* Plan tiles: keep "W 14 mph" on one line */
+.ro-tiles .stat b, .plan-tiles b { white-space:nowrap; }
+
+/* Journal: breathing room between stats and the empty state */
+.log-summary { margin-bottom:16px !important; }
+.log-empty { margin-top:16px; }
+
+/* Species sheet: the target action lives in the sticky footer; don't repeat it in the catch card */
+.sheet:has(.sheet-f button) .catch-card .catch-actions { display:none; }
+.spotlist .row.any { padding:0 !important; }
+.plan-conditions b { white-space:nowrap; font-size:15px; letter-spacing:-.01em; }
+.plan-conditions > div { padding-left:6px !important; padding-right:6px !important; }
+.tide-now-tag { top:0; }
+.tide-plot { margin-top:22px; }
