@@ -151,11 +151,11 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .log-entry .log-entry-main { flex:1; }
 
 /* FWC rules: prominent, species-specific */
-.fwc-card { margin:16px 0; padding:16px 18px; border-radius:20px; background:linear-gradient(160deg, rgba(245,201,115,.16), rgba(245,201,115,.06)); border:1px solid rgba(245,201,115,.45); display:grid; gap:6px; }
-.fwc-card .eyebrow { color:#F5C973; margin:0; }
+.fwc-card { margin:16px 0; padding:16px 18px; border-radius:20px; background:linear-gradient(160deg, rgba(140,196,240,.16), rgba(140,196,240,.06)); border:1px solid rgba(140,196,240,.4); display:grid; gap:6px; }
+.fwc-card .eyebrow { color:#8CC4F0; margin:0; }
 .fwc-card .fwc-lead { margin:0; font-family:var(--serif); font-size:20px; line-height:1.25; font-weight:600; }
 .fwc-card .fine { margin:0; }
-.fwc-card a.btn.fwc-btn { margin-top:8px; display:flex; align-items:center; justify-content:center; gap:8px; background:#F5C973 !important; color:#091F2B !important; -webkit-text-fill-color:#091F2B; border:0 !important; font-weight:700; text-decoration:none; border-radius:999px; min-height:48px; }
+.fwc-card a.btn.fwc-btn { margin-top:8px; display:flex; align-items:center; justify-content:center; gap:8px; background:#8CC4F0 !important; color:#091F2B !important; -webkit-text-fill-color:#091F2B; border:0 !important; font-weight:700; text-decoration:none; border-radius:999px; min-height:48px; }
 .fwc-btn .ext svg, .fwc-link .ext svg { width:16px; height:16px; display:block; }
-.fwc-link { display:inline-flex; align-items:center; gap:6px; margin-top:8px; color:#F5C973; font-weight:600; text-decoration:none; }
+.fwc-link { display:inline-flex; align-items:center; gap:6px; margin-top:8px; color:#8CC4F0; font-weight:600; text-decoration:none; }
 .fwc-link:hover, .fwc-link:focus-visible { text-decoration:underline; }
