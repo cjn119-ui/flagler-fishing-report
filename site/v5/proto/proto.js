@@ -144,7 +144,7 @@ function fwcCard(id, name) {
       h("div", {}, h("dt", {}, "Season"), h("dd", {}, lim.season))) : null,
     lim?.note ? h("p", { class: "fine" }, lim.note) : null,
     h("p", { class: "fine" }, lim ? `From FWC, checked ${checked}. Rules change and differ by region and gear, so confirm the latest before you keep a fish.` : "No page for this species, so this opens FWC\u2019s general rules. Confirm before you keep a fish."),
-    h("a", { class: "btn fwc-btn", href: fwcRulesUrl(id), target: "_blank", rel: "noopener" }, lim ? `Latest ${name} rules on FWC` : `Look up ${name} on FWC`, extIcon()));
+    h("a", { class: "btn fwc-btn", href: fwcRulesUrl(id), target: "_blank", rel: "noopener" }, lim ? "See latest rules on FWC" : `Look up ${name} on FWC`, extIcon()));
 }
 function spotImage(id, cls = "", alt = "") { const file = `spots/${id}.jpg`; return creditFor(file) ? image(file, cls, alt) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": alt || "Fishing spot" }); }
 function spotPhoto(id, cls = "", alt = "", showCaption = false) {
