@@ -1834,7 +1834,7 @@ function openSpecies(id, opener) {
             sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null)),
         h("dl", { class: "catch-break" },
           h("div", {}, h("dt", {}, "Survey history"), h("dd", {}, best?.historicalRate ? speciesTripRate(best) : "No survey data")),
-          h("div", {}, h("dt", {}, "Conditions fit"), h("dd", {}, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : `${suit} \u00b7 ${speciesFitWord(suit, best)}`))),
+          h("div", {}, h("dt", {}, "Conditions fit"), h("dd", {}, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : `${suit} \u00b7 ${speciesFitBand(suit, best).replace(/^Not a conditions fit$/, "Not a fit").replace(/ fit$/, "")}`))),
         h("p", { class: "fine" }, `Blends how often anglers catch it this month (${Math.round(CATCH_SCORE.rateWeight * 100)}%) with how well today\u2019s conditions fit (${Math.round(CATCH_SCORE.fitWeight * 100)}%). An index out of 100, not a percent chance.`), h("div", { class: "kv catch-actions" }));
     })(),
     fwcCard(id, sp.name),
