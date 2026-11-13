@@ -7,7 +7,7 @@ import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
 import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
-import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesFitWord, speciesTripRate, unsafeCapped } from "./species-presentation.js";
+import { bestSpeciesCandidate, catchScore, CATCH_SCORE, speciesEligibilityLabel, speciesFitBand, speciesFitWord, speciesTripRate, unsafeCapped } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
 import { observedWindAt } from "../engine/observed-wind.js";
 import { fmtWind, gridTemperatureF, gridValueAt, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
@@ -15,6 +15,7 @@ import { fetchSources } from "../engine/sources.js";
 import { buildPredictionRun } from "../engine/run.js";
 import { loadFloridaCoastalHistory } from "../engine/history.js";
 import { trimForCache } from "./proto-data.js";
+import { mountWebMap, updateWebMap, recenterWebMap, flyToWebMap } from "./web-map.js";
 import { installNativePresentation, nativeAfterHours, nativeDayAfterHours, nativeHeadline, nativeNullable } from "./native-presentation.js";
 
 let TZ = "America/New_York";
@@ -487,6 +488,7 @@ function render({ resetScroll = false, navigation = false } = {}) {
   if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true });
   if (st.tab === "today") announce(c);
   syncNativeSpots(c);
+  if (!window.FFNativeMap && st.tab === "spots") { const slot = document.querySelector(".web-map-slot"); if (slot) mountExploreMap(slot, c); }
   nativePresentation?.publish();
   if (coldRenderPending) {
     console.info(`FLAGLER_PERF first_content_ms=${performance.now().toFixed(1)} ctx_ms=${(performance.now() - contextStarted).toFixed(1)} render_ms=${(performance.now() - renderStarted).toFixed(1)} source=${c.source} offline=${c.offline}`);
@@ -607,17 +609,32 @@ function scope({ spot = null, mode = null, species = null, persist = false, tab 
   render({ resetScroll: true });
 }
 
-function syncNativeSpots(c = ctx()) {
-  const nativeMap = window.FFNativeMap;
-  if (!nativeMap) return;
-  if (st.tab !== "spots") { nativeMap.hide?.(); return; }
+function mapSpotRows(c = ctx()) {
   const src = listSource(c), rows = spotRows(src.run, st.f, c.now, src.horizon);
   const custom = floridaPoint && src.run.locations?.find(loc => loc.id === floridaPoint.id);
   if (custom && !rows.some(row => row.loc.id === custom.id)) {
     const rec = bestModeRec(src.run, custom.id);
     if (rec) rows.unshift({ loc: custom, rec, fav: false });
   }
-  nativeMap.show?.({ spots: rows.map(({ loc, rec, fav }) => ({ id: loc.id, name: loc.name, lat: loc.lat, lon: loc.lon, verdict: rec.verdict, favorite: fav, closureBadge: closureFor(loc.id) ? closureBadgeText(loc.id) : null })), selectedId: st.spot, mode: st.mode ?? c.rec.mode ?? "all" });
+  return rows.map(({ loc, rec, fav }) => ({ id: loc.id, name: loc.name, lat: loc.lat, lon: loc.lon, verdict: rec.verdict, verdictLabel: VERDICT_SPOKEN[rec.verdict], mode: rec.mode, favorite: fav, closureBadge: closureFor(loc.id) ? closureBadgeText(loc.id) : null }));
+}
+function syncNativeSpots(c = ctx()) {
+  const nativeMap = window.FFNativeMap;
+  if (!nativeMap) return;
+  if (st.tab !== "spots") { nativeMap.hide?.(); return; }
+  nativeMap.show?.({ spots: mapSpotRows(c), selectedId: st.spot, mode: st.mode ?? c.rec.mode ?? "all" });
+}
+// Browser build: interactive Leaflet map mounted into the Explore placeholder.
+const webMapApi = (c) => ({ spots: mapSpotRows(c), selectedId: st.spot, dark: document.documentElement.dataset.theme !== "light",
+  onOpen: (id) => { const spot = mapSpotRows(ctx()).find((x) => x.id === id); openSpotDetail(id, spot?.mode ?? null, null); },
+  onPoint: (point) => chooseFloridaPoint(point) });
+function mountExploreMap(slot, c) {
+  mountWebMap(slot, webMapApi(c)).catch(() => { slot.replaceChildren(h("span", {}, "Map unavailable offline")); });
+}
+function useMyLocation() {
+  if (!navigator.geolocation) { toast("Location isn\u2019t available in this browser."); return; }
+  navigator.geolocation.getCurrentPosition((p) => { flyToWebMap(p.coords.latitude, p.coords.longitude, 12); chooseFloridaPoint({ lat: p.coords.latitude, lon: p.coords.longitude }); },
+    () => toast("Location permission is off. Long press the map to choose a point."), { timeout: 8000, maximumAge: 60000 });
 }
 
 /* ---------- header, control row, banner ---------- */
@@ -997,7 +1014,7 @@ function timesCard(c) {
     if (!hasSp) return null;
     if (!list.length) return h("p", { class: "fine" }, all.length ? "No named target species at this time." : "No species ranking at this time: it falls outside a fishing window.");
     return h("ul", { class: "ro-sp", "aria-label": "Species at this time" }, list.map((x) => h("li", {}, h("button", { class: "t-btn", type: "button", onclick: (e) => openSpecies(x.speciesId, e.currentTarget) },
-      h("span", { class: "t-name" }, spName(x.speciesId), x.speciesId === st.species ? h("span", { class: "tag" }, "Targeting") : null),
+      fishImage(x.speciesId, "ro-fish"), h("span", { class: "t-name" }, spName(x.speciesId), x.speciesId === st.species ? h("span", { class: "tag" }, "Targeting") : null),
       h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${x.suitability}%` })), h("span", { class: "t-num" }, x.suitability == null ? "—" : x.suitability >= 70 ? "Great" : x.suitability >= 50 ? "Good" : "Poor")))));
   }
   const fromX = (e) => { const b = strip.getBoundingClientRect(); return Math.floor(((e.clientX - b.left) / b.width) * n); };
@@ -1176,7 +1193,10 @@ function spotsView(c) {
   const openMap = () => window.FFNativeMap?.expand?.();
   const map = window.FFNativeMap
     ? h("div", { id: "spots-map", class: "native-map-slot", role: "button", tabindex: "0", "aria-label": "Map of fishing spots. Open full map", onclick: openMap, onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMap(); } } })
-    : h("div", { class: "web-map-placeholder compact-map" }, h("span", {}, "Map of all spots"));
+    : h("div", { class: "web-map-slot", "aria-label": "Map of fishing spots" }, h("span", {}, "Loading map\u2026"));
+  const mapControls = window.FFNativeMap ? null : h("div", { class: "map-controls" },
+    h("div", { class: "map-actions" }, h("button", { class: "btn-s", type: "button", onclick: () => recenterWebMap() }, "Show locations"), h("button", { class: "btn-s", type: "button", onclick: useMyLocation }, "Use my location")),
+    h("p", { class: "fine" }, "Long press near Florida\u2019s shoreline to build a forecast for a coastal point. Freshwater is outside coverage."));
   const resultStatus = h("p", { class: "notice spot-results-status", role: "status", hidden: true });
   const list = spotList(c, { externalFilters: true, onResultsChange: ({ count, filter, search }) => {
     resultStatus.hidden = count > 0;
@@ -1197,7 +1217,7 @@ function spotsView(c) {
     h("button", { class: "btn", type: "button", onclick: (e) => openSpotDetail(featured.id, rec.mode, e.currentTarget) }, "View details")) : null;
   return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "page-heading" }, h("h1", {}, "Find your water."), h("div", { class: "page-actions" }, h("button", { class: "icon-button", type: "button", "aria-label": "Manage favorites", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "♥"))),
     st.h === "tomorrow" ? h("p", { class: "notice tomorrow-spots", role: "status" }, "Showing tomorrow ", h("button", { class: "btn-s", type: "button", onclick: () => { st.h = "today"; st.t = null; render(); } }, "Switch to Today")) : null,
-    list.filters, searchBox("Search spots", st.spotSearch, (e) => { st.spotSearch = e.target.value; listHost?.rebuild(); }), resultStatus, map, featureCard, list)];
+    list.filters, searchBox("Search spots", st.spotSearch, (e) => { st.spotSearch = e.target.value; listHost?.rebuild(); }), resultStatus, map, mapControls, featureCard, list)];
 }
 function spotMiniStats(c, locationId) {
   const waves = [...observationRows(c.run, "waves", locationId), ...observationRows(c.run, "waveForecast", locationId)];
@@ -1250,6 +1270,7 @@ function speciesView(c) {
       "aria-label": (() => { const said = (showScore ? (capped ? "unsafe conditions" : band) : notRealistic ? speciesEligibilityLabel(best) : "") || "no rating"; return `${sp.name}, ${said}${sp.bycatch && !/bycatch/i.test(said) ? ", bycatch" : ""}`; })(), onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
       showScore ? h("div", { class: "species-band" }, h("b", {}, band)) : null,
+      (() => { const ring = showScore ? catchRing(catchScore({ ...best, ...(focused ?? {}), historicalRate: focused?.historicalRate ?? best?.historicalRate }, focused ?? best)) : null; return ring ? h("div", { class: "sp-score" }, ring, h("small", {}, "Catch")) : null; })(),
       best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
       best?.historicalRate ? h("small", { class: "trip-rate" }, speciesTripRate(best)) : null,
       showScore && !capped ? h("div", { class: "bar-m species-fit-bar", "aria-hidden": "true" }, h("i", { style: `width:${suit}%` })) : null));
@@ -1258,7 +1279,7 @@ function speciesView(c) {
     h("div", { class: "species-group-head" }, h("h2", {}, title), h("span", {}, items.length)), tiles(items)) : null;
   const noMatches = !!st.speciesSearch && matching.length === 0;
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
-    h("div", { class: "page-heading" }, h("h1", {}, "What to target.")),
+    h("div", { class: "page-heading" }, h("h1", {}, "Know your target.")), h("p", { class: "species-intro" }, "See what fits the conditions, then choose your bait and where to cast. Catch likelihood blends survey history with today\u2019s fit."),
     listSource(c).ended ? endedNote("ratings below are for tomorrow") : null,
     searchBox("Search species", st.speciesSearch, (e) => { st.speciesSearch = e.target.value; render(); }),
     h("div", { class: "tools-row species-filters" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })),
@@ -1443,7 +1464,7 @@ function logView(c) {
   const entries = [...grouped].map(([day, list]) => {
     const heading = h("h3", {}, new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(`${day}T12:00:00-04:00`)));
     const items = list.map((row) => h("li", {}, h("button", { class: "log-entry", type: "button", onclick: (e) => openCatchDetail(row.id, e.currentTarget) },
-      h("span", { class: "log-entry-main" }, h("b", {}, row.species === "other" ? row.otherSpecies : row.speciesName), h("span", {}, `${row.count} · ${row.disposition} · ${row.spotName}`)),
+      row.species === "other" ? null : fishImage(row.species, "log-fish"), h("span", { class: "log-entry-main" }, h("b", {}, row.species === "other" ? row.otherSpecies : row.speciesName), h("span", {}, `${row.count} · ${row.disposition} · ${row.spotName}`)),
       h("span", { class: "muted" }, fmtTime(row.occurredAt)), icon("arrow"))));
     return h("section", { class: "log-day" }, heading, h("ul", { class: "log-list" }, items));
   });
@@ -1666,7 +1687,12 @@ async function shareReport() {
 function openMoreSheet(opener) {
   const c = ctx();
   const enabled = store.get("notify", store.get("notifications", false)) === true;
-  const blocks = [h("section", { class: "block" }, h("h3", {}, "Appearance"),
+  const gen = validDate(c.run.generatedAt) ? new Intl.DateTimeFormat("en-US", { timeZone: TZ, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(c.run.generatedAt)) : "Time unavailable";
+  const provenance = h("section", { class: "block provenance" }, h("h3", {}, "Report provenance"),
+    h("p", {}, h("b", {}, "Source: "), c.source ?? "live"), h("p", {}, h("b", {}, "Updated: "), gen),
+    h("p", { class: "fine" }, "Conditions fit is an environmental suitability score, not a catch probability. Missing inputs reduce confidence."),
+    h("button", { class: "btn alt", type: "button", onclick: () => { closeSheet(); $("refresh").click(); } }, "Refresh forecasts"));
+  const blocks = [provenance, h("section", { class: "block" }, h("h3", {}, "Appearance"),
     segment("Appearance", THEMES, store.get("theme", "auto"), setTheme, "appearance"), h("p", { class: "fine" }, "Auto uses Dark by day and Night after sunset."))];
   if (window.FFNotify) blocks.push(h("section", { class: "block notify-block" }, h("h3", {}, "Notifications"),
     h("button", { class: "notify-toggle", type: "button", role: "switch", "aria-checked": String(enabled), onclick: (e) => {
@@ -1740,6 +1766,11 @@ async function hydrateFactors(run) {
 }
 const factorReasons = (factors) => factors.filter((f) => f.available !== false && (f.effect === "helps" || f.effect === "hurts"))
   .map((f) => ({ effect: f.effect, text: factorLine(f.label, msg(f.humanLabel)) }));
+function catchRing(cs, big = false) {
+  if (!cs) return null;
+  return h("div", { class: `catch-ring${big ? " big" : ""}`, "data-level": cs.level.toLowerCase().replace(" ", "-"), style: `--p:${cs.score}`, role: "img", "aria-label": `Catch likelihood ${cs.score} out of 100, ${cs.level}` },
+    h("b", {}, String(cs.score)), big ? null : h("small", {}, "/100"));
+}
 function openSpecies(id, opener) {
   const c = ctx(), sp = spCat(id);
   const inTargets = !sp?.bycatch && (c.rec.targets ?? []).some((t) => t.speciesId === id) && !hiddenTargets().includes(id);
@@ -1771,7 +1802,17 @@ function openSpecies(id, opener) {
       body.querySelectorAll(".species-tab").forEach((b) => b.setAttribute("aria-current", String(b === e.currentTarget)));
     } }, label))),
     sp.alt ? h("p", { class: "muted" }, sp.alt) : null,
-    h("div", { class: "kv", style: "margin-top:10px" }, h("span", { class: "stat-big" }, capped ? "—" : suit ?? "—"), h("span", { class: "muted" }, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : speciesFitWord(suit, best)), sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
+    (() => {
+      const cs = realistic ? catchScore(useFocused ? { ...best, ...focused, historicalRate: focused.historicalRate ?? best?.historicalRate } : best, useFocused ? focused : best) : null;
+      return h("section", { class: "catch-card", "aria-label": "Catch likelihood" },
+        h("div", { class: "catch-card-top" }, catchRing(cs, true) ?? h("div", { class: "catch-ring big none", role: "img", "aria-label": "No catch likelihood available" }, h("b", {}, "\u2014")),
+          h("div", {}, h("p", { class: "eyebrow" }, "Catch likelihood"), h("p", { class: "catch-level" }, cs ? cs.level : capped ? "Unsafe conditions" : "Not enough data"),
+            sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null)),
+        h("dl", { class: "catch-break" },
+          h("div", {}, h("dt", {}, "Survey history"), h("dd", {}, best?.historicalRate ? speciesTripRate(best) : "No survey data")),
+          h("div", {}, h("dt", {}, "Conditions fit"), h("dd", {}, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : `${suit} \u00b7 ${speciesFitWord(suit, best)}`))),
+        h("p", { class: "fine" }, `Blends how often anglers catch it this month (${Math.round(CATCH_SCORE.rateWeight * 100)}%) with how well today\u2019s conditions fit (${Math.round(CATCH_SCORE.fitWeight * 100)}%). An index out of 100, not a percent chance.`), h("div", { class: "kv catch-actions" }));
+    })(),
     !realistic && reason ? h("p", { class: "fine eligibility" }, reason) : null,
     best?.historicalRate ? h("p", { class: "fine trip-rate" }, speciesTripRate(best)) : null,
     place?.displayName ? h("div", { class: "block" }, h("h3", {}, "Best place and time"), h("p", { style: "font-weight:600" }, place.displayName, " ", h("span", { class: "mchip" }, modeIcon(place.mode), modeLabel(place.mode))), place.window ? h("p", { class: "muted" }, fmtRange(place.window.start, place.window.end)) : null) : null,
