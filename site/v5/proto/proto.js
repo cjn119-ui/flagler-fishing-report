@@ -694,8 +694,8 @@ function segment(label, items, cur, on, cls = "") {
   if (from != null) el.style.setProperty("--seg-from", `${from * 100}%`);
   let drag = null, dragged = false, suppressClick = false;
   const indexAt = (x) => Math.max(0, Math.min(items.length - 1, Math.floor((x - el.getBoundingClientRect().left) / (el.getBoundingClientRect().width / items.length))));
-  el.addEventListener("pointerdown", (event) => { if (event.button != null && event.button !== 0) return; drag = { id: event.pointerId, start: event.clientX }; dragged = false; el.setPointerCapture(event.pointerId); el.classList.add("dragging"); });
-  el.addEventListener("pointermove", (event) => { if (!drag || event.pointerId !== drag.id) return; drag.x = event.clientX; dragged ||= Math.abs(event.clientX - drag.start) > 5; el.style.setProperty("--seg-index", `${indexAt(event.clientX) * 100}%`); });
+  el.addEventListener("pointerdown", (event) => { if (event.button != null && event.button !== 0) return; drag = { id: event.pointerId, start: event.clientX }; dragged = false; });
+  el.addEventListener("pointermove", (event) => { if (!drag || event.pointerId !== drag.id) return; drag.x = event.clientX; dragged ||= Math.abs(event.clientX - drag.start) > 5; if (dragged && !el.hasPointerCapture(event.pointerId)) { el.setPointerCapture(event.pointerId); el.classList.add("dragging"); } if (!dragged) return; el.style.setProperty("--seg-index", `${indexAt(event.clientX) * 100}%`); });
   const finish = (event) => { if (!drag || event && event.pointerId !== drag.id) return; const moved = dragged, index = indexAt(event?.clientX ?? drag.x ?? drag.start); drag = null; el.classList.remove("dragging"); suppressClick = moved; if (moved) { event?.preventDefault(); motion.seg = { label, from: at }; press(items[index][0]); on(items[index][0]); } else el.style.removeProperty("--seg-index"); };
   el.addEventListener("pointerup", finish); el.addEventListener("pointercancel", finish);
   el.addEventListener("click", (event) => { if (suppressClick) { suppressClick = false; event.preventDefault(); event.stopImmediatePropagation(); } }, { capture: true });
