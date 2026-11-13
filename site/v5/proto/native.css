@@ -206,3 +206,15 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .plan-conditions > div { padding-left:6px !important; padding-right:6px !important; }
 .tide-now-tag { top:0; }
 .tide-plot { margin-top:22px; }
+
+/* Type uniformity on phones: snap fluid/em sizes to whole pixels (each within ~1px of before) */
+@media (max-width:599px) {
+  :root { --fs-body:16px; }
+  .page-heading h1, .native-place span { font-size:34px; }
+  .card-h h2, .species-group-head h2, .log-card .card-h h2 { font-size:21px; }
+  .sp p.n, .target-species-item b { font-size:20px; }
+  .no-col .no-window { font-size:22px; }
+  .catch-ring b { font-size:19px; }
+  .condition-cell b { font-size:15px; }
+  .other-spot-card small { font-size:13px; }
+}
