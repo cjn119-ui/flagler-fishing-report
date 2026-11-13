@@ -1277,6 +1277,8 @@ function speciesView(c) {
     } else if (row.best) grouped.uncommon.push(row);
     else grouped.today.push(row);
   });
+  const rowScore = ({ best, focused }) => catchScore({ ...best, ...(focused ?? {}), historicalRate: focused?.historicalRate ?? best?.historicalRate }, focused ?? best)?.score ?? -1;
+  grouped.good.sort((a, b) => rowScore(b) - rowScore(a) || (b.suit ?? 0) - (a.suit ?? 0));
   const tiles = (items) => h("ul", { class: "grid" }, items.map(({ sp, best, suit, focused }) => {
     const notRealistic = !focused && best?.eligibility !== "realistic";
     const showScore = suit != null && !notRealistic;
