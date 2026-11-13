@@ -2133,6 +2133,7 @@ async function init() {
   const tabIndexAt = (x) => Math.max(0, Math.min(tabButtons.length - 1, Math.floor((x - tabs.getBoundingClientRect().left) / (tabs.getBoundingClientRect().width / tabButtons.length))));
   let tabSuppressClick = false;
   tabs.addEventListener("pointerdown", (event) => {
+    return; // bottom bar is tap-only: no drag-to-switch
     if (event.pointerType === "mouse" && event.button !== 0) return;
     const index = tabIndexAt(event.clientX); tabDrag = { pointerId: event.pointerId, index, startX: event.clientX, moved: false };
   });
@@ -2289,7 +2290,9 @@ async function init() {
     return preview;
   };
   const scrollsHorizontally = (target) => { for (let el = target; el && el !== $("view"); el = el.parentElement) { const style = getComputedStyle(el); if (el.matches(".scrub,.seg,input,select,textarea,[contenteditable=true],.target-species-scroll,.other-spots-scroll,.species-carousel,.plan-day-chips,.hourly-scroll,.species-tabs") || /(auto|scroll)/.test(`${style.overflowX} ${style.overflow}`) && el.scrollWidth > el.clientWidth + 1) return true; } return false; };
+  const SWIPE_NAV = false; // page navigation uses the bottom bar only; sideways swipes were glitchy
   document.addEventListener("touchstart", (e) => {
+    if (!SWIPE_NAV) { swipe = null; return; }
     const t = e.touches[0], target = e.target;
     if (!$("view").contains(target) || sheet || t.clientX < 20 || t.clientX > innerWidth - 20 || performance.now() - lastScrollAt < 150 || scrollsHorizontally(target)) { swipe = null; return; }
     if (tabSettleAnimation || document.querySelector(".tab-peek")) interruptTabTransitions();
