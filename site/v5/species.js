@@ -16,7 +16,7 @@
 //   bycatch  counts toward "will I catch something" but is never suggested as a target.
 //   setup    default bait/lures/rig/where; `byMode` overrides any of those per mode.
 //
-// Regulations change; the app links to FWC instead of repeating size or bag limits.
+// Regulations change; limits live in fwc-regs.js as a dated snapshot, and the app links to FWC.
 
 export const SPECIES = [
   {
@@ -305,3 +305,27 @@ export const fwcRulesUrl = (id) => {
   return `${FWC_BASE}${e.page}/${e.find ? `#:~:text=${e.find.split(",").map((x) => encodeURIComponent(x).replace(/[()]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())).join(",")}` : ""}`;
 };
 export const fwcRulesKind = (id) => FWC_SPECIES_PAGES[id]?.kind ?? (FWC_SPECIES_PAGES[id] ? "limits" : "general");
+
+// Recreational limits for Flagler's coast (Atlantic state waters; Northeast region where FWC
+// splits by region), copied from the FWC species pages on 2026-11-13. Rules change, so the app
+// shows the date and always keeps the link to the live FWC page.
+export const FWC_LIMITS_CHECKED = "2026-11-13";
+const YR = "Open year-round";
+const UNREG = { size: "No minimum", bag: "2 fish or 100 lb per person, whichever is more", season: "No closed season", note: "FWC lists this fish as unregulated; the default bag limit and gear rules apply." };
+export const FWC_LIMITS = {
+  redfish: { size: "Slot: 18–27″ total length", bag: "1 per person · 4 per vessel", season: YR, note: "Northeast region (Georgia line to New Smyrna Beach)." },
+  trout: { size: "Slot: 15–19″ total length; none over 19″", bag: "3 per person", season: YR, note: "Northeast region." },
+  flounder: { size: "14″ total length minimum", bag: "5 per person", season: "Closed Oct 15 – Nov 30" },
+  sheepshead: { size: "12″ total length minimum", bag: "8 per person · 50 per vessel in Mar–Apr", season: YR },
+  blackdrum: { size: "Slot: 14–24″, one fish over 24″ allowed", bag: "5 per person", season: YR },
+  bluefish: { size: "12″ fork length minimum (state waters)", bag: "3 per person", season: "No closed season listed", note: "Atlantic state waters, Nassau through Miami-Dade." },
+  spanish: { size: "12″ fork length minimum", bag: "15 per person", season: YR },
+  seabass: { size: "13″ total length minimum", bag: "7 per person", season: "No closed season listed", note: "Atlantic state waters. Reef-fish gear rules apply." },
+  spot: { size: "No minimum", bag: "50 per person per species", season: YR, note: "Atlantic state waters." },
+  croaker: { size: "No minimum", bag: "50 per person per species", season: YR, note: "Atlantic state waters." },
+  mangrove: { size: "10″ total length minimum in state waters (12″ federal)", bag: "5 per person within the 10-snapper aggregate (federal: 10)", season: YR, note: "Atlantic gray (mangrove) snapper. State waters run shore to 3 miles." },
+  pompano: { size: "11″ fork length minimum", bag: "6 per person", season: YR },
+  whitetrout: { size: "No minimum", bag: "100 lb per person", season: "No closed season listed", note: "Sand seatrout fall under FWC’s weakfish rule; the stricter weakfish zone is only near Nassau County." },
+  whiting: UNREG, jack: UNREG, spadefish: UNREG, catfish: UNREG, "panfish-misc": UNREG,
+  "sharks-rays": { size: "Most legal sharks: none. Bull, nurse, spinner, blue and thresher: 54″ fork length", bag: "1 shark per person · 2 per vessel", season: "No closed season listed", note: "Many sharks are prohibited. Release any you can’t identify." },
+};

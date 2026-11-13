@@ -176,7 +176,7 @@ Rules: no level requires a lower level to be understood; expansion is in place (
 | Use | Where in the water, bait, lures, rig, one tip (from `species.js` `setupFor(species, mode)`); mode toggle if several modes apply |
 | Local history | 12-month bar chart of the shrunk historical rate, current month highlighted; sentence per the copy rules ("About <n> in 10 Northeast Florida shore fishing trips caught one in October (2015–2025 surveys)", or a Common / Occasional / Rare band with a low-sample note when the month has fewer than 80 trips); per-mode source label ("pier and beach surveys" / "river, bridge and bank surveys"); "Counts all surveyed shore trips, not only trips targeting this fish; not measured at this spot"; "Rare in surveys" tag when the band is Rare |
 | Water-temperature fit | Strip from min to max with the comfortable band shaded and today's water temp marked; one sentence ("71 °F — comfortable for pompano") |
-| Rules link | "Check current FWC rules" link; the app never states size or bag limits |
+| Rules link | FWC rules card on the species sheet shows a dated snapshot of size, bag limit and season (site/v5/fwc-regs.js) and links to the FWC page |
 
 Suitability bands (labels shown beside the number in sheets and L1; independent of the GO threshold, which the engine sets): **70–100 Great fit · 50–69 Decent fit · 30–49 Poor fit · 0–29 Not a fit.**
 
@@ -229,7 +229,7 @@ Every state keeps the tab bar and the last-known content where it exists. States
 | Words to avoid in UI | chance, probability, odds, guarantee(d), epic, hotspot, "limits", any size/bag limit, raw jargon (hPa, Hs, MLLW, "solunar" — say "moon timing"), "unlikely" for suitability bands | | |
 | Numbers | Raw units only at L1 secondary and L3; times 12-hour local; "mph", "ft", "°F". | "Light wind, 8 mph" | "NW 7.2 kt gust 11.4" |
 | Backup | Always state the reason; a backup outside the nearby radius also names its area. | "Backup: <spot> <species> after <time> — the wind drops and the tide turns." | "Backup: ICW" |
-| Regulations | Link, never state. | "Check current FWC rules." | "Pompano limit is …" |
+| Regulations | Dated snapshot plus link (owner-approved 2026-11-13); always show the as-of date | "Pompano: 11 in, 6 per person (FWC, checked Nov 13, 2026)" | Undated or unsourced limits |
 | Headline | ≤ ~60 characters, species + cause. | "<species> & <species> on the incoming tide" | "Optimal conditions detected" |
 | Tone for SKIP | Honest, helpful, never shaming. | "Skip today — storms 2–6 PM. Tomorrow morning looks better." | "Bad day." |
 
