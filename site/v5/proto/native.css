@@ -140,3 +140,12 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .species-group .sp .n { grid-row:1; }
 .species-group .sp .sp-score { grid-column:3 !important; grid-row:1/5 !important; align-self:center; }
 .catch-actions { display:flex; margin-top:12px; } .catch-actions:empty { display:none; } .catch-actions .btn { width:100%; }
+
+/* Fish pictures: one unboxed style everywhere (matches Today's "What to target") */
+.species-detail-photo { width:100% !important; height:150px !important; padding:0 !important; border-radius:0 !important; background:none !important; object-fit:contain; margin:4px 0 2px; filter:drop-shadow(0 8px 14px rgba(0,0,0,.35)); }
+.ro-sp .t-btn { grid-template-columns:auto 1fr; align-items:center; }
+.ro-fish, .log-fish { width:56px; height:36px; flex:none; object-fit:contain; padding:0; border:0; border-radius:0; background:none; }
+.ro-sp .t-btn { display:flex; align-items:center; gap:10px; }
+.ro-sp .t-btn .t-name { flex:1; min-width:0; }
+.log-entry { gap:12px; justify-content:flex-start; }
+.log-entry .log-entry-main { flex:1; }

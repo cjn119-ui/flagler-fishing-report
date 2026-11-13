@@ -1014,7 +1014,7 @@ function timesCard(c) {
     if (!hasSp) return null;
     if (!list.length) return h("p", { class: "fine" }, all.length ? "No named target species at this time." : "No species ranking at this time: it falls outside a fishing window.");
     return h("ul", { class: "ro-sp", "aria-label": "Species at this time" }, list.map((x) => h("li", {}, h("button", { class: "t-btn", type: "button", onclick: (e) => openSpecies(x.speciesId, e.currentTarget) },
-      h("span", { class: "t-name" }, spName(x.speciesId), x.speciesId === st.species ? h("span", { class: "tag" }, "Targeting") : null),
+      fishImage(x.speciesId, "ro-fish"), h("span", { class: "t-name" }, spName(x.speciesId), x.speciesId === st.species ? h("span", { class: "tag" }, "Targeting") : null),
       h("div", { class: "bar-m", "aria-hidden": "true" }, h("i", { style: `width:${x.suitability}%` })), h("span", { class: "t-num" }, x.suitability == null ? "—" : x.suitability >= 70 ? "Great" : x.suitability >= 50 ? "Good" : "Poor")))));
   }
   const fromX = (e) => { const b = strip.getBoundingClientRect(); return Math.floor(((e.clientX - b.left) / b.width) * n); };
@@ -1464,7 +1464,7 @@ function logView(c) {
   const entries = [...grouped].map(([day, list]) => {
     const heading = h("h3", {}, new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "long", month: "long", day: "numeric", year: "numeric" }).format(new Date(`${day}T12:00:00-04:00`)));
     const items = list.map((row) => h("li", {}, h("button", { class: "log-entry", type: "button", onclick: (e) => openCatchDetail(row.id, e.currentTarget) },
-      h("span", { class: "log-entry-main" }, h("b", {}, row.species === "other" ? row.otherSpecies : row.speciesName), h("span", {}, `${row.count} · ${row.disposition} · ${row.spotName}`)),
+      row.species === "other" ? null : fishImage(row.species, "log-fish"), h("span", { class: "log-entry-main" }, h("b", {}, row.species === "other" ? row.otherSpecies : row.speciesName), h("span", {}, `${row.count} · ${row.disposition} · ${row.spotName}`)),
       h("span", { class: "muted" }, fmtTime(row.occurredAt)), icon("arrow"))));
     return h("section", { class: "log-day" }, heading, h("ul", { class: "log-list" }, items));
   });
