@@ -24,7 +24,7 @@ export async function mountWebMap(slot, api) {
   const L = await loadLeaflet();
   if (!state) {
     const host = document.createElement("div"); host.className = "ff-map"; host.setAttribute("role", "application"); host.setAttribute("aria-label", "Map of fishing spots. Long press near the shoreline to fish a custom point.");
-    const map = L.map(host, { zoomControl: true, attributionControl: true, zoomSnap: 0.5, worldCopyJump: false, maxBounds: [[23, -89], [32.5, -78]], minZoom: 6 });
+    const map = L.map(host, { zoomControl: true, attributionControl: true, zoomSnap: 0.5, scrollWheelZoom: false, tap: false, worldCopyJump: false, maxBounds: [[23, -89], [32.5, -78]], minZoom: 6 });
     state = { L, host, map, tiles: null, markers: new Map(), tileKind: null, fitted: false, api };
     map.on("contextmenu", (e) => state.api.onPoint?.({ lat: e.latlng.lat, lon: e.latlng.lng }));
     map.attributionControl.setPrefix(false);
