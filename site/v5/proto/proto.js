@@ -257,7 +257,7 @@ function writeHash() {
   if (st.state !== "live") p.set("state", st.state);
   if (st.tab === "plan" && st.day) p.set("day", st.day);
   const th = new URLSearchParams(location.hash.slice(1)).get("theme"); if (["light", "dark", "night"].includes(th)) p.set("theme", th);
-  try { history.replaceState(null, "", `#${p}`); } catch { /* sandboxed */ }
+  try { history.replaceState(null, "", `${location.pathname}${location.search}#${p}`); } catch { /* sandboxed */ }
 }
 const store = {
   get(k, d) { try { return JSON.parse(localStorage.getItem(`v5proto.${k}`)) ?? d; } catch { return d; } },
@@ -1819,7 +1819,7 @@ function toast(m) {
 function setTheme(t) {
   if (!["auto", "dark", "night", "light"].includes(t)) return;
   store.set("theme", t);
-  const p = new URLSearchParams(location.hash.slice(1)); p.delete("theme"); history.replaceState(null, "", `#${p}`);
+  const p = new URLSearchParams(location.hash.slice(1)); p.delete("theme"); history.replaceState(null, "", `${location.pathname}${location.search}#${p}`);
   applyThemePreference(t, null);
   document.querySelectorAll('[data-fk^="Appearance-"]').forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.fk === `Appearance-${t}`)));
   syncReview();

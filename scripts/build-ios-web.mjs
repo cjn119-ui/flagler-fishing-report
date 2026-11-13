@@ -52,7 +52,7 @@ function inject(file, prefix) {
   }
   writeFileSync(file, html);
 }
-cpSync(join(output, "index.html"), join(output, "classic.html"));
+if (!existsSync(join(output, "classic.html"))) cpSync(join(output, "index.html"), join(output, "classic.html"));
 inject(join(output, "classic.html"), "");
 inject(join(output, "v5/proto/index.html"), "../../");
 writeFileSync(join(output, "index.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"><meta name="color-scheme" content="dark light"><title>Flagler Fishing</title><script>location.replace("v5/proto/index.html" + location.hash);</script></head><body></body></html>\n`);

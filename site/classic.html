@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#0B1117" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F4F7FA" media="(prefers-color-scheme: light)">
+<meta name="description" content="Live fishing conditions, a transparent bite outlook, best times and a 7-day forecast for Palm Coast and Flagler Beach.">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Flagler">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/fishing.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="style.css">
+<title>Flagler Fishing</title>
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M2 9c2.5-3 5-3 7.5 0s5 3 7.5 0 3-2 5-1M2 15c2.5-3 5-3 7.5 0s5 3 7.5 0 3-2 5-1"/></svg></span>
+    <div><h1>Flagler Fishing</h1><p>Palm Coast · Flagler Beach</p></div>
+  </div>
+  <div class="tools">
+    <span id="updated" class="chip">Checking…</span>
+    <button id="refresh" type="button" aria-label="Refresh now"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5"/></svg></button>
+  </div>
+</header>
+
+<main>
+  <section id="hero" class="card hero" data-level="none" aria-labelledby="hero-label">
+    <div class="hero-main">
+      <div class="ring" role="img" aria-label="Conditions score loading">
+        <svg viewBox="0 0 120 120"><circle class="ring-track" cx="60" cy="60" r="52"/><circle id="ring-fill" class="ring-fill" cx="60" cy="60" r="52"/></svg>
+        <div class="ring-text"><span id="score">–</span><small>/ 100</small></div>
+      </div>
+      <div class="hero-copy">
+        <p id="hero-label" class="eyebrow">Current · next 12 hours</p>
+        <p id="v-badge" class="status">Loading</p>
+        <p id="v-why" class="why">Fetching live conditions…</p>
+      </div>
+    </div>
+    <p id="coverage" class="fine" role="status"></p>
+    <ul id="v-alerts" class="alerts"></ul>
+    <details class="how"><summary>How this is decided</summary>
+      <table id="v-rules"></table>
+      <p class="fine">The worst rule sets the status. The score weights wind 45%, rain chance 35% and offshore seas 20%. Missing inputs are excluded and remaining weights normalized. The result is then capped or floored to match the worst rule, so it stays inside its status band (Go 70+, Marginal 40–69, Skip under 40). It is a conditions read, not a catch prediction. Thresholds use unrounded inputs; displayed readings are rounded. Airport and offshore readings can differ from the beach.</p>
+    </details>
+  </section>
+
+  <section class="card hours" aria-labelledby="hours-title">
+    <header class="card-h"><h2 id="hours-title">Next 6 hours</h2><span id="hours-status" class="sub"></span></header>
+    <ol id="hours" class="hours-strip"></ol>
+    <p id="hours-summary" class="fine" role="status">Loading hourly forecast…</p>
+  </section>
+
+  <section class="stats" id="stats" aria-label="Current readings"></section>
+
+  <section class="card bite" aria-labelledby="bite-title">
+    <header class="card-h"><h2 id="bite-title">Bite forecast</h2><span class="sub">next 24 h · local time</span></header>
+    <div class="spot-choice" role="group" aria-label="Fishing location">
+      <button id="spot-surf" type="button" aria-pressed="true">Surf / pier</button>
+      <button id="spot-inshore" type="button" aria-pressed="false">Inshore</button>
+    </div>
+    <div class="bite-result" aria-live="polite" aria-atomic="true">
+      <p id="bite-label" class="bite-label">Checking…</p>
+      <p id="bite-time" class="bite-time"></p>
+      <p id="bite-conf" class="bite-conf" data-level="none"></p>
+      <p id="bite-conf-why" class="fine"></p>
+      <p id="bite-why" class="fine"></p>
+      <p id="bite-targets" class="bite-targets"></p>
+    </div>
+    <h3 id="times-title" class="times-title">Best surf / pier times</h3>
+    <ol id="windows" class="times"></ol>
+    <details class="how"><summary>How the bite outlook is estimated</summary>
+      <p class="fine">The strongest fully covered 2-hour daylight/twilight window sets the relative bite label: Promising at 0.78+, Mixed at 0.62–0.77, otherwise Slow. These are heuristic score bands, not measured chances of catching a fish. No local catch/no-catch data calibrates them.</p>
+      <p class="fine">Every 30-minute slot uses the NWS hourly forecast. Surf / pier weights sunrise or sunset light 45%, wind 30%, rain chance 25%. Inshore weights Smith Creek water-level change 35%, light 25%, wind 20%, rain 20%. Water-level change is interpolated between predicted highs and lows; it is not a tidal-current prediction. Windows need complete inputs, can include 45 minutes of twilight, and never overlap. Skip-level forecast wind or rain and active caution/warning alerts withhold suggestions. Offshore buoy 41117 is a current St. Augustine reference, not a forecast of local surf; check the beach before going.</p>
+      <p class="fine">Confidence compares input quality, not catch odds: Low if the forecast is over 6 h old, alerts are unverified or inshore tide predictions are missing, or if two or more inputs are missing or aging (forecast 3–6 h old, offshore reading missing or over 90 min old, no airport observation); Moderate with one such gap; otherwise High. A Low reading dims the outlook label.</p>
+      <p class="fine">Seasonal targets follow <a href="https://myfwc.com/fishing/saltwater/outreach/wheretofish/">FWC’s St. Johns / Flagler fishing guide</a>. They do not predict species catches or indicate legal harvest. Smith Creek is an inland tide reference and is used only for the inshore view.</p>
+    </details>
+  </section>
+
+  <section class="card">
+    <header class="card-h"><h2>Next 7 days</h2><span id="week-status" class="sub">NWS forecast</span></header>
+    <div id="week-chart" class="week"></div>
+    <p class="fine">Daytime score 0–100 from forecast wind (55%) and rain chance (45%); overnight used only when daytime is unavailable. Tides, seas and alerts are not forecast this far ahead.</p>
+  </section>
+
+  <footer>
+    <p>NWS (airport KFIN, forecast, alerts) · NOAA tides (Smith Creek 8720833, inland reference) · NDBC buoy 41117.</p>
+    <p><a href="v3/">Full report</a> · <span id="status" role="status"></span></p>
+  </footer>
+</main>
+<noscript><p>This report needs JavaScript to load current conditions.</p></noscript>
+<script type="module" src="main.js?v=catch-20260930b"></script>
+</body>
+</html>
