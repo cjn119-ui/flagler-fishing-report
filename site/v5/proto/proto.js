@@ -473,7 +473,7 @@ function render({ resetScroll = false, navigation = false } = {}) {
   const view = $("view");
   renderedImageCount = 0;
   const nodes = st.tab === "today" ? todayView(c) : st.tab === "spots" ? spotsView(c) : st.tab === "species" ? speciesView(c) : st.tab === "plan" ? planView(c) : logView(c);
-  view.replaceChildren(h("h1", { class: "sr-only" }, { today: "Today", spots: "Spots", species: "Species", plan: "Plan", log: "Log" }[st.tab]), ...nodes);
+  view.replaceChildren(h("h1", { class: "sr-only" }, { today: "Today", spots: "Explore", species: "Species", plan: "Plan", log: "Journal" }[st.tab]), ...nodes);
   if (!resetScroll) {
     [...view.querySelectorAll("details")].forEach((el, i) => { if (previousDetails[i] != null) el.open = previousDetails[i]; });
     [...document.querySelectorAll(scrollSelector)].forEach((el, i) => { if (previousScroll[i] != null) el.scrollLeft = previousScroll[i]; });
@@ -697,13 +697,31 @@ function renderBanner(c) {
 /* ---------- TODAY ---------- */
 function whenOf(c) { if (c.rec?.state?.kind === "closed" || c.rec?.reason?.code === "noRemainingWindowsToday") return "Today — after hours"; return whenOfWindow(c); }
 function whenOfWindow(c) { if (!c.skip && (!validDate(c.rec.window?.start) || !validDate(c.rec.window?.end))) return "Time unavailable"; return c.skip ? msg(c.rec.whenLabel) : formatWhenLabel({ recommendation: c.rec }, c.now); }
+
+// iOS-style decision header: editorial place title, then outlook / best-window columns (mirrors the native Today screen).
+const modeWord = (m) => m === "pier" ? "Pier" : m === "inshore" ? "Inshore" : "Surf";
+function nativeTitle(c, heroSpot) {
+  const name = locOf(c.run, heroSpot)?.name ?? c.rec.displayName ?? "Flagler Beach";
+  return h("section", { class: "native-title", "aria-label": "Current fishing location" },
+    h("p", { class: "eyebrow" }, `${modeWord(c.rec.mode)} \u00b7 ${wk(c.run.targetDate, { weekday: "short", month: "short", day: "numeric" })}`),
+    h("button", { class: "native-place", type: "button", onclick: (e) => openSpotSheet(e.currentTarget) }, h("span", {}, name), icon("down")));
+}
+function nativeOutlook(c, { r, endedNext, reason, qual }) {
+  const lvl = LEVEL[r.verdict];
+  const confidence = c.stale ? "Last known report" : c.partial ? "Some inputs missing \u00b7 confidence limited" : r.confidenceLevel ? `${String(r.confidenceLevel)[0].toUpperCase()}${String(r.confidenceLevel).slice(1)} prediction confidence` : "";
+  const windowText = endedNext ? "Ended" : r.window && !c.skip ? fmtRange(r.window.start, r.window.end) : "None";
+  const sub = endedNext ? `Next: ${endedNext}` : c.skip ? skipHeadline(c) : formatHeadline({ recommendation: r });
+  return h("div", { class: "native-outlook", "data-level": lvl },
+    h("div", { class: "no-col" }, h("p", { class: "no-label" }, "Fishing outlook"), h("p", { class: "no-verdict", "data-level": lvl }, VERDICT_SPOKEN[r.verdict]), confidence ? h("p", { class: "no-sub" }, confidence) : null),
+    h("div", { class: "no-col" }, h("p", { class: "no-label" }, "Best window"), h("p", { class: "no-window" }, windowText), h("p", { class: "no-sub" }, sub)),
+    reason ? h("div", { class: "no-reason" }, reason) : null, qual ? h("div", { class: "no-reason" }, qual) : null);
+}
 function todayView(c) {
   const out = [];
   const heroSpot = st.spot ? (locOf(c.run, st.spot)?.id ?? c.rec.locationId) : c.rec.locationId;
   setWallpaper(heroSpot);
   if (st.spot) out.push(h("p", { class: "notice remembered-spot", role: "status" }, `Showing ${locOf(c.run, st.spot)?.name ?? "selected spot"} · `, h("button", { class: "btn-s", type: "button", onclick: () => scope({ spot: null, persist: true }) }, "Best anywhere")));
-  out.push(h("section", { class: "today-hero", "aria-label": "Current fishing location" }, spotImage(heroSpot, "today-hero-photo", `${locOf(c.run, heroSpot)?.name ?? "Fishing spot"} fishing location`),
-    h("div", { class: "today-hero-shade" }), h("button", { class: "today-hero-place", type: "button", onclick: (e) => openSpotSheet(e.currentTarget) }, icon("pin"), h("span", {}, locOf(c.run, heroSpot)?.name ?? "Flagler Beach"), h("small", {}, wk(c.run.targetDate, { weekday: "long", month: "short", day: "numeric" }))), conditionsStrip(c)));
+  out.push(nativeTitle(c, heroSpot));
   if (c.focusMissing) out.unshift(h("p", { class: "notice", role: "status" }, `${spName(st.species)} has no usable window in this run, so Today shows the overall best. Remove the chip to clear it.`));
   // Lead with the actual reason (the safety gate or the engine's reason), before scores and sources.
   const reasonLines = c.rec.gates?.length ? [...new Set(c.rec.gates.map((g) => msg(g.text)).filter(Boolean))] : [msg(c.rec.reason?.text)].filter(Boolean);
@@ -741,8 +759,8 @@ function verdictCard(c, disclosure = null) {
   }
   const bet = c.skip ? nextOption(c) : betRow(c);
   return h("section", { class: `card hero${c.stale ? " dim" : ""}`, id: "verdict", "data-level": lvl, "aria-label": `Verdict: ${VERDICT_SPOKEN[r.verdict]}` },
-    h("div", { class: "hero-main" }, seal, h("div", { class: "hero-copy" }, eyebrow, h("h2", { class: "headline" }, endedNext ? `Next: ${endedNext}` : c.skip ? skipHeadline(c) : formatHeadline({recommendation:r})), endedNext ? h("p", { class: "ended-verdict" }, `Earlier: ${VERDICT_SPOKEN[r.verdict]} · ${formatHeadline({recommendation:r})}`) : null, r.benchmarkLine ? h("p", { class: "bench why-line" }, msg(r.benchmarkLine)) : null, reason, qual)),
-    notes, bet, disclosure);
+    nativeOutlook(c, { r, endedNext, reason, qual }),
+    notes, c.skip ? bet : null, conditionsStrip(c), disclosure);
 }
 const hiddenTargets = () => { const v = store.get("hiddenTargets", []); return Array.isArray(v) ? v : []; };
 function setTargetHidden(id, hidden, quiet = false) {
@@ -760,7 +778,7 @@ function targetSpeciesRow(c) {
     return h("section", { class: "target-species card", "aria-label": "Targets" }, h("div", { class: "card-h" }, h("h2", {}, "Targets")), h("p", { class: "muted" }, text),
       ended ? h("button", { class: "btn-s", type: "button", onclick: () => { st.h = "tomorrow"; st.t = null; render(); } }, "See tomorrow") : removed ? h("button", { class: "btn-s", type: "button", onclick: () => { store.set("hiddenTargets", []); render(); } }, "Show targets again") : null);
   }
-  return h("section", { class: "target-species card", "aria-label": "Targets" }, h("div", { class: "card-h" }, h("h2", {}, "Targets"), st.species ? h("button", { class: "btn alt target-clear", type: "button", onclick: () => scope({ spot: st.spot, mode: st.mode, tab: st.tab }) }, "Clear target") : null),
+  return h("section", { class: "target-species card", "aria-label": "Targets" }, h("div", { class: "card-h" }, h("h2", {}, "What to target"), st.species ? h("button", { class: "btn alt target-clear", type: "button", onclick: () => scope({ spot: st.spot, mode: st.mode, tab: st.tab }) }, "Clear target") : null),
     h("div", { class: "target-species-scroll" }, rows.map((row) => h("button", { class: `target-species-item${st.species === row.speciesId ? " on" : ""}`, type: "button", "aria-pressed": st.species === row.speciesId ? "true" : "false", "aria-label": `${row.name}, ${speciesFitBand(row.suitability, row.caps ? row : c.rec)}. ${st.species === row.speciesId ? "Targeted. Tap to stop targeting" : "Open species"}`, onclick: (e) => st.species === row.speciesId ? scope({ spot: st.spot, mode: st.mode, tab: st.tab }) : openSpecies(row.speciesId, e.currentTarget) }, fishImage(row.speciesId, "target-species-image"), h("b", {}, row.name), h("span", { class: "fit-word" }, speciesFitBand(row.suitability, row.caps ? row : c.rec))))));
 }
 function windowLine(c) {
@@ -1177,7 +1195,7 @@ function spotsView(c) {
     h("p", { class: "fine" }, (rec.targets ?? []).slice(0, 3).map((x) => x.name).join(" · ")),
     spotMiniStats(c, featured.id),
     h("button", { class: "btn", type: "button", onclick: (e) => openSpotDetail(featured.id, rec.mode, e.currentTarget) }, "View details")) : null;
-  return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "page-heading" }, h("h1", {}, "Spots"), h("div", { class: "page-actions" }, h("button", { class: "icon-button", type: "button", "aria-label": "Manage favorites", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "♥"))),
+  return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "page-heading" }, h("h1", {}, "Find your water."), h("div", { class: "page-actions" }, h("button", { class: "icon-button", type: "button", "aria-label": "Manage favorites", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "♥"))),
     st.h === "tomorrow" ? h("p", { class: "notice tomorrow-spots", role: "status" }, "Showing tomorrow ", h("button", { class: "btn-s", type: "button", onclick: () => { st.h = "today"; st.t = null; render(); } }, "Switch to Today")) : null,
     list.filters, searchBox("Search spots", st.spotSearch, (e) => { st.spotSearch = e.target.value; listHost?.rebuild(); }), resultStatus, map, featureCard, list)];
 }
@@ -1240,7 +1258,7 @@ function speciesView(c) {
     h("div", { class: "species-group-head" }, h("h2", {}, title), h("span", {}, items.length)), tiles(items)) : null;
   const noMatches = !!st.speciesSearch && matching.length === 0;
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
-    h("div", { class: "page-heading" }, h("h1", {}, "Species")),
+    h("div", { class: "page-heading" }, h("h1", {}, "What to target.")),
     listSource(c).ended ? endedNote("ratings below are for tomorrow") : null,
     searchBox("Search species", st.speciesSearch, (e) => { st.speciesSearch = e.target.value; render(); }),
     h("div", { class: "tools-row species-filters" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })),
@@ -1372,7 +1390,7 @@ function planView(c) {
   }));
   const chips = h("div", { class: "plan-day-chips", role: "tablist", "aria-label": "Plan day" }, days.map((d, i) => h("button", { class: "day-chip", type: "button", role: "tab", "aria-selected": String(i === st.day), "data-fk": `plan-day-${i}`, onclick: () => { st.day = i; render(); } }, h("b", {}, i === 0 ? "Today" : wk(d.date, { weekday: "short" })), h("small", {}, wk(d.date, { month: "short", day: "numeric" })))));
   return [h("section", { class: "plan-page" },
-    h("div", { class: "page-heading" }, h("h1", {}, "Plan")), chips, summary, tide, hourlyTable,
+    h("div", { class: "page-heading" }, h("h1", {}, "Plan your next trip.")), chips, summary, tide, hourlyTable,
     h("div", { class: "plan-layout" },
       h("section", { class: "card" }, h("div", { class: "card-h" }, h("h2", {}, "Next 7 days"), h("p", { class: "eyebrow" }, st.species ? `for ${spName(st.species)}` : st.spot ? locOf(c.run, st.spot)?.name : "Best anywhere")), list),
       h("section", { class: "card plan-detail desktop-pane" }, dayBody(selected, st.day, daySummary(c,selected,st.day), c.run))))];
@@ -1430,7 +1448,7 @@ function logView(c) {
     return h("section", { class: "log-day" }, heading, h("ul", { class: "log-list" }, items));
   });
   return [h("section", { class: "card log-card", "aria-label": "Catch log" },
-    h("div", { class: "card-h" }, h("h2", {}, "Catch log"), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
+    h("div", { class: "card-h" }, h("h2", {}, "Every trip teaches."), h("button", { class: "btn-s", type: "button", onclick: exportCatchLog }, "Export CSV")),
     h("p", { class: "fine" }, "Saved on this device only."), summary,
     h("button", { class: "btn log-add", type: "button", hidden: !rows.length, onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log a catch"),
     rows.length ? entries : h("div", { class: "log-empty" }, s("svg", { class: "empty-fish", viewBox: "0 0 120 64", role: "img", "aria-label": "A fish on a fishing line" }, s("path", { d: "M16 36c13-17 35-20 55-9l18-13v41L71 43c-20 11-42 8-55-7Zm-8 0h7m67-12 13-7m-13 31 13 7M51 27v18m7-18v18" }), s("circle", { cx: 42, cy: 33, r: 2 })), h("p", {}, "No catches logged yet."), h("p", { class: "fine" }, "Log a catch to start tracking your best spots and species."), h("button", { class: "btn", type: "button", onclick: (e) => openCatchForm(null, e.currentTarget, c) }, "Log your first catch")))];
