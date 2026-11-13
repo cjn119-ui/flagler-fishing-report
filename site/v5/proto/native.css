@@ -225,3 +225,13 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .species-group .sp .species-band b[data-fit="decent"] { color:#F5C973; }
 .species-group .sp .species-band b[data-fit="poor"], .species-group .sp .species-band b[data-fit="not"] { color:#C9A56A; }
 .species-group .sp .species-band b[data-fit="unsafe"] { color:#F08A7E; }
+
+/* Species rows: center the text block between the fish and the catch ring */
+.species-group .sp { grid-template-rows:1fr auto auto auto auto 1fr !important; row-gap:3px !important; min-height:96px; }
+.species-group .sp .species-thumb, .species-group .sp .sp-score { grid-row:1 / -1 !important; align-self:center; }
+.species-group .sp .n { grid-row:2 !important; line-height:1.15; }
+.species-group .sp .species-band { grid-row:3 !important; min-height:0 !important; margin:0; }
+.species-group .sp .eligibility { grid-row:4 !important; justify-self:start; }
+.species-group .sp .trip-rate { grid-row:5 !important; line-height:1.3; }
+.species-group .sp .n { min-height:0 !important; }
+.species-group .sp .trip-rate { margin-top:2px !important; }
