@@ -7,7 +7,7 @@ import { SPOTS, ACTIVE_SPOTS } from "../spots.js";
 import { solarEvents } from "../engine/astro.js";
 import { factorsAt, fetchProtoRun, fetchRunDetails, readCachedProtoRuns, writeCachedProtoRun } from "./proto-data.js";
 import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch } from "./catch-log.js";
-import { bestSpeciesCandidate, speciesEligibilityLabel, speciesFitBand, speciesFitWord, speciesTripRate, unsafeCapped } from "./species-presentation.js";
+import { bestSpeciesCandidate, catchScore, CATCH_SCORE, speciesEligibilityLabel, speciesFitBand, speciesFitWord, speciesTripRate, unsafeCapped } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
 import { observedWindAt } from "../engine/observed-wind.js";
 import { fmtWind, gridTemperatureF, gridValueAt, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
@@ -1270,6 +1270,7 @@ function speciesView(c) {
       "aria-label": (() => { const said = (showScore ? (capped ? "unsafe conditions" : band) : notRealistic ? speciesEligibilityLabel(best) : "") || "no rating"; return `${sp.name}, ${said}${sp.bycatch && !/bycatch/i.test(said) ? ", bycatch" : ""}`; })(), onclick: (e) => openSpecies(sp.id, e.currentTarget) },
       fishImage(sp.id, "species-thumb"), h("p", { class: "n" }, sp.name, sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
       showScore ? h("div", { class: "species-band" }, h("b", {}, band)) : null,
+      (() => { const ring = showScore ? catchRing(catchScore({ ...best, ...(focused ?? {}), historicalRate: focused?.historicalRate ?? best?.historicalRate }, focused ?? best)) : null; return ring ? h("div", { class: "sp-score" }, ring, h("small", {}, "Catch")) : null; })(),
       best && best.eligibility !== "realistic" ? h("span", { class: "tag eligibility" }, speciesEligibilityLabel(best)) : null,
       best?.historicalRate ? h("small", { class: "trip-rate" }, speciesTripRate(best)) : null,
       showScore && !capped ? h("div", { class: "bar-m species-fit-bar", "aria-hidden": "true" }, h("i", { style: `width:${suit}%` })) : null));
@@ -1278,7 +1279,7 @@ function speciesView(c) {
     h("div", { class: "species-group-head" }, h("h2", {}, title), h("span", {}, items.length)), tiles(items)) : null;
   const noMatches = !!st.speciesSearch && matching.length === 0;
   return [h("section", { class: "card species-browser", "aria-label": "Species" },
-    h("div", { class: "page-heading" }, h("h1", {}, "What to target.")),
+    h("div", { class: "page-heading" }, h("h1", {}, "Know your target.")), h("p", { class: "species-intro" }, "See what fits the conditions, then choose your bait and where to cast. Catch likelihood blends survey history with today\u2019s fit."),
     listSource(c).ended ? endedNote("ratings below are for tomorrow") : null,
     searchBox("Search species", st.speciesSearch, (e) => { st.speciesSearch = e.target.value; render(); }),
     h("div", { class: "tools-row species-filters" }, segment("Mode filter", [["all", "All"], ["surf", "Surf"], ["pier", "Pier"], ["inshore", "Inshore"]], st.f, (v) => { st.f = v; render(); })),
@@ -1765,6 +1766,11 @@ async function hydrateFactors(run) {
 }
 const factorReasons = (factors) => factors.filter((f) => f.available !== false && (f.effect === "helps" || f.effect === "hurts"))
   .map((f) => ({ effect: f.effect, text: factorLine(f.label, msg(f.humanLabel)) }));
+function catchRing(cs, big = false) {
+  if (!cs) return null;
+  return h("div", { class: `catch-ring${big ? " big" : ""}`, "data-level": cs.level.toLowerCase().replace(" ", "-"), style: `--p:${cs.score}`, role: "img", "aria-label": `Catch likelihood ${cs.score} out of 100, ${cs.level}` },
+    h("b", {}, String(cs.score)), big ? null : h("small", {}, "/100"));
+}
 function openSpecies(id, opener) {
   const c = ctx(), sp = spCat(id);
   const inTargets = !sp?.bycatch && (c.rec.targets ?? []).some((t) => t.speciesId === id) && !hiddenTargets().includes(id);
@@ -1796,7 +1802,17 @@ function openSpecies(id, opener) {
       body.querySelectorAll(".species-tab").forEach((b) => b.setAttribute("aria-current", String(b === e.currentTarget)));
     } }, label))),
     sp.alt ? h("p", { class: "muted" }, sp.alt) : null,
-    h("div", { class: "kv", style: "margin-top:10px" }, h("span", { class: "stat-big" }, capped ? "—" : suit ?? "—"), h("span", { class: "muted" }, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : speciesFitWord(suit, best)), sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null),
+    (() => {
+      const cs = realistic ? catchScore(useFocused ? { ...best, ...focused, historicalRate: focused.historicalRate ?? best?.historicalRate } : best, useFocused ? focused : best) : null;
+      return h("section", { class: "catch-card", "aria-label": "Catch likelihood" },
+        h("div", { class: "catch-card-top" }, catchRing(cs, true) ?? h("div", { class: "catch-ring big none", role: "img", "aria-label": "No catch likelihood available" }, h("b", {}, "\u2014")),
+          h("div", {}, h("p", { class: "eyebrow" }, "Catch likelihood"), h("p", { class: "catch-level" }, cs ? cs.level : capped ? "Unsafe conditions" : "Not enough data"),
+            sp.bycatch ? h("span", { class: "tag" }, "Bycatch") : null)),
+        h("dl", { class: "catch-break" },
+          h("div", {}, h("dt", {}, "Survey history"), h("dd", {}, best?.historicalRate ? speciesTripRate(best) : "No survey data")),
+          h("div", {}, h("dt", {}, "Conditions fit"), h("dd", {}, capped ? "Unsafe conditions" : suit == null ? "No fishing window in this run" : `${suit} \u00b7 ${speciesFitWord(suit, best)}`))),
+        h("p", { class: "fine" }, `Blends how often anglers catch it this month (${Math.round(CATCH_SCORE.rateWeight * 100)}%) with how well today\u2019s conditions fit (${Math.round(CATCH_SCORE.fitWeight * 100)}%). An index out of 100, not a percent chance.`), h("div", { class: "kv catch-actions" }));
+    })(),
     !realistic && reason ? h("p", { class: "fine eligibility" }, reason) : null,
     best?.historicalRate ? h("p", { class: "fine trip-rate" }, speciesTripRate(best)) : null,
     place?.displayName ? h("div", { class: "block" }, h("h3", {}, "Best place and time"), h("p", { style: "font-weight:600" }, place.displayName, " ", h("span", { class: "mchip" }, modeIcon(place.mode), modeLabel(place.mode))), place.window ? h("p", { class: "muted" }, fmtRange(place.window.start, place.window.end)) : null) : null,

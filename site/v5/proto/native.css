@@ -116,3 +116,27 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .day-chip[aria-selected="true"] small { color:var(--n-aqua) !important; }
 .species-group .sp { row-gap:2px !important; align-content:center; }
 .species-group .sp .species-thumb { align-self:center; }
+
+/* ---------- Species (field guide) ---------- */
+.species-intro { margin:2px 0 14px; color:var(--n-dim); font-size:15px; }
+.species-group .sp { grid-template-columns:88px 1fr auto !important; }
+.species-group .sp .sp-score { grid-column:3; grid-row:1/5; display:grid; justify-items:center; gap:2px; }
+.species-group .sp .sp-score small { font-size:11px; color:var(--n-dim); letter-spacing:.06em; text-transform:uppercase; }
+.catch-ring { --c:var(--n-dim); position:relative; width:52px; height:52px; border-radius:50%; display:grid; place-items:center; background:conic-gradient(var(--c) calc(var(--p) * 1%), rgba(255,255,255,.14) 0); }
+.catch-ring::before { content:""; position:absolute; inset:5px; border-radius:50%; background:#0b1d29; }
+:root[data-theme="light"] .catch-ring::before { background:#fff; }
+.catch-ring b, .catch-ring small { position:relative; z-index:1; }
+.catch-ring b { font-family:var(--serif); font-size:1.2rem; font-weight:600; line-height:1; } .catch-ring small { display:none; }
+.catch-ring[data-level="high"] { --c:var(--n-aqua); } .catch-ring[data-level="moderate"] { --c:var(--n-amber); } .catch-ring[data-level="low"] { --c:#C9A56A; }
+.catch-ring.big { width:92px; height:92px; } .catch-ring.big::before { inset:7px; } .catch-ring.big b { font-size:2rem; } .catch-ring.none { background:rgba(255,255,255,.12); }
+.catch-card { margin:14px 0 6px; padding:16px; border-radius:22px; background:var(--n-glass); border:1px solid var(--n-glass-edge); }
+.catch-card-top { display:flex; align-items:center; gap:18px; } .catch-card .eyebrow { margin:0 0 4px; }
+.catch-level { margin:0; font-family:var(--serif); font-size:1.7rem; font-weight:600; line-height:1.1; }
+.catch-break { margin:14px 0 8px; display:grid; gap:0; } .catch-break > div { display:flex; justify-content:space-between; gap:14px; padding:10px 0; border-top:1px solid var(--n-sep); }
+.catch-break dt { color:var(--n-dim); font-size:14px; } .catch-break dd { margin:0; font-weight:600; font-size:14px; text-align:right; }
+.catch-card .fine { margin:6px 0 0; color:var(--n-dim); }
+.species-group .sp .n { font-size:1.35rem; }
+.species-group .sp > :not(.species-thumb):not(.sp-score) { grid-column:2 !important; }
+.species-group .sp .n { grid-row:1; }
+.species-group .sp .sp-score { grid-column:3 !important; grid-row:1/5 !important; align-self:center; }
+.catch-actions { display:flex; margin-top:12px; } .catch-actions:empty { display:none; } .catch-actions .btn { width:100%; }

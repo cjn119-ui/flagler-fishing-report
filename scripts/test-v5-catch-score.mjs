@@ -1,0 +1,13 @@
+import assert from "node:assert/strict";
+import { catchScore, catchLevel } from "../site/v5/proto/species-presentation.js";
+const c = (rate, fit, extra = {}) => ({ suitability: fit, historicalRate: { rate, ...extra } });
+assert.equal(catchScore(c(null, 80)), null, "no survey rate -> no score");
+assert.equal(catchScore(c(0.2, null)), null, "no fit -> no score");
+assert.equal(catchScore({ suitability: 80, historicalRate: { rate: 0.3 }, caps: [{ code: "severeConditions" }] }), null, "unsafe -> no score");
+assert.ok(catchScore(c(0.02, 90)).score < 20, "rare species stays low even with great fit");
+assert.ok(catchScore(c(0.4, 100)).score === 100, "ceiling rate and perfect fit -> 100");
+assert.ok(catchScore(c(0.3, 80)).score > catchScore(c(0.3, 40)).score, "monotonic in fit");
+assert.ok(catchScore(c(0.3, 70)).score > catchScore(c(0.1, 70)).score, "monotonic in rate");
+assert.equal(catchScore(c(0.25, 70, { lowSample: true })).lowSample, true);
+assert.deepEqual(["High", "Moderate", "Low", "Very low"], [70, 50, 25, 5].map(catchLevel));
+console.log("catch score tests passed");

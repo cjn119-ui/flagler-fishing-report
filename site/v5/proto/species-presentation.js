@@ -29,3 +29,17 @@ export function speciesFitBand(suitability, row = null) {
   if (unsafeCapped(row)) return "Unsafe conditions";
   return suitability == null ? "No fit reading" : `${suitability >= 70 ? "Great" : suitability >= 50 ? "Decent" : suitability >= 30 ? "Poor" : "Not a"} conditions fit`;
 }
+
+// Catch likelihood (0-100 index, not a % chance): geometric blend of the survey base rate (share of trips that caught the
+// species this month, from MRIP) and today's conditions fit from the engine. Needs both; never invents a value.
+// Weights and the 40% rate ceiling are provisional product choices, kept in one place so they are easy to retune.
+export const CATCH_SCORE = { rateWeight: 0.6, fitWeight: 0.4, rateCeiling: 0.4 };
+export function catchScore(candidate, row = null) {
+  if (!candidate || unsafeCapped(row ?? candidate)) return null;
+  const rate = candidate.historicalRate?.rate, fit = candidate.suitability;
+  if (!Number.isFinite(rate) || !Number.isFinite(fit)) return null;
+  const r = Math.min(1, Math.max(0, rate) / CATCH_SCORE.rateCeiling), f = Math.min(1, Math.max(0, fit) / 100);
+  const score = Math.round(100 * Math.pow(r, CATCH_SCORE.rateWeight) * Math.pow(f, CATCH_SCORE.fitWeight));
+  return { score, level: catchLevel(score), lowSample: !!candidate.historicalRate?.lowSample, rate, fit };
+}
+export const catchLevel = (score) => score >= 65 ? "High" : score >= 40 ? "Moderate" : score >= 20 ? "Low" : "Very low";
