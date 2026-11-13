@@ -269,6 +269,8 @@ function readHash() {
   st.t = p.get("t") && !Number.isNaN(Date.parse(p.get("t"))) ? p.get("t") : null;
   st.state = STATES.some((x) => x.id === p.get("state")) ? p.get("state") : "live";
   st.day = Math.min(6, Math.max(0, Number(p.get("day")) || 0));
+  // The Appearance picker was removed; clear any theme chosen with it so nobody stays stuck on Light/Night.
+  if (!/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && store.get("theme", "auto") !== "auto") store.set("theme", "auto");
   applyThemePreference(store.get("theme", "auto"), p.get("theme"));
   return p;
 }
@@ -1706,8 +1708,7 @@ function openMoreSheet(opener) {
     h("p", {}, h("b", {}, "Source: "), c.source ?? "live"), h("p", {}, h("b", {}, "Updated: "), gen),
     h("p", { class: "fine" }, "Conditions fit is an environmental suitability score, not a catch probability. Missing inputs reduce confidence."),
     h("button", { class: "btn alt", type: "button", onclick: () => { closeSheet(); $("refresh").click(); } }, "Refresh forecasts"));
-  const blocks = [provenance, h("section", { class: "block" }, h("h3", {}, "Appearance"),
-    segment("Appearance", THEMES, store.get("theme", "auto"), setTheme, "appearance"), h("p", { class: "fine" }, "Auto uses Dark by day and Night after sunset."))];
+  const blocks = [provenance];
   if (window.FFNotify) blocks.push(h("section", { class: "block notify-block" }, h("h3", {}, "Notifications"),
     h("button", { class: "notify-toggle", type: "button", role: "switch", "aria-checked": String(enabled), onclick: (e) => {
       const next = e.currentTarget.getAttribute("aria-checked") !== "true";
