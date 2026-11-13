@@ -1125,3 +1125,14 @@ html,body,button,input,select,textarea,summary,svg text { font-family:var(--font
 .tab-peek, .tab-peek * { animation:none!important; transition:none!important; }
 body.tab-moving .bar, body.tab-moving .tabbar { -webkit-backdrop-filter:none; backdrop-filter:none; background:color-mix(in srgb,var(--surface) 94%,var(--bg)); }
 body.tab-moving #main { backface-visibility:hidden; -webkit-backface-visibility:hidden; }
+
+/* ---------- Native look: full-screen wallpaper, serif display type ---------- */
+#wallpaper { position:fixed; inset:0; z-index:-1; pointer-events:none; background:#06121c; }
+#wallpaper .wp { position:absolute; inset:0; background-size:cover; background-position:center; opacity:0; transition:opacity 900ms var(--ease-out, ease); }
+#wallpaper .wp.on { opacity:1; }
+#wallpaper::after { content:""; position:absolute; inset:0; background:linear-gradient(180deg,rgba(3,10,18,.66) 0%,rgba(3,10,18,.80) 40%,rgba(3,10,18,.92) 100%); }
+:root[data-theme="light"] #wallpaper { display:none; }
+:root { --serif:"New York","Iowan Old Style","Charter",ui-serif,Georgia,serif; }
+.headline, .card h2, .sheet h2, .today-hero-place span, .brand h1 { font-family:var(--serif); font-weight:600; letter-spacing:-.005em; }
+.headline { font-size:clamp(1.5rem,1.3rem + .8vw,2rem); line-height:1.18; }
+@media (prefers-reduced-motion:reduce) { #wallpaper .wp { transition:none; } }

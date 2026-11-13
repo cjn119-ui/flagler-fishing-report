@@ -114,6 +114,17 @@ function image(file, cls, alt = "") {
   el.addEventListener("error", () => { el.removeAttribute("src"); el.classList.add("photo-placeholder"); el.setAttribute("role", "img"); el.setAttribute("aria-label", alt || "Image unavailable"); }, { once: true });
   return el;
 }
+// Full-screen wallpaper behind the glass UI: the Pelagic ocean by default, the selected / recommended spot's photo when known.
+let wallpaperFile = null, wallpaperFlip = 0;
+function setWallpaper(spotId) {
+  const root = document.getElementById("wallpaper"); if (!root) return;
+  const file = spotId && creditFor(`spots/${spotId}.jpg`) ? `img/spots/${spotId}.jpg` : "img/pelagic-ocean.jpg";
+  if (file === wallpaperFile) return; wallpaperFile = file;
+  const layers = root.querySelectorAll(".wp"), next = layers[wallpaperFlip ^= 1], prev = layers[wallpaperFlip ^ 1], probe = new Image();
+  probe.onload = () => { if (wallpaperFile !== file) return; next.style.backgroundImage = `url("${file}")`; next.classList.add("on"); prev.classList.remove("on"); };
+  probe.src = file;
+}
+setWallpaper(null);
 function fishImage(id, cls = "") { const slug = FISH_IMAGE[id]; return slug ? image(`fish/${slug}.webp`, cls, spName(id)) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": spName(id) }); }
 function spotImage(id, cls = "", alt = "") { const file = `spots/${id}.jpg`; return creditFor(file) ? image(file, cls, alt) : h("div", { class: `photo photo-placeholder ${cls}`, role: "img", "aria-label": alt || "Fishing spot" }); }
 function spotPhoto(id, cls = "", alt = "", showCaption = false) {
@@ -689,6 +700,7 @@ function whenOfWindow(c) { if (!c.skip && (!validDate(c.rec.window?.start) || !v
 function todayView(c) {
   const out = [];
   const heroSpot = st.spot ? (locOf(c.run, st.spot)?.id ?? c.rec.locationId) : c.rec.locationId;
+  setWallpaper(heroSpot);
   if (st.spot) out.push(h("p", { class: "notice remembered-spot", role: "status" }, `Showing ${locOf(c.run, st.spot)?.name ?? "selected spot"} · `, h("button", { class: "btn-s", type: "button", onclick: () => scope({ spot: null, persist: true }) }, "Best anywhere")));
   out.push(h("section", { class: "today-hero", "aria-label": "Current fishing location" }, spotImage(heroSpot, "today-hero-photo", `${locOf(c.run, heroSpot)?.name ?? "Fishing spot"} fishing location`),
     h("div", { class: "today-hero-shade" }), h("button", { class: "today-hero-place", type: "button", onclick: (e) => openSpotSheet(e.currentTarget) }, icon("pin"), h("span", {}, locOf(c.run, heroSpot)?.name ?? "Flagler Beach"), h("small", {}, wk(c.run.targetDate, { weekday: "long", month: "short", day: "numeric" }))), conditionsStrip(c)));
