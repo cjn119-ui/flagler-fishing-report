@@ -235,3 +235,4 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .species-group .sp .trip-rate { grid-row:5 !important; line-height:1.3; }
 .species-group .sp .n { min-height:0 !important; }
 .species-group .sp .trip-rate { margin-top:2px !important; }
+.species-group .sp .species-band { padding-left:2px; }
