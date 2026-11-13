@@ -159,3 +159,11 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .fwc-btn .ext svg, .fwc-link .ext svg { width:16px; height:16px; display:block; }
 .fwc-link { display:inline-flex; align-items:center; gap:6px; margin-top:8px; color:#8CC4F0; font-weight:600; text-decoration:none; }
 .fwc-link:hover, .fwc-link:focus-visible { text-decoration:underline; }
+.fwc-regs { margin:6px 0 2px; display:grid; gap:0; }
+.fwc-regs > div { display:grid; grid-template-columns:84px 1fr; gap:12px; padding:9px 0; border-top:1px solid rgba(140,196,240,.22); }
+.fwc-regs dt { color:#8CC4F0; font-size:12px; letter-spacing:.06em; text-transform:uppercase; padding-top:2px; }
+.fwc-regs dd { margin:0; font-weight:600; line-height:1.3; }
+.fwc-limits { margin:6px 0 2px; display:grid; gap:0; }
+.fwc-limits > div { display:grid; grid-template-columns:84px 1fr; gap:10px; padding:9px 0; border-top:1px solid rgba(140,196,240,.22); }
+.fwc-limits dt { color:rgba(255,255,255,.62); font-size:13px; letter-spacing:.04em; text-transform:uppercase; padding-top:2px; }
+.fwc-limits dd { margin:0; font-weight:600; line-height:1.3; }
