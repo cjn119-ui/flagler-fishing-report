@@ -236,3 +236,38 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .species-group .sp .n { min-height:0 !important; }
 .species-group .sp .trip-rate { margin-top:2px !important; }
 .species-group .sp .species-band { padding-left:2px; }
+
+/* Desktop: wide windows get a real layout instead of a 600px phone column.
+   Everything below is gated to >=1000px, so phone and tablet rendering is unchanged. */
+@media (min-width:1000px) {
+  :root { --n-gutter:40px; }
+  main, .bar, .ctl { max-width:1160px; margin-inline:auto !important; }
+  .bar { gap:16px; padding-top:calc(18px + env(safe-area-inset-top)) !important; }
+  .brand { flex:0 1 auto; }
+  .pill { max-width:340px; }
+  #more { margin-left:auto; }
+  .ctl .seg.day { width:360px; }
+
+  /* Today: two balanced columns under a full-width title; "Other spots" runs full width */
+  #view:has(> .native-title) { columns:2; column-gap:72px; }
+  #view:has(> .native-title) > * { break-inside:avoid; }
+  #view:has(> .native-title) > .native-title,
+  #view:has(> .native-title) > .card:last-child { column-span:all; }
+
+  /* the "Review states" tool sat at top-centre and covered the tab bar; park it bottom-right */
+  .review { top:auto; bottom:20px; left:auto; right:24px; transform:none; align-items:flex-end; flex-direction:column; }
+
+  /* Explore: pin the selected-spot card while the long list scrolls, and use the compact row layout */
+  .spots-layout .spot-detail { position:sticky; top:24px; }
+  .spotlist .row:not(.any) > button.main { display:grid !important; grid-template-columns:72px minmax(0,1fr); column-gap:14px; row-gap:2px; align-items:center; padding:12px 0 !important; }
+  .spotlist .row:not(.any) .spot-row-photo { grid-row:1 / span 3; width:72px !important; height:56px !important; border-radius:12px; }
+  .spotlist .row:not(.any) .r1, .spotlist .row:not(.any) .r2 { grid-column:2; margin:0; }
+  .spotlist .row:not(.any) .star { align-self:center; }
+
+  /* Species: two columns per group instead of one very wide list */
+  .species-group .grid { display:grid !important; grid-template-columns:repeat(2,minmax(0,1fr)); column-gap:64px; }
+  .species-group .grid > li:nth-last-child(2):nth-child(odd) { border-bottom:0; }
+
+  /* Plan: even split between the week list and the day detail */
+  .plan-layout { grid-template-columns:minmax(0,1fr) minmax(0,1fr) !important; gap:64px !important; }
+}
