@@ -321,7 +321,7 @@ function coastalLocation(point, mode, station) {
     marineCoordinates: { lat: point.lat, lon: point.lon }, tideSensitivity: mode === "inshore" ? "high" : "medium",
     windExposure: { facingDeg: facing }, timeZone: point.timeZone, targets: SPECIES.filter(species => species.modes?.includes(mode)).map(species => species.id), access: [], notes: "User-selected coastal point; nearby station context is identified in the report." };
 }
-async function chooseFloridaPoint({ lat, lon, mode = null }) {
+async function chooseFloridaPoint({ lat, lon, mode = null, source = null }) {
   if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < FL_BOUNDS.minLat || lat > FL_BOUNDS.maxLat || lon < FL_BOUNDS.minLon || lon > FL_BOUNDS.maxLon) {
     if (mode != null) throw new Error("Choose a point on Florida’s coast");
     toast("Choose a point on Florida’s coast."); return;
@@ -341,7 +341,7 @@ async function chooseFloridaPoint({ lat, lon, mode = null }) {
   }
   const region = floridaRegion({ lat, lon });
   const point = { id: `fl-point-${lat.toFixed(4)}-${lon.toFixed(4)}`, lat, lon, regionId: region.id, regionLabel: region.label,
-    name: `${region.label} · ${lat.toFixed(3)}, ${lon.toFixed(3)}`, timeZone: floridaTimeZone({ lat, lon }), tideDistanceMi: Math.round(nearest.distanceMi*10)/10 };
+    name: `${source === "gps" ? "My location" : "Pinned spot"} near ${nearest.name}`, timeZone: floridaTimeZone({ lat, lon }), tideDistanceMi: Math.round(nearest.distanceMi*10)/10 };
   if (mode != null) {
     if (!["surf", "pier", "inshore"].includes(mode)) throw new Error("Choose surf, pier, or inshore mode");
     await buildFloridaPoint(point, mode, nearest, true, token);
@@ -654,8 +654,16 @@ function mountExploreMap(slot, c) {
 }
 function useMyLocation() {
   if (!navigator.geolocation) { toast("Location isn\u2019t available in this browser."); return; }
-  navigator.geolocation.getCurrentPosition((p) => { flyToWebMap(p.coords.latitude, p.coords.longitude, 12); chooseFloridaPoint({ lat: p.coords.latitude, lon: p.coords.longitude }); },
-    () => toast("Location permission is off. Long press the map to choose a point."), { timeout: 8000, maximumAge: 60000 });
+  toast("Finding your location\u2026");
+  navigator.geolocation.getCurrentPosition((p) => {
+    const lat = p.coords.latitude, lon = p.coords.longitude;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < FL_BOUNDS.minLat || lat > FL_BOUNDS.maxLat || lon < FL_BOUNDS.minLon || lon > FL_BOUNDS.maxLon) {
+      toast("You\u2019re outside Florida. Long press the map to pick a coastal point."); return;
+    }
+    flyToWebMap(lat, lon, 12); chooseFloridaPoint({ lat, lon, source: "gps" });
+  }, (err) => toast(err?.code === 1 ? "Location is off for this site. Long press the map to choose a point."
+    : err?.code === 3 ? "Location timed out. Try again or long press the map." : "Couldn\u2019t get your location. Long press the map to choose a point."),
+  { timeout: 10000, maximumAge: 60000, enableHighAccuracy: false });
 }
 
 /* ---------- header, control row, banner ---------- */
@@ -2204,9 +2212,11 @@ async function init() {
     const first = new URLSearchParams(location.hash.slice(1));
     const wanted = STATES.find((x) => x.id === first.get("state"));
     floridaPoint = store.get("floridaPoint", null);
+    const legacyPointName = floridaPoint && /-?\d+\.\d{2,},\s*-?\d+\.\d{2,}/.test(floridaPoint.name ?? "");
+    if (legacyPointName) floridaPoint = { ...floridaPoint, name: `Pinned spot \u00b7 ${floridaPoint.regionLabel ?? "Florida"}` };
     TZ = floridaPoint?.timeZone ?? "America/New_York";
     const savedFloridaRuns = store.get("floridaRuns", null);
-    floridaRuns = savedFloridaRuns?.point?.id === floridaPoint?.id ? savedFloridaRuns : null;
+    floridaRuns = !legacyPointName && savedFloridaRuns?.point?.id === floridaPoint?.id ? savedFloridaRuns : null;
     const cached = readCachedProtoRuns(safeStorage());
     if (cached) {
       D[RICH] = cached.today; D[TOMORROW] = cached.tomorrow;

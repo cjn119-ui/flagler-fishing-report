@@ -236,3 +236,12 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .species-group .sp .n { min-height:0 !important; }
 .species-group .sp .trip-rate { margin-top:2px !important; }
 .species-group .sp .species-band { padding-left:2px; }
+
+/* Map polish */
+.ff-map { border-radius:inherit; }
+.ff-map .leaflet-bar { border:0; border-radius:14px; overflow:hidden; box-shadow:0 4px 16px rgba(0,0,0,.28); }
+.ff-map .leaflet-bar a { width:38px; height:38px; line-height:38px; font-size:20px; border-bottom:1px solid rgba(255,255,255,.12); }
+.ff-map .leaflet-bar a:last-child { border-bottom:0; }
+.ff-pin { box-shadow:0 2px 8px rgba(0,0,0,.4); }
+.ff-pin.on { box-shadow:0 0 0 5px color-mix(in srgb,var(--pin) 35%,transparent),0 3px 12px rgba(0,0,0,.45); }
+.ff-map .leaflet-tooltip { border-radius:12px; padding:6px 10px; box-shadow:0 4px 14px rgba(0,0,0,.35); }
