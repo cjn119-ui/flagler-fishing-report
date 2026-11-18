@@ -181,7 +181,6 @@ html { background:var(--bg,#091F2B); -webkit-text-size-adjust:100%; }
 .spotlist .row.any > button.main { padding:14px 16px !important; }
 
 /* Map: shorter on phones so the page still scrolls */
-@media (max-width:600px) { .web-map-slot { height:300px !important; min-height:0 !important; } }
 
 /* Tide chart: HTML markers so labels aren't stretched by the SVG */
 .tide-plot { position:relative; margin:18px 0 8px; }
