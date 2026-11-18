@@ -107,3 +107,8 @@ main .conditions-strip .conditions-caption { grid-column:1/-1; }
 
 /* species sheet: drop the dark slab behind the section tabs */
 .species-tabs { background:none !important; box-shadow:none !important; }
+
+/* phones: start the header lower so it clears the status bar / Dynamic Island in Safari and the home-screen app */
+@media (max-width:899px) {
+  .bar { padding-top:calc(env(safe-area-inset-top, 0px) + 22px) !important; }
+}
