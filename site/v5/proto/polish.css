@@ -112,3 +112,9 @@ main .conditions-strip .conditions-caption { grid-column:1/-1; }
 @media (max-width:899px) {
   .bar { padding-top:calc(env(safe-area-inset-top, 0px) + 22px) !important; }
 }
+
+/* small, soft fade at the top edge so content eases out under the status bar instead of hard-cutting */
+body::before { content:""; position:fixed; top:0; left:0; right:0; z-index:15; pointer-events:none;
+  height:calc(env(safe-area-inset-top, 0px) + 28px);
+  background:linear-gradient(180deg,rgba(3,10,18,.72) 0%,rgba(3,10,18,.5) 35%,rgba(3,10,18,.22) 70%,rgba(3,10,18,0) 100%); }
+:root[data-theme="light"] body::before { background:linear-gradient(180deg,rgba(243,246,249,.85) 0%,rgba(243,246,249,.6) 35%,rgba(243,246,249,.25) 70%,rgba(243,246,249,0) 100%); }
