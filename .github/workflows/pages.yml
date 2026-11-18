@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment_retry.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -98,9 +98,18 @@ jobs:
         if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
         with:
           path: site
+      # deploy-pages occasionally reports "Found 0 artifact(s)" right after a successful upload (GitHub-side
+      # lag); retry once after a short delay instead of failing the run.
       - id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
         if: steps.output_validation.outcome == 'success' || steps.output_validation.outcome == 'failure'
+      - name: Wait before retrying deploy
+        if: steps.deployment.outcome == 'failure'
+        run: sleep 45
+      - id: deployment_retry
+        uses: actions/deploy-pages@v4
+        if: steps.deployment.outcome == 'failure'
       # last-good data was deployed and is marked stale in api/refresh-status.json; only fail (and open the
       # issue) when that data is also older than STALE_FAIL_MIN, i.e. a real outage rather than one late feed.
       - name: Fail when deployed last-good data is too old
