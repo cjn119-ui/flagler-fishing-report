@@ -84,11 +84,8 @@ main .conditions-strip .conditions-caption { grid-column:1/-1; }
 .other-spot-photo, .other-spot-card .spot-photo { border-radius:14px !important; overflow:hidden; }
 .btn:not(.alt) { box-shadow:inset 1px 1px 0 rgba(255,255,255,.18), 0 8px 22px -12px rgba(115,224,212,.55) !important; }
 
-/* review tool: keep it out of the header on phones */
-@media (max-width:999px) {
-  .review { top:auto !important; bottom:calc(92px + env(safe-area-inset-bottom)) !important; left:auto !important; right:12px !important; transform:none !important; align-items:flex-end !important; flex-direction:column !important; }
-  .review-btn { min-height:30px !important; padding:0 10px !important; font-size:11px !important; opacity:.7; }
-}
+/* review-states tool is for sample data only; hidden on the site (still reachable with #state=go|maybe|skip|stale|offline|partial) */
+.review { display:none !important; }
 
 /* ---------- fallbacks: opaque glass when transparency is reduced or blur is unavailable ---------- */
 @media (prefers-reduced-transparency:reduce) {
@@ -112,3 +109,37 @@ main .conditions-strip .conditions-caption { grid-column:1/-1; }
 @media (max-width:899px) {
   .bar { padding-top:calc(env(safe-area-inset-top, 0px) + 22px) !important; }
 }
+
+/* ---------- upgrades ---------- */
+/* #2 SKIP reads as a soft coral instead of grey; supporting lines under the verdict are brighter */
+.no-verdict[data-level="2"] { color:#F3A39A !important; }
+:root[data-theme="light"] .no-verdict[data-level="2"] { color:#B5473C !important; }
+:root[data-theme="dark"] .hero .no-sub { color:rgba(244,247,250,.80) !important; }
+:root[data-theme="light"] .hero .no-sub { color:rgba(19,32,43,.78) !important; }
+
+/* #3 soft fade behind the floating tab bar (phones, where the tab bar sits at the bottom) */
+@media (max-width:899px) {
+  body::after { content:""; position:fixed; left:0; right:0; bottom:0; z-index:25; pointer-events:none;
+    height:calc(env(safe-area-inset-bottom, 0px) + 120px);
+    background:linear-gradient(0deg,rgba(3,10,18,.86) 0%,rgba(3,10,18,.55) 45%,rgba(3,10,18,0) 100%); }
+  :root[data-theme="light"] body::after { background:linear-gradient(0deg,rgba(243,246,249,.92) 0%,rgba(243,246,249,.6) 45%,rgba(243,246,249,0) 100%); }
+}
+
+/* #5 iOS chevrons for expandable rows: trailing chevron that turns down when open */
+details > summary::before { display:none !important; content:none !important; }
+details > summary { width:100%; box-sizing:border-box; }
+details > summary::after { content:""; flex:none; width:7px; height:7px; margin-left:auto; margin-right:4px;
+  border-right:2px solid rgba(244,247,250,.45); border-bottom:2px solid rgba(244,247,250,.45);
+  transform:rotate(-45deg); transition:transform .2s cubic-bezier(.2,.8,.2,1); }
+:root[data-theme="light"] details > summary::after { border-color:rgba(19,32,43,.38); }
+details[open] > summary::after { transform:rotate(45deg); }
+
+/* #6 press feedback: tappable tiles and buttons give a slight spring when pressed */
+:is(.bet:not(.bet-static), .other-spot-card, .target-species-item, .tv-c, .day-chip, .day-row, .spotlist .row > button.main, .species-group .sp, .btn, .btn-s, .pill, #more) {
+  transition:transform .28s cubic-bezier(.3,1.5,.5,1), filter .15s ease; }
+:is(.bet:not(.bet-static), .other-spot-card, .target-species-item, .tv-c, .day-chip, .day-row, .spotlist .row > button.main, .species-group .sp, .btn, .btn-s, .pill, #more):active {
+  transform:scale(.965); filter:brightness(1.1); transition-duration:.08s; }
+@media (prefers-reduced-motion:reduce) {
+  :is(.bet, .other-spot-card, .target-species-item, .tv-c, .day-chip, .day-row, .spotlist .row > button.main, .species-group .sp, .btn, .btn-s, .pill, #more):active { transform:none; }
+}
+
