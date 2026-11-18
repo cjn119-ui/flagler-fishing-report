@@ -29,7 +29,7 @@ const STATES = [
   { id: "offline", label: "Sample: offline",     file: "sample-go.json",      nowOffsetMin: 38, offline: true },
   { id: "partial", label: "Sample: partial",     file: "sample-partial.json", nowOffsetMin: 20 },
 ];
-const THEMES = [["auto", "Auto"], ["dark", "Dark"], ["night", "Night"], ["light", "Light"]];
+const THEMES = [["auto", "Auto"], ["dark", "Dark"], ["night", "Night"]];
 const TAB_ORDER = ["today", "spots", "species", "plan", "log"];
 const AGING_MIN = 90, STALE_MIN = 360;
 const TIER = { GO: 0, MAYBE: 1, SKIP: 2 };
@@ -288,7 +288,7 @@ function writeHash() {
   if (st.t) p.set("t", st.t);
   if (st.state !== "live") p.set("state", st.state);
   if (st.tab === "plan" && st.day) p.set("day", st.day);
-  const th = new URLSearchParams(location.hash.slice(1)).get("theme"); if (["light", "dark", "night"].includes(th)) p.set("theme", th);
+  const th = new URLSearchParams(location.hash.slice(1)).get("theme"); if (["dark", "night"].includes(th)) p.set("theme", th);
   try { history.replaceState(null, "", `${location.pathname}${location.search}#${p}`); } catch { /* sandboxed */ }
 }
 const store = {
@@ -422,10 +422,10 @@ function autoTheme(now = Date.now()) {
   return hour < 7 || hour >= 19 ? "night" : "dark";
 }
 function applyThemePreference(preference = store.get("theme", "auto"), override = new URLSearchParams(location.hash.slice(1)).get("theme")) {
-  const selected = ["auto", "dark", "night", "light"].includes(preference) ? preference : "auto";
-  const resolved = ["light", "dark", "night"].includes(override) ? override : selected === "auto" ? autoTheme() : selected;
+  const selected = ["auto", "dark", "night"].includes(preference) ? preference : "auto";  // light theme removed
+  const resolved = ["dark", "night"].includes(override) ? override : selected === "auto" ? autoTheme() : selected;
   const root = document.documentElement;
-  root.dataset.theme = resolved === "light" ? "light" : "dark";
+  root.dataset.theme = "dark";
   if (resolved === "night") root.dataset.night = "1"; else delete root.dataset.night;
   root.dataset.themePreference = selected;
 }
@@ -1895,7 +1895,7 @@ function toast(m) {
   t.classList.toggle("success", success); t.classList.add("on"); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("on"), 2600);
 }
 function setTheme(t) {
-  if (!["auto", "dark", "night", "light"].includes(t)) return;
+  if (!["auto", "dark", "night"].includes(t)) return;
   store.set("theme", t);
   const p = new URLSearchParams(location.hash.slice(1)); p.delete("theme"); history.replaceState(null, "", `${location.pathname}${location.search}#${p}`);
   applyThemePreference(t, null);
