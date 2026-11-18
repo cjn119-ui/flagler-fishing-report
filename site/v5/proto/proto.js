@@ -16,7 +16,6 @@ import { fetchSources } from "../engine/sources.js";
 import { buildPredictionRun } from "../engine/run.js";
 import { loadFloridaCoastalHistory } from "../engine/history.js";
 import { trimForCache } from "./proto-data.js";
-import { mountWebMap, updateWebMap, recenterWebMap, flyToWebMap } from "./web-map.js";
 import { installNativePresentation, nativeAfterHours, nativeDayAfterHours, nativeHeadline, nativeNullable } from "./native-presentation.js";
 
 let TZ = "America/New_York";
@@ -509,7 +508,6 @@ function render({ resetScroll = false, navigation = false } = {}) {
   if (fk) document.querySelector(`[data-fk="${fk}"]`)?.focus({ preventScroll: true });
   if (st.tab === "today") announce(c);
   syncNativeSpots(c);
-  if (!window.FFNativeMap && st.tab === "spots") { const slot = document.querySelector(".web-map-slot"); if (slot) mountExploreMap(slot, c); }
   nativePresentation?.publish();
   if (coldRenderPending) {
     console.info(`FLAGLER_PERF first_content_ms=${performance.now().toFixed(1)} ctx_ms=${(performance.now() - contextStarted).toFixed(1)} render_ms=${(performance.now() - renderStarted).toFixed(1)} source=${c.source} offline=${c.offline}`);
@@ -645,19 +643,6 @@ function syncNativeSpots(c = ctx()) {
   if (st.tab !== "spots") { nativeMap.hide?.(); return; }
   nativeMap.show?.({ spots: mapSpotRows(c), selectedId: st.spot, mode: st.mode ?? c.rec.mode ?? "all" });
 }
-// Browser build: interactive Leaflet map mounted into the Explore placeholder.
-const webMapApi = (c) => ({ spots: mapSpotRows(c), selectedId: st.spot, dark: document.documentElement.dataset.theme !== "light",
-  onOpen: (id) => { const spot = mapSpotRows(ctx()).find((x) => x.id === id); openSpotDetail(id, spot?.mode ?? null, null); },
-  onPoint: (point) => chooseFloridaPoint(point) });
-function mountExploreMap(slot, c) {
-  mountWebMap(slot, webMapApi(c)).catch(() => { slot.replaceChildren(h("span", {}, "Map unavailable offline")); });
-}
-function useMyLocation() {
-  if (!navigator.geolocation) { toast("Location isn\u2019t available in this browser."); return; }
-  navigator.geolocation.getCurrentPosition((p) => { flyToWebMap(p.coords.latitude, p.coords.longitude, 12); chooseFloridaPoint({ lat: p.coords.latitude, lon: p.coords.longitude }); },
-    () => toast("Location permission is off. Long press the map to choose a point."), { timeout: 8000, maximumAge: 60000 });
-}
-
 /* ---------- header, control row, banner ---------- */
 function renderHeader(c) {
   const { run, fr, offline } = c;
@@ -1214,10 +1199,7 @@ function spotsView(c) {
   const openMap = () => window.FFNativeMap?.expand?.();
   const map = window.FFNativeMap
     ? h("div", { id: "spots-map", class: "native-map-slot", role: "button", tabindex: "0", "aria-label": "Map of fishing spots. Open full map", onclick: openMap, onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openMap(); } } })
-    : h("div", { class: "web-map-slot", "aria-label": "Map of fishing spots" }, h("span", {}, "Loading map\u2026"));
-  const mapControls = window.FFNativeMap ? null : h("div", { class: "map-controls" },
-    h("div", { class: "map-actions" }, h("button", { class: "btn-s", type: "button", onclick: () => recenterWebMap() }, "Show locations"), h("button", { class: "btn-s", type: "button", onclick: useMyLocation }, "Use my location")),
-    h("p", { class: "fine" }, "Long press near Florida\u2019s shoreline to build a forecast for a coastal point. Freshwater is outside coverage."));
+    : null;
   const resultStatus = h("p", { class: "notice spot-results-status", role: "status", hidden: true });
   const list = spotList(c, { externalFilters: true, onResultsChange: ({ count, filter, search }) => {
     resultStatus.hidden = count > 0;
@@ -1238,7 +1220,7 @@ function spotsView(c) {
     h("button", { class: "btn", type: "button", onclick: (e) => openSpotDetail(featured.id, rec.mode, e.currentTarget) }, "View details")) : null;
   return [h("section", { class: "spots-layout", "aria-label": "Spots" }, h("div", { class: "page-heading" }, h("h1", {}, "Find your water."), h("div", { class: "page-actions" }, h("button", { class: "icon-button", type: "button", "aria-label": "Manage favorites", onclick: (e) => openFavoritesSheet(e.currentTarget) }, "♥"))),
     st.h === "tomorrow" ? h("p", { class: "notice tomorrow-spots", role: "status" }, "Showing tomorrow ", h("button", { class: "btn-s", type: "button", onclick: () => { st.h = "today"; st.t = null; render(); } }, "Switch to Today")) : null,
-    list.filters, searchBox("Search spots", st.spotSearch, (e) => { st.spotSearch = e.target.value; listHost?.rebuild(); }), resultStatus, map, mapControls, featureCard, list)];
+    list.filters, searchBox("Search spots", st.spotSearch, (e) => { st.spotSearch = e.target.value; listHost?.rebuild(); }), resultStatus, map, featureCard, list)];
 }
 function spotMiniStats(c, locationId) {
   const waves = [...observationRows(c.run, "waves", locationId), ...observationRows(c.run, "waveForecast", locationId)];
@@ -2118,7 +2100,6 @@ async function init() {
     chooseFloridaPoint({ lat: Number(event.lat ?? event.detail?.lat), lon: Number(event.lon ?? event.detail?.lon) });
   });
   const tabs = document.querySelector(".tabs"), tabButtons = [...document.querySelectorAll(".tab")];
-  let swipePreview = null, swipePreviewTab = null;
   const makeTabPreview = (tab) => {
     const previous = st.tab, previousHost = listHost; let nodes;
     try {
@@ -2267,110 +2248,6 @@ async function init() {
   setInterval(() => { syncTheme(); refreshLiveData().then(() => { const next = `${D[RICH]?.id}|${D[TOMORROW]?.id}|${dataSource}|${dataOffline}`; if (next !== dataKey) { dataKey = next; render(); } }).catch(error => console.warn("V5 scheduled refresh failed", error)); }, 5 * 60 * 1000);
   setInterval(() => { const next = clockRenderKey(); if (next !== clockKey) { clockKey = next; render(); } }, 60 * 1000);
   addEventListener("hashchange", async () => { closeSheet(); const p = new URLSearchParams(location.hash.slice(1)); const d = STATES.find((x) => x.id === p.get("state")); if (d) await load(d.file); readHash(); render(); });
-  let swipe = null, lastScrollAt = 0;
-  // A drag that starts while the page is still scrolling (momentum) is a scroll, not a tab swipe.
-  addEventListener("scroll", () => { lastScrollAt = performance.now(); }, { passive: true });
-  const previewCache = new Map();
-  const clearSwipePreviews = () => { for (const preview of previewCache.values()) preview.remove(); previewCache.clear(); };
-  document.addEventListener("v5:interrupt-tab-gesture", () => { swipe = null; swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); });
-  const prepareSwipePreview = (tab) => {
-    if (previewCache.has(tab)) { const preview = previewCache.get(tab); document.body.append(preview); return preview; }
-    // Line the preview up with where the real tab will render, so nothing snaps when the swipe commits: it mirrors
-    // <main> (controls row + page) from main's untransformed content edge, at the target tab's saved scroll, under the sticky header.
-    const main = $("main"), preview = makeTabPreview(tab), box = main.getBoundingClientRect(), cs = getComputedStyle(main);
-    const contentTop = box.top + scrollY + (parseFloat(cs.paddingTop) || 0) - (session.scroll[tab] ?? 0);
-    const clipTop = Math.max(0, document.querySelector(".bar")?.getBoundingClientRect().bottom ?? 0);
-    preview.style.top = `${Math.max(clipTop, contentTop)}px`;
-    preview.style.bottom = `${innerHeight - $("tabbar").getBoundingClientRect().top}px`;
-    preview.style.left = `${box.left + (parseFloat(cs.paddingLeft) || 0)}px`; preview.style.width = `${main.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0)}px`;
-    preview.style.padding = "0";
-    preview.scrollTop = Math.max(0, clipTop - contentTop);
-    previewCache.set(tab, preview);
-    return preview;
-  };
-  const scrollsHorizontally = (target) => { for (let el = target; el && el !== $("view"); el = el.parentElement) { const style = getComputedStyle(el); if (el.matches(".scrub,.seg,input,select,textarea,[contenteditable=true],.target-species-scroll,.other-spots-scroll,.species-carousel,.plan-day-chips,.hourly-scroll,.species-tabs") || /(auto|scroll)/.test(`${style.overflowX} ${style.overflow}`) && el.scrollWidth > el.clientWidth + 1) return true; } return false; };
-  document.addEventListener("touchstart", (e) => {
-    const t = e.touches[0], target = e.target;
-    if (!$("view").contains(target) || sheet || t.clientX < 20 || t.clientX > innerWidth - 20 || performance.now() - lastScrollAt < 150 || scrollsHorizontally(target)) { swipe = null; return; }
-    if (tabSettleAnimation || document.querySelector(".tab-peek")) interruptTabTransitions();
-    swipe = { x: t.clientX, y: t.clientY, dx: 0, dy: 0, scrollY, view: $("main") /* controls row and page move together */, samples: [{ p: t.clientX, t: performance.now() }] };
-    clearSwipePreviews();
-  }, { passive: true });
-  document.addEventListener("touchmove", (e) => {
-    if (!swipe) return;
-    const t = e.touches[0], now = performance.now(); swipe.dx = t.clientX - swipe.x; swipe.dy = t.clientY - swipe.y;
-    swipe.samples.push({ p: t.clientX, t: now }); swipe.samples = swipe.samples.filter((sample) => now - sample.t <= 120).slice(-6);
-    if (!swipe.horizontal && (Math.abs(swipe.dy) > 10 && Math.abs(swipe.dy) >= Math.abs(swipe.dx) || Math.abs(scrollY - swipe.scrollY) > 2)) { swipe = null; clearSwipePreviews(); return; }
-    if (swipe.horizontal || Math.abs(swipe.dx) > 14 && Math.abs(swipe.dx) > Math.abs(swipe.dy) * 1.8) {
-      // Start following from where the swipe was recognised, so the page doesn't leap by the detection slop.
-      if (!swipe.horizontal) { const sign = Math.sign(swipe.dx); swipe.x = t.clientX - sign; swipe.dx = sign; }  // keep the direction so the right preview is built
-      swipe.horizontal = true;
-      const i = TAB_ORDER.indexOf(st.tab), next = TAB_ORDER[i + (swipe.dx < 0 ? 1 : -1)], atEdge = !next, dx = atEdge ? 0 : swipe.dx;  // first/last tab: the page stays put (no rubber-band to spring back from)
-      if (!swipe.interrupted) {
-        const matrix = new DOMMatrixReadOnly(getComputedStyle(swipe.view).transform);
-        const carriedX = Number.isFinite(matrix.m41) ? matrix.m41 : 0;
-        tabSettleAnimation?.cancel(); tabSettleAnimation = null;
-        swipe.view.style.transform = carriedX ? `translateX(${carriedX}px)` : "";
-        swipe.interrupted = true;
-      }
-      tabs.classList.add("content-drag"); setTabMoving(true);
-      const rawIndex = i - swipe.dx / innerWidth, maxIndex = TAB_ORDER.length - 1, tabWidth = tabs.getBoundingClientRect().width / TAB_ORDER.length;
-      const indicatorIndex = Math.min(maxIndex, Math.max(0, rawIndex));
-      tabs.style.setProperty("--tab-i", indicatorIndex);
-      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        swipe.view.style.willChange = "transform"; swipe.view.style.transform = `translateX(${dx}px)`;
-        if (next && next !== swipePreviewTab) { swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next; if (swipePreview) { swipePreview.style.zIndex = "19"; swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`; } }
-        if (swipePreview) swipePreview.style.transform = `translateX(${(swipe.dx < 0 ? 1 : -1) * innerWidth + swipe.dx}px)`;
-        if (!next) { swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; }
-      }
-      e.preventDefault();
-    }
-  }, { passive: false });
-  const finishSwipe = (event) => {
-    if (!swipe) return;
-    const { dx, dy, view, samples } = swipe; swipe = null;
-    const velocity = gestureVelocity(samples), projected = dx + velocity * 200;
-    const currentIndex = TAB_ORDER.indexOf(st.tab), candidate = TAB_ORDER[currentIndex + (projected < 0 ? 1 : -1)];
-    const commit = event.type !== "touchcancel" && !!candidate && Math.sign(projected) === Math.sign(dx) && Math.abs(dx) > Math.abs(dy) * 1.5 && Math.abs(projected) >= Math.max(64, innerWidth * 0.18);
-    if (!commit) {
-      swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); tabs.classList.remove("content-drag"); tabs.style.removeProperty("--tab-i");
-      const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const from = view.style.transform || "translateX(0)";
-      if (view.animate && from !== "translateX(0)") {
-        const animation = view.animate(reduce ? [{ opacity: .72 }, { opacity: 1 }] : [{ transform: from }, { transform: "translateX(0)" }], { duration: reduce ? 100 : gestureDuration(Math.abs(dx), velocity), easing: motionEase });
-        animation.finished.finally(() => { view.style.transform = ""; view.style.willChange = ""; setTabMoving(false); }).catch(() => {});
-      } else { view.style.transform = ""; view.style.willChange = ""; setTabMoving(false); }
-      return;
-    }
-    const next = candidate, targetIndex = TAB_ORDER.indexOf(candidate);
-    const direction = targetIndex > currentIndex ? -1 : 1;
-    if (swipePreviewTab !== next) {
-      swipePreview?.remove(); swipePreview = prepareSwipePreview(next); swipePreviewTab = next;
-    }
-    if (swipePreview) { swipePreview.style.zIndex = "19"; swipePreview.style.transform = `translateX(${-direction * innerWidth + dx}px)`; }
-    animateTabPreview(swipePreview, next);
-    tabs.classList.remove("content-drag"); tabs.style.setProperty("--tab-i", targetIndex);
-    const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-    const remaining = Math.max(0, innerWidth - Math.abs(dx)), duration = reduce ? 100 : gestureDuration(remaining, velocity);
-    const animations = [];
-    if (!reduce && view.animate && view.style.transform) animations.push(view.animate([{ transform: view.style.transform }, { transform: `translateX(${direction * innerWidth}px)` }], { duration, easing: motionEase }).finished.catch(() => {}));
-    if (!reduce && swipePreview?.animate) animations.push(swipePreview.animate([{ transform: `translateX(${-direction * innerWidth + dx}px)` }, { transform: "translateX(0)" }], { duration, easing: motionEase }).finished.catch(() => {}));
-    if (reduce && view.animate) animations.push(view.animate([{ opacity: .72 }, { opacity: 1 }], { duration, easing: "ease-out" }).finished.catch(() => {}));
-    const transition = ++tabTransitionEpoch;
-    Promise.all(animations).finally(() => {
-      if (transition !== tabTransitionEpoch) { swipePreview?.remove(); swipePreview = null; swipePreviewTab = null; clearSwipePreviews(); view.style.transform = ""; view.style.willChange = ""; setTabMoving(false); return; }
-      // The preview (identical to the final page) stays on top until the real page has rendered and painted underneath,
-      // so any first-paint settling (images, map slot) is never seen.
-      const cover = swipePreview; swipePreview = null; swipePreviewTab = null;
-      if (cover) { previewCache.delete(next); cover.dataset.cover = ""; cover.style.transform = "translateX(0)"; }  // hold the slide's end position (no fill)
-      go(next, { swipe: true });
-      clearSwipePreviews();
-      view.style.transform = ""; view.style.willChange = "";
-      tabs.classList.remove("content-drag"); tabs.style.removeProperty("--tab-i");
-      requestAnimationFrame(() => requestAnimationFrame(() => { cover?.remove(); setTabMoving(false); }));
-    });
-  };
-  document.addEventListener("touchend", finishSwipe, { passive: true }); document.addEventListener("touchcancel", finishSwipe, { passive: true });
 }
 nativePresentation = installNativePresentation({ snapshot: nativeSnapshot, command: nativeCommand });
 init();
