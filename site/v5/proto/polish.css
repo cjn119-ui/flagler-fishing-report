@@ -130,13 +130,14 @@ main .conditions-strip .conditions-caption { grid-column:1/-1; }
 :root[data-theme="dark"] .hero .no-sub { color:rgba(244,247,250,.80) !important; }
 :root[data-theme="light"] .hero .no-sub { color:rgba(19,32,43,.78) !important; }
 
-/* #3 soft fade behind the floating tab bar (phones, where the tab bar sits at the bottom) */
-@media (max-width:899px) {
-  body::after { content:""; position:fixed; left:0; right:0; bottom:0; z-index:25; pointer-events:none;
-    height:calc(env(safe-area-inset-bottom, 0px) + 120px);
-    background:linear-gradient(0deg,rgba(3,10,18,.86) 0%,rgba(3,10,18,.55) 45%,rgba(3,10,18,0) 100%); }
-  :root[data-theme="light"] body::after { background:linear-gradient(0deg,rgba(243,246,249,.92) 0%,rgba(243,246,249,.6) 45%,rgba(243,246,249,0) 100%); }
-}
+/* No black edges: night mode painted the body pure black and the wallpaper base was near-black, which
+   showed as black bands under the status bar, on overscroll and in Safari's tinted edges. One navy base
+   (matches theme-color) everywhere; the wallpaper photo covers the rest. The dark fade that sat behind
+   the tab bar is gone too; the glass tab bar carries its own contrast. */
+:root[data-theme="dark"] { --bg:#0E2230; }
+html { background:#0E2230 !important; }
+body, :root[data-night="1"] body { background:transparent !important; }
+#wallpaper { background:#0E2230 !important; }
 
 /* #5 iOS chevrons for expandable rows: trailing chevron that turns down when open */
 details > summary::before { display:none !important; content:none !important; }
