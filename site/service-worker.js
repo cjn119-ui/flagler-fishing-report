@@ -1,4 +1,4 @@
-const CACHE = 'flagler-fishing-shell-11';
+const CACHE = 'flagler-fishing-shell-12';
 const SHELL = ['./', 'index.html', 'v5/proto/proto.css', 'v5/proto/native.css', 'v5/proto/polish.css', 'v5/proto/proto.js', 'classic.html', 'style.css', 'main.js?v=catch-20260930b', 'shared/logic.js?v=catch-20260930b', 'shared/week.js?v=catch-20260930b', 'shared/catch.js?v=catch-20260930b', 'manifest.webmanifest', 'icons/fishing.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 self.addEventListener('install', e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting())));
 self.addEventListener('activate', e => e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && (/^flagler-fishing-shell-/.test(k) || /^fishing-pwa-(shell|report)-/.test(k))).map(k => caches.delete(k)))).then(() => self.clients.claim())));
