@@ -4,9 +4,7 @@
 
 **Live app:** https://cjn119-ui.github.io/flagler-fishing-report/
 
-<!-- SCREENSHOT 1: phone view of the home screen (GO / MAYBE / SKIP by spot).
-     Existing candidates in the repo: site/v5/proto/shots/plan-dark-375.png or spot-sheet-light-375.png -->
-<!-- ![Home screen](docs/img/home.png) -->
+![The Today screen: the day's rating, best time window, conditions and target fish](docs/img/today.png)
 
 ## What I built
 
@@ -37,9 +35,7 @@ flowchart LR
 - **Turning messy data into a decision:** raw weather, tide and survey records become one simple rating a non-expert can act on.
 - **Judgment:** a prediction model was built, tested on years it hadn't seen, and kept out of the app because the results weren't strong enough.
 
-<!-- SCREENSHOT 2: desktop view of one spot with its best windows and species.
-     Existing candidate: site/v5/proto/shots/desktop-spot-light.png -->
-<!-- ![Spot detail](docs/img/spot.png) -->
+![The Plan screen: a seven-day picker, daily outlook and tide chart](docs/img/plan.png)
 
 ## Built to be trusted
 
@@ -107,6 +103,10 @@ node scripts/test-calculations.mjs         # one of the test suites CI runs
 - Ratings are a transparent conditions score, not a catch forecast or a safety clearance.
 - The angler survey is collected at access points, mostly near the end of a trip. It isn't designed for spot-level estimates, so history is shown by region and season, not by spot.
 - The Smith Creek tide station is an inland reference, not an ocean beach tide.
+
+## License
+
+Code is under the [MIT License](LICENSE). The fish and location photos keep their own credits, listed in [site/v5/proto/img/CREDITS.json](site/v5/proto/img/CREDITS.json).
 
 ## Technical reference
 
