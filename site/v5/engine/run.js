@@ -110,6 +110,8 @@ export function reasonFor(candidate,params=MODEL_PARAMS) {
   if(candidate.caps?.some(x=>x.code==="waterOutsideRange"))return {code:"waterOutsideRange",text:copy("waterOutsideRange","Water temperature is outside this species’ preferred range.")};
   if(candidate.caps?.some(x=>x.code==="outOfSeason"))return {code:"outOfSeason",text:copy("outOfSeason","Survey history is weak for this time of year.")};
   if(candidate.gates?.length)return {code:candidate.gates[0].code,text:candidate.gates[0].text};
+  const cautionEvents=candidate.caps?.find(x=>x.code==="alertCaution")?.params?.events??[];
+  if(cautionEvents.length)return {code:"alertCaution",text:copy("alertCaution",`NWS ${cautionEvents.join(" and ")} in effect. Check it before you go.`,{events:cautionEvents})};
   if(candidate.confidence<50)return {code:"lowConfidence",text:copy("recommendation.reason","Current conditions are uncertain, so treat this as a maybe.")};
   if(candidate.eligibility!=="realistic")return {code:"notRealistic",text:copy("notRealistic","Survey history or spot coverage does not support a realistic target.")};
   if(candidate.caps?.some(x=>x.code==="benchmarkUnavailable"))return {code:"benchmarkUnavailable",text:copy("benchmarkUnavailable","This spot and mode do not have enough seasonal benchmark data for a GO verdict.")};

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "../site/v5/proto/proto-observations.js";
+import { activeAlerts, fmtWind, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "../site/v5/proto/proto-observations.js";
 
 const run = { inputs: { observations: [
   { kind: "hourlyForecast", locationId: "spot", ok: true, values: { rows: [
@@ -53,3 +53,19 @@ assert.equal(waveHeightFeetLabel({ waveHeightM: null }, "surf"), null);
   ]), [0, 25, 100], "chart event spacing follows actual elapsed time");
 }
 console.log("test-v5-proto-observations: observation shapes, period selection, unit conversion input, and wind formatting passed");
+
+const alertRun = { inputs: { observations: [
+  { kind: "alerts", locationId: "matanzas", ok: true, values: { rows: [
+    { event: "Rip Current Statement", severity: "Moderate", ends: "2026-11-26T23:00:00Z", headline: "Rip Current Statement until 6 PM" },
+    { event: "Coastal Flood Advisory", severity: "Minor", expires: "2026-11-27T05:00:00Z" },
+    { event: "Small Craft Advisory", severity: "Minor", ends: "2026-11-26T12:00:00Z" },
+    { event: "Gale Warning", severity: "Moderate", ends: null },
+  ] } },
+  { kind: "alerts", locationId: "other", ok: true, values: { rows: [{ event: "Dense Fog Advisory", ends: "2026-11-27T00:00:00Z" }] } },
+  { kind: "alerts", locationId: "matanzas", ok: false, values: { rows: [{ event: "Tornado Warning" }] } },
+] } };
+assert.deepEqual(activeAlerts(alertRun, "matanzas", "2026-11-26T18:00:00Z").map((a) => a.event), ["Gale Warning", "Coastal Flood Advisory", "Rip Current Statement"], "warnings first, expired and failed feeds dropped, other spots excluded");
+assert.equal(activeAlerts(alertRun, "matanzas", "2026-11-26T18:00:00Z")[2].endsAt, "2026-11-26T23:00:00.000Z");
+assert.deepEqual(activeAlerts(alertRun, "matanzas", "2026-11-27T09:00:00Z").map((a) => a.event), ["Gale Warning"], "tomorrow's view drops alerts that end tonight");
+assert.deepEqual(activeAlerts({}, "matanzas", Date.now()), []);
+console.log("activeAlerts: ok");
