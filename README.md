@@ -1,96 +1,112 @@
 # Flagler Fishing Report
 
+**A fishing forecast app for Northeast Florida, backed by an automated data pipeline that rebuilds it every 30 minutes from public weather, ocean and tide data.** I designed it and built it with AI coding agents. It's live and runs on its own, with no server to maintain.
+
 **Live app:** https://cjn119-ui.github.io/flagler-fishing-report/
-
-A free shore-fishing planner for Northeast Florida, from St. Augustine to Flagler Beach. For 11 beach, pier and inshore spots it answers one question: is it worth going today, and when? Each spot gets a GO, MAYBE or SKIP, a list of fish that fit the season and conditions, and the best time windows.
-
-Under the hood it is a data pipeline. Every 30 minutes a GitHub Actions job pulls official weather, marine and tide feeds, scores every spot, checks its own output, and publishes static JSON to GitHub Pages. No server and no paid APIs.
 
 <!-- SCREENSHOT 1: phone view of the home screen (GO / MAYBE / SKIP by spot).
      Existing candidates in the repo: site/v5/proto/shots/plan-dark-375.png or spot-sheet-light-375.png -->
 <!-- ![Home screen](docs/img/home.png) -->
 
+## What I built
+
+1. **The app.** An installable web app that rates 11 beach, pier and inland spots from St. Augustine to Flagler Beach as GO, MAYBE or SKIP. For each spot it shows the best times to go, the fish in season, and closures like piers under repair.
+2. **The data pipeline.** A scheduled job pulls forecasts, alerts, buoy readings, wave data and tide predictions from the National Weather Service, NOAA and SECOORA, builds a static data feed, and publishes the site. If the main forecast source is down, it switches to a labeled backup.
+3. **The rating engine.** Rules that turn wind, rain, waves, tides, daylight and water temperature into one rating per spot and fishing style (surf, pier or inshore). Weather alerts or out-of-date data block a GO.
+4. **The catch history.** Eleven years (2015 to 2025) of NOAA angler surveys, cleaned and turned into "how often do people catch this fish this month" for each species the app covers.
+5. **Automated quality checks.** Tests that run before every refresh and a validator that checks the published data before it goes live.
+6. **Research tools.** A prediction model and a year-long replay used to test the ratings before trusting them.
+
+## How it works
+
+```mermaid
+flowchart LR
+    A[Public weather, ocean<br>and tide feeds] --> B[Scheduled pipeline<br>every 30 minutes]
+    H[11 years of NOAA<br>angler surveys] --> C
+    B --> C[Rating engine]
+    C --> D{Tests and<br>data checks}
+    D -- pass --> E[Publish to the app]
+    D -- fail --> F[Keep last good data<br>and label it stale]
+```
+
+## What this project shows
+
+- **Automation:** a hands-off pipeline that combines several public data feeds and publishes on a schedule, with retries and fallbacks built in.
+- **Data quality:** the survey data was audited against NOAA's own documentation. One fix alone moved the share of ocean shore trips that caught a fish from a reported 13% to 63%, because released fish had not been counted.
+- **Validation:** every refresh is tested before it goes live, and bad data never replaces good data.
+- **Turning messy data into a decision:** raw weather, tide and survey records become one simple rating a non-expert can act on.
+- **Judgment:** a prediction model was built, tested on years it hadn't seen, and kept out of the app because the results weren't strong enough.
+
 <!-- SCREENSHOT 2: desktop view of one spot with its best windows and species.
      Existing candidate: site/v5/proto/shots/desktop-spot-light.png -->
 <!-- ![Spot detail](docs/img/spot.png) -->
 
-## The data problem
+## Built to be trusted
 
-The app tells you how often fish are caught at each time of year, using 11 years (2015 to 2025) of NOAA's Marine Recreational Information Program (MRIP) shore-angler surveys. The first version of that history was wrong.
+Every 30 minutes the pipeline ([.github/workflows/pages.yml](.github/workflows/pages.yml)) runs these steps:
 
-**The headline rate was off by almost five times.** The original logic said about 13% of ocean shore trips caught a fish. The corrected rate is 63% (585 of 931 trips). Inland went from 11% to 44% (770 of 1,742).
+1. **Test the code.** The scoring, tide and calculation tests must pass before any data is built.
+2. **Check the output.** The run fails if any report date, live reading or rating is stale, missing or out of range.
+3. **Retry once.** If a feed was briefly late, it waits and tries again, without loosening the checks.
+4. **Fall back safely.** If it still fails, the site keeps the last good data and marks it stale. If even that can't be read, nothing is published.
+5. **Raise a flag.** If the data gets more than six hours old, the run fails and opens a GitHub issue.
 
-What caused it:
+Two more tests checked the ratings themselves:
 
-- **Wrong catch definition.** MRIP splits catch into fish the interviewer saw (Type A), fish kept but not shown (B1) and fish released (B2). The old logic counted only Type A, so every released fish was invisible. The fix counts a trip as a catch if the angler personally reported A, B1 or B2, and never credits group catches to one person. The rule follows NOAA's survey variable definitions and data user handbook.
-- **Wrong grain.** NOAA reuses interview IDs for imputed records, so joining on ID alone merged 30 rows from 2020. The fix keys every trip on year, wave and ID, which keeps all 2,703 interviews and 4,020 catch rows.
-- **Imputed records in the denominator.** Proxy interviews are now excluded from the primary rate and reported separately as a sensitivity check.
-- **Thin slices.** Some months and site types have fewer than 30 interviews. Monthly rates are shrunk toward neighboring months and the annual rate, and anything under 80 interviews is labeled "low sample" in the app instead of shown as a precise number.
+- **Year-long replay.** The rating rules were run against a full year of past conditions (October 2025 to September 2026) with targets set in advance: GO on 15% to 40% of days, no month above 70%, every spot at least 3%. GO came out at 30.5% of days. One spot, Vilano Bridge inshore, came in at 0.8%, and it's reported as a miss rather than quietly adjusted. [Report](docs/v5-hindcast-report.md)
+- **Prediction model.** It tested whether conditions predict a catch better than the time of year alone. It helped a little for "any fish" and for whiting, and not for other species, so the app doesn't use it. [Report](docs/v5-catch-model-report.md)
 
-The full audit, with before and after counts, sample sizes by month and county, and source citations, is in [docs/data-qa-mrip.md](docs/data-qa-mrip.md). The rate and shrinkage rules are in section 2 of [docs/v5-architecture-decisions.md](docs/v5-architecture-decisions.md).
+## Cleaning the catch history
 
-## Testing a catch model (and not shipping it)
+The survey data needed real cleanup before the app could use it:
 
-The project also tested whether weather, water and tide conditions at interview time could predict a catch better than the time of year alone. The test is a regularized logistic regression scored with nested leave-one-year-out cross-validation, so every test year is held out from fitting, scaling and missing-value handling.
+- **Released fish weren't counted.** The survey records fish the interviewer saw, fish kept but not shown, and fish released. Counting all three, as NOAA defines them, took the ocean rate from 13% to 63% (585 of 931 trips) and inland from 11% to 44% (770 of 1,742).
+- **Records were merged by mistake.** NOAA reuses interview IDs for estimated records. Matching on year, survey period and ID keeps all 2,703 interviews.
+- **Estimated records were mixed in.** They are now left out of the main numbers and reported separately.
+- **Some months had too few interviews.** Those are blended with nearby months and labeled "low sample" in the app.
 
-- **Any fish:** a small real improvement over month averages (Brier skill 0.086, AUC 0.68).
-- **Whiting:** a modest improvement (Brier skill 0.056, AUC 0.72), driven mostly by water temperature, season and tide.
-- **Other species:** no meaningful improvement.
+Full audit with counts and NOAA sources: [docs/data-qa-mrip.md](docs/data-qa-mrip.md).
 
-The report's conclusion: these are small-sample associations that need independent validation before use, so the live app does not use the model. The report, including missing-data rates and calibration tables, is in [docs/v5-catch-model-report.md](docs/v5-catch-model-report.md).
+## How I built it
 
-## Setting the GO threshold
+I built this with AI coding agents. I set the goal and the rules, directed the agents, reviewed their work and approved the decisions:
 
-A GO that shows up every day is useless, and one that never shows up is too. A one-year backtest ran the scoring rules over every day from October 2025 to September 2026 using observed conditions, against gates set in advance: GO on 15% to 40% of days, no month above 70%, every spot at least 3%.
+- Setting the product rules: what GO means, which safety and freshness checks block it, and the targets it had to hit
+- Approving or rejecting each design decision (recorded with dates in [docs/v5-architecture-decisions.md](docs/v5-architecture-decisions.md))
+- Reviewing the data audit, model test and replay results
 
-The result was GO on 30.5% of days (111 of 364). One spot, Vilano Bridge inshore, came in at 0.8%. It is reported as a miss, not tuned away. This was a check of the rules, not of forecast accuracy. Details: [docs/v5-hindcast-report.md](docs/v5-hindcast-report.md).
+Most of the code was written by the agents.
 
-## How every deploy is checked
+---
 
-The refresh job in [.github/workflows/pages.yml](.github/workflows/pages.yml) runs every 30 minutes and treats bad data as a failure, not a footnote:
+## Under the hood
 
-1. **Unit tests run first.** Scoring, tide, calculation and validator tests must pass before any data is generated.
-2. **Generated output is validated.** A post-build check fails the run if report dates, live readings or predictions are stale, missing or out of range.
-3. **One retry.** If a feed is briefly stale, the job waits and regenerates once. The freshness thresholds are not loosened for the retry.
-4. **Last good data is restored.** If the retry also fails, the site keeps serving the previous good data, marked stale, instead of publishing bad numbers. If the previous data cannot be read, nothing deploys.
-5. **Someone gets told.** If the data is more than six hours old, the run fails and opens a GitHub issue.
+**Stack:** JavaScript (Node 22) for the pipeline and app, Python with NumPy for the survey history and model work, GitHub Actions, GitHub Pages, and a Capacitor wrapper for an iOS build.
 
-## Data sources
+**Data sources:**
 
 - **National Weather Service:** forecasts, alerts and airport observations
 - **NOAA NDBC:** offshore buoys
 - **NOAA CO-OPS:** tide predictions and water temperature
 - **SECOORA:** nearshore wave buoys
 - **Open-Meteo:** labeled fallback when NWS forecasts are unavailable (CC BY 4.0)
-- **NOAA MRIP:** shore-angler survey history, 2015 to 2025
+- **NOAA MRIP:** recreational angler survey history, 2015 to 2025
 
-## How I built it
+**Model method (for technical readers):** L2-regularized logistic regression with nested leave-one-year-out cross-validation. "Any fish": Brier skill 0.086 over a monthly baseline, AUC 0.68.
 
-I built this with AI coding agents. I set the goal and the rules, directed the agents, reviewed their work and approved the decisions:
-
-- Setting the product rules: what GO means, which safety and freshness gates block it, and the launch gates it had to pass
-- Approving or rejecting each design decision (recorded with dates in [docs/v5-architecture-decisions.md](docs/v5-architecture-decisions.md))
-- Reviewing the data audit, model test and backtest results
-
-Most of the code was written by the agents.
-
-**Stack:** JavaScript (Node 22) for the pipeline and app, Python with NumPy for the MRIP history and model work, GitHub Actions, GitHub Pages, and a Capacitor wrapper for an iOS build.
-
-## Run it locally
+**Run it locally:**
 
 ```bash
-SITE_URL= node scripts/generate.mjs   # build the report
-python3 -m http.server -d site 8000   # or any static file server
-node scripts/test-calculations.mjs     # one of the test suites CI runs
+SITE_URL= node scripts/generate.mjs        # build the report
+python3 -m http.server -d site 8000        # or any static file server
+node scripts/test-calculations.mjs         # one of the test suites CI runs
 ```
 
-## Limits
+**Limits:**
 
 - Ratings are a transparent conditions score, not a catch forecast or a safety clearance.
-- MRIP surveys anglers at access points, mostly near the end of a trip. It is not designed for spot-level estimates, so history is shown by region and season, not by spot.
+- The angler survey is collected at access points, mostly near the end of a trip. It isn't designed for spot-level estimates, so history is shown by region and season, not by spot.
 - The Smith Creek tide station is an inland reference, not an ocean beach tide.
-
----
 
 ## Technical reference
 
