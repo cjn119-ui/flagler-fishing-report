@@ -62,14 +62,34 @@ export function safetyGates(c,{mode="surf",params=MODEL_PARAMS}={}){
   if(mode!=="inshore"&&has(c.waveHeightM)&&c.waveHeightM>params.factors.waves.safetySkipAboveM)add("waves","Surf reaches unsafe levels during this window.");
   return out;
 }
+const ALERT_RANK={Minor:0,Moderate:1,Severe:2,Extreme:3};
+const alertCovers=(a,c)=>{const from=Date.parse(c.validFrom??""),to=Date.parse(c.validTo??""),start=Date.parse(a.effective??a.onset??a.startsAt??""),end=Date.parse(a.ends??a.expires??a.validTo??"");return (!Number.isFinite(start)||!Number.isFinite(to)||start<to)&&(!Number.isFinite(end)||!Number.isFinite(from)||end>from);};
+/** Active NWS alerts that do not force SKIP but must keep a window from reading GO (shown to the angler as a caution). */
+export function alertCautions(c,{mode="surf",params=MODEL_PARAMS}={}){
+  const gates=params.factors.alertGates??[],cautions=params.factors.alertCautions??[],out=new Map();
+  for(const a of c.alerts??[]){
+    const event=typeof a?.event==="string"?a.event.trim():"";if(!event||!alertCovers(a,c))continue;
+    if(gates.some(g=>g.events.includes(event)&&ALERT_RANK[a.severity]>=ALERT_RANK[g.minimumSeverity]))continue;
+    const groups=cautions.filter(g=>g.events.includes(event));
+    if(groups.length&&!groups.some(g=>!g.modes||g.modes.includes(mode)))continue;
+    if(!groups.length&&!gates.some(g=>g.events.includes(event))&&!/\b(Warning|Watch)$/.test(event))continue;
+    const endsAt=Date.parse(a.ends??a.expires??"");
+    if(!out.has(event))out.set(event,{event,endsAt:Number.isFinite(endsAt)?new Date(endsAt).toISOString():null});
+  }
+  return [...out.values()];
+}
 export function seasonalBenchmarkFor({locationId,mode,date,params=MODEL_PARAMS,timeZone="America/New_York"}){
   const day=typeof date==="string"&&/^\d{4}-\d\d-\d\d$/.test(date)?date.slice(5):has(Date.parse(date))?localParts(Date.parse(date),timeZone).month+"-"+localParts(Date.parse(date),timeZone).day:null;
   if(!day)return null;
   const key=`${locationId}:${mode}`,value=params.benchmarks?.goSeasonal?.[key]?.[day];
   return has(value)?value:null;
 }
-export function verdictFor({suitability,confidence,eligibility,conditionsReady=true,gates=[],locationId,mode,date,params=MODEL_PARAMS}){
+export function verdictFor({suitability,confidence,eligibility,conditionsReady=true,gates=[],cautions=[],locationId,mode,date,params=MODEL_PARAMS}){
   if(gates.length)return "SKIP";
+  const v=verdictBeforeCautions({suitability,confidence,eligibility,conditionsReady,locationId,mode,date,params});
+  return v==="GO"&&cautions?.length?"MAYBE":v;
+}
+function verdictBeforeCautions({suitability,confidence,eligibility,conditionsReady,locationId,mode,date,params}){
   const decent=has(suitability)&&suitability>=params.thresholds.maybeSuitabilityMin;
   const benchmark=seasonalBenchmarkFor({locationId,mode,date,params});
   if(decent&&eligibility==="realistic"&&conditionsReady&&has(params.thresholds.goSuitabilityMin)&&has(params.thresholds.goBenchmarkMargin)&&has(benchmark)&&suitability>=params.thresholds.goSuitabilityMin&&suitability>=benchmark+params.thresholds.goBenchmarkMargin&&confidence>=params.thresholds.goConfidenceMin)return "GO";
@@ -143,20 +163,22 @@ export function scoreSpecies({species,spot,mode,history,slots,conditionsAt,now,h
     const suitability=has(rawSuitability)?Math.round(rawSuitability):null;
     let conf=calculateConfidence({conditions:c,mode,spot,historyN:ht?.historicalRate?.n,historyAvailable:ht?.historyAvailable===true,forecastAgeHours,alertsChecked,wavesAvailable:wavesOk,tideAvailable:f.factors.find(x=>x.key==="tide")?.available===true,params});
     if(insufficientData)conf={...conf,confidence:Math.min(49,conf.confidence),confidenceLevel:"Low",confidenceReasons:[...conf.confidenceReasons,cReason("notEnoughCurrentData",60,"live")],amberQualifier:null};
-    const gates=safetyGates(c,{mode,params});
+    const gates=safetyGates(c,{mode,params}),cautions=gates.length?[]:alertCautions(c,{mode,params});
+    if(cautions.length)cap.push({code:"alertCaution",params:{events:cautions.map(x=>x.event)}});
     const safetyInputsReady=has(c.windMph)&&has(c.windGustMph)&&typeof c.thunder==="boolean";
     const conditionsReady=has(f.suitability)&&!insufficientData&&safetyInputsReady&&forecastAgeHours!=null&&forecastAgeHours<=params.freshness.forecastMaxAgeHours&&alertsChecked&&(mode==="inshore"||wavesOk);
     const date=localKey(at,timeZone),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params,timeZone});
     if(benchmark===null&&!gates.length)cap.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});
-    const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,locationId:spot.id,mode,date,params});
+    const verdict=verdictFor({suitability,confidence:conf.confidence,eligibility:eligibility.eligibility,conditionsReady,gates,cautions,locationId:spot.id,mode,date,params});
     return {at,conditionsReady,suitability,rawSuitability,benchmark,factors:f.factors,waterFit:f.waterFit,historyTiming:ht,eligibility:eligibility.eligibility,eligibilityReason:eligibility.eligibilityReason,caps:cap,confidence:conf.confidence,confidenceLevel:conf.confidenceLevel,confidenceReasons:conf.confidenceReasons,amberQualifier:conf.amberQualifier,gates,verdict,conditions:c};});
   const windows=findSpeciesWindows(scored,{params,locationId:spot.id,mode,speciesId:species.id,spot,now,timeZone}).map(w=>{
     const gates=[...new Map(w.slots.flatMap(x=>x.gates??[]).map(x=>[x.code,x])).values()];
     const ready=w.slots.every(x=>x.conditionsReady===true);
     const date=localKey(w.start,timeZone),benchmark=seasonalBenchmarkFor({locationId:spot.id,mode,date,params,timeZone});
     if(benchmark===null&&!gates.length&&!w.slots.some(x=>x.caps?.some(c=>c.code==="benchmarkUnavailable")))w.slots[0]?.caps?.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});
-    const v=verdictFor({suitability:w.suitability,confidence:w.confidence,eligibility:eligibility.eligibility,conditionsReady:ready,gates,locationId:spot.id,mode,date,params});
-    const caps=[...new Map(w.slots.flatMap(x=>x.caps??[]).map(x=>[x.code,x])).values()];
+    const cautionEvents=[...new Set(w.slots.flatMap(x=>(x.caps??[]).filter(c=>c.code==="alertCaution").flatMap(c=>c.params?.events??[])))];
+    const v=verdictFor({suitability:w.suitability,confidence:w.confidence,eligibility:eligibility.eligibility,conditionsReady:ready,gates,cautions:cautionEvents,locationId:spot.id,mode,date,params});
+    const caps=[...new Map(w.slots.flatMap(x=>x.caps??[]).map(x=>[x.code,x.code==="alertCaution"?{code:"alertCaution",params:{events:cautionEvents}}:x])).values()];
     const confidenceLevel=w.confidence>=params.thresholds.highConfidenceMin?"High":w.confidence>=params.thresholds.moderateConfidenceMin?"Moderate":"Low";
     const amberQualifier=w.confidence>=params.thresholds.moderateConfidenceMin?w.confidenceReasons.find(x=>x.kind==="live")?.text??null:null;
     if(benchmark===null&&!gates.length&&!caps.some(x=>x.code==="benchmarkUnavailable"))caps.push({code:"benchmarkUnavailable",params:{locationId:spot.id,mode,date}});

@@ -11,7 +11,7 @@ import { catchesToCsv, loadCatches, saveCatches, summarizeCatches, validateCatch
 import { bestSpeciesCandidate, catchScore, CATCH_SCORE, speciesEligibilityLabel, speciesFitBand, speciesFitWord, speciesTripRate, unsafeCapped } from "./species-presentation.js";
 import { isModeClosed as catalogModeClosed, openModes, openModeRows } from "./closure-presentation.js";
 import { observedWindAt } from "../engine/observed-wind.js";
-import { fmtWind, gridTemperatureF, gridValueAt, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
+import { activeAlerts, fmtWind, gridTemperatureF, gridValueAt, hourlyOutlook, inPeriod, observationFor, observationRows, temperatureF, tideChartXPositions, tideDirectionAt, waveHeightFeetLabel } from "./proto-observations.js";
 import { fetchSources } from "../engine/sources.js";
 import { buildPredictionRun } from "../engine/run.js";
 import { loadFloridaCoastalHistory } from "../engine/history.js";
@@ -36,7 +36,7 @@ const TIER = { GO: 0, MAYBE: 1, SKIP: 2 };
 const LEVEL = { GO: 0, MAYBE: 1, SKIP: 2 };
 const VERDICT_SPOKEN = { GO: "Go", MAYBE: "Maybe", SKIP: "Skip" };
 const DELTA = { better: "Better tomorrow", similar: "About the same", worse: "Rougher tomorrow" };
-const SHORT_REASON = { provisionalGoThreshold: "Looks good — we're holding GO until our thresholds are tested." }; // taste Q5 (engine/copy.js owns the long form)
+const SHORT_REASON = { provisionalGoThreshold: "Looks good — we're holding GO until our thresholds are tested.", alertCaution: "Held at Maybe while an NWS alert is active." }; // taste Q5 (engine/copy.js owns the long form)
 const MONTHS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
 const tick = (kind = "select") => navigator.vibrate?.(kind === "select" ? 6 : 12);
 
@@ -756,6 +756,16 @@ function todayView(c) {
   out.push(verdictCard(c, disclosure), targetSpeciesRow(c), timesCard(c), tvCard(c), spotsTeaser(c));
   return out.filter(Boolean);
 }
+// NWS alerts for the hero spot, shown on the verdict card itself so a GO/MAYBE never hides an active rip current or flood alert.
+function alertNotice(c) {
+  const spot = c.rec?.locationId, from = Math.max(c.now, Date.parse(c.run.validFrom) || 0);
+  const alerts = spot ? activeAlerts(obsRun(c), spot, from) : [];
+  if (!alerts.length) return null;
+  const until = (iso) => !validDate(iso) ? "" : ` \u00b7 until ${dayKey(iso) === dayKey(from) ? "" : `${new Intl.DateTimeFormat("en-US", { timeZone: TZ, weekday: "short" }).format(new Date(iso))} `}${fmtTime(iso)}`;
+  return h("div", { class: "alert-notice", role: "note", "aria-label": "Active NWS alerts" }, icon("warn"),
+    h("div", {}, h("p", { class: "k" }, alerts.length === 1 ? "NWS alert" : "NWS alerts"),
+      h("ul", {}, alerts.map((a) => h("li", {}, h("b", {}, a.event), until(a.endsAt))))));
+}
 function verdictCard(c, disclosure = null) {
   const { rec: r, run } = c;
   const todayRun = c.def.live ? D[RICH] : D[c.def.file];
@@ -783,7 +793,7 @@ function verdictCard(c, disclosure = null) {
   const bet = c.skip ? nextOption(c) : betRow(c);
   return h("section", { class: `card hero${c.stale ? " dim" : ""}`, id: "verdict", "data-level": lvl, "aria-label": `Verdict: ${VERDICT_SPOKEN[r.verdict]}` },
     nativeOutlook(c, { r, endedNext, reason, qual }),
-    notes, c.skip ? bet : null, conditionsStrip(c), disclosure);
+    alertNotice(c), notes, c.skip ? bet : null, conditionsStrip(c), disclosure);
 }
 const hiddenTargets = () => { const v = store.get("hiddenTargets", []); return Array.isArray(v) ? v : []; };
 function setTargetHidden(id, hidden, quiet = false) {

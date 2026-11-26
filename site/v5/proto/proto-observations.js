@@ -88,3 +88,22 @@ export function waveHeightFeetLabel(wave, mode) {
   if (mode === "inshore" || wave?.waveHeightM == null || !Number.isFinite(+wave.waveHeightM)) return null;
   return `${(+wave.waveHeightM * 3.28084).toFixed(1)} ft`;
 }
+
+// Active NWS alerts for one spot from the run's carried alert feed, warnings first. `from` is the earliest
+// moment the view cares about (now, or the start of tomorrow's day), so an alert that has already ended is dropped.
+export function activeAlerts(run, locationId, from) {
+  const t = +new Date(from), out = new Map();
+  for (const o of run?.inputs?.observations ?? []) {
+    if (o?.kind !== "alerts" || !o.ok || (o.locationId && o.locationId !== locationId)) continue;
+    for (const a of o.values?.rows ?? []) {
+      const event = typeof a?.event === "string" ? a.event.trim() : "";
+      if (!event) continue;
+      const end = Date.parse(a.ends ?? a.expires ?? "");
+      if (Number.isFinite(end) && Number.isFinite(t) && end <= t) continue;
+      const prior = out.get(event), endsAt = Number.isFinite(end) ? new Date(end).toISOString() : null;
+      if (!prior || (endsAt && (!prior.endsAt || endsAt > prior.endsAt))) out.set(event, { event, endsAt, headline: typeof a.headline === "string" ? a.headline : null });
+    }
+  }
+  const rank = (e) => /Warning$/.test(e) ? 0 : /Watch$/.test(e) ? 1 : 2;
+  return [...out.values()].sort((a, b) => rank(a.event) - rank(b.event) || a.event.localeCompare(b.event));
+}

@@ -11015,6 +11015,13 @@ export const MODEL_PARAMS = Object.freeze({
       Object.freeze({ events: ["Tornado Warning", "Severe Thunderstorm Warning", "Flash Flood Warning", "Gale Warning", "Storm Warning", "Hurricane Warning", "Tropical Storm Warning"], minimumSeverity: "Severe" }),
       Object.freeze({ events: ["High Surf Advisory", "High Surf Warning", "Rip Current Statement", "Rip Current Warning", "Small Craft Advisory", "Coastal Flood Advisory", "Coastal Flood Warning"], minimumSeverity: "Severe" }),
     ]),
+    // Active NWS alerts below the SKIP gate still block GO (verdict capped at MAYBE) and are shown in the app.
+    // NWS issues rip current statements and coastal/marine advisories as Minor or Moderate, so the Severe gate alone never fires for them.
+    // modes: null = every mode; any event in alertGates below its severity, or any Warning/Watch, is also a caution for every mode.
+    alertCautions: Object.freeze([
+      Object.freeze({ events: ["Rip Current Statement", "Rip Current Warning", "High Surf Advisory", "High Surf Warning", "Beach Hazards Statement"], modes: Object.freeze(["surf", "pier"]) }),
+      Object.freeze({ events: ["Small Craft Advisory", "Coastal Flood Advisory", "Coastal Flood Statement", "Coastal Flood Warning", "Wind Advisory", "Dense Fog Advisory", "Marine Dense Fog Advisory", "Marine Weather Statement"], modes: null }),
+    ]),
     effectHelpsMin: 0.67,
     effectNeutralMin: 0.34,
     tideSensitivityMultipliers: Object.freeze({ high: 1.3, medium: 1, low: 0.6 }),
@@ -11073,6 +11080,7 @@ export function validateParams(params = MODEL_PARAMS) {
   assert(isObject(params.factors)&&isObject(params.windows)&&isObject(params.selection),"params","factors, windows, and selection groups are required");
   assert(Number.isFinite(params.factors.minimumAvailableWeightShare)&&params.factors.minimumAvailableWeightShare>=0&&params.factors.minimumAvailableWeightShare<=1,"params.factors.minimumAvailableWeightShare","expected share from 0 to 1");
   assert(Array.isArray(params.factors.alertGates)&&params.factors.alertGates.every(x=>Array.isArray(x.events)&&["Severe","Extreme"].includes(x.minimumSeverity)),"params.factors.alertGates","expected versioned event/severity table");
+  assert(params.factors.alertCautions===undefined||Array.isArray(params.factors.alertCautions)&&params.factors.alertCautions.every(x=>Array.isArray(x.events)&&(x.modes===null||Array.isArray(x.modes))),"params.factors.alertCautions","expected event/mode table");
   assert(params.factors.tide.rateNormalizationScale===null||Number.isFinite(params.factors.tide.rateNormalizationScale)&&params.factors.tide.rateNormalizationScale>0,"params.factors.tide.rateNormalizationScale","expected null pending reviewed scale or positive number");
   if(params.factors.tide.rateNormalizationScale===null)assert(params.factors.tide.rateNormalizationScaleProvisional===true,"params.factors.tide.rateNormalizationScaleProvisional","must mark null as provisional");
   assert(Number.isFinite(params.factors.tide.rateNormalizationScaleProposal)&&params.factors.tide.rateNormalizationScaleProposal>0,"params.factors.tide.rateNormalizationScaleProposal","expected a documented positive review proposal");

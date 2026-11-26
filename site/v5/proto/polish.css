@@ -157,3 +157,10 @@ details[open] > summary::after { transform:rotate(45deg); }
   :is(.bet, .other-spot-card, .target-species-item, .tv-c, .day-chip, .day-row, .spotlist .row > button.main, .species-group .sp, .btn, .btn-s, .pill, #more):active { transform:none; }
 }
 
+
+/* Active NWS alerts on the verdict card: always visible, amber for advisories/statements. */
+.alert-notice { display:flex; gap:var(--s-2); align-items:flex-start; margin:var(--s-2) 0 0; padding:var(--s-2) var(--s-3); border-radius:12px; color:var(--mid-ink, var(--mid)); background:color-mix(in srgb, var(--mid) 12%, transparent); border:1px solid color-mix(in srgb, var(--mid) 40%, transparent); }
+.alert-notice svg { width:16px; height:16px; flex:none; margin-top:2px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+.alert-notice .k { margin:0; font-size:var(--fs-meta); text-transform:uppercase; letter-spacing:.04em; }
+.alert-notice ul { margin:2px 0 0; padding:0; list-style:none; font-size:var(--fs-sm); color:var(--text); }
+.alert-notice b { font-weight:600; }
